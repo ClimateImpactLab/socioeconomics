@@ -1,0 +1,11 @@
+# Placeholder (Phase 1). Enumerates every raw input: logical name, provider,
+# version, expected local path under paths$source, checksum, and license. Read by
+# data/get_data.R to fetch and verify inputs; mirrored by docs/SOURCES.md.
+
+# inputs:
+#   - name: pwt
+#     provider: "Penn World Table"
+#     version: "11.0"
+#     local: "pwt110.xlsx"
+#     sha256: ""
+#     license: ""

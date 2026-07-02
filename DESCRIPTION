@@ -1,0 +1,25 @@
+Package: irpanel
+Title: Impact-Region Socioeconomic Panels for CIL 2.0
+Version: 0.0.0.9000
+Authors@R:
+    person("CIL", role = c("aut", "cre"),
+           email = "s.cadavid1587@gmail.com")
+Description: A clean, optimized R pipeline that builds impact-region
+    socioeconomic panels (income, population, age cohorts) for CIL 2.0.
+    Reuses the logic of the climate_compensation "book" pipeline and the
+    Carleton et al. (2022) legacy pipeline, with two deliberate deltas:
+    (1) population scaled to UN WPP instead of IIASA-WiC, and (2) the sum of
+    regional GDP forced to match country GDP. Orchestrated with {targets}.
+License: file LICENSE
+Encoding: UTF-8
+Imports:
+    targets,
+    terra,
+    sf,
+    exactextractr,
+    data.table,
+    yaml,
+    ncdf4
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

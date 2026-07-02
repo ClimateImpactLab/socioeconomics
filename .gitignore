@@ -1,0 +1,35 @@
+# --- R ---
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# --- renv: keep renv.lock + activate script; ignore the local library ---
+renv/library/
+renv/local/
+renv/cellar/
+renv/staging/
+renv/sandbox/
+renv/python/
+
+# --- targets pipeline store ---
+_targets/
+
+# --- data: raw inputs are referenced, never versioned in git ---
+data/source/
+data/cache/
+data/output/
+
+# raw data formats anywhere (belt-and-suspenders; real data lives via DVC)
+*.tif
+*.tiff
+*.nc
+*.zarr
+*.zarr/
+*.parquet
+
+# --- DVC: data content tracked by DVC, not git (.dvc pointers ARE committed) ---
+.dvc/cache
+.dvc/tmp
+.dvc/config.local

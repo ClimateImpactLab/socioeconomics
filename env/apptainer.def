@@ -1,0 +1,16 @@
+# Apptainer/Singularity definition for the CIL 2.0 pipeline (RCC midway3).
+# Bootstraps from the Docker image built by env/Dockerfile, so the container and
+# the Docker image stay in sync.
+Bootstrap: docker
+From: rocker/geospatial:4.2.2
+
+%post
+    cd /opt
+    R -e "install.packages('renv', repos='https://cloud.r-project.org')"
+
+%runscript
+    exec R -e "targets::tar_make()" "$@"
+
+%labels
+    Project CIL 2.0
+    Description "IR socioeconomic panel pipeline (CIL 2.0)"

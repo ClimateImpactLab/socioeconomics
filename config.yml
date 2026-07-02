@@ -1,0 +1,18 @@
+paths:
+  source:    "../source_data"     # raw inputs, referenced not copied
+  cache:     "data/cache"
+  output:    "data/output"
+  ir_shapes: "/project/cil/gcp/regions/world-combo-201710/agglomerated-world-new.shp"
+  benchmark: "/project/cil/gcp/integration_replication/inputs/econ/raw/integration-econ-bc39.zarr"
+inputs:
+  pwt:            "pwt110.xlsx"
+  ssp:            "1706548837040-ssp_basic_drivers_release_3.0_full.xlsx"
+  wpp:            "WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx"
+  kummu_gdp_rast: "Kummu/rast_adm2_gdp_perCapita_1990_2022.tif"
+  kummu_pop_rast: "Kummu/r_pop_GHS_1990_2022_5arcmin.tif"
+  kummu_adm0:     "Kummu/tabulated_adm0_gdp_perCapita.csv"
+deltas:
+  pop_control:   "UN_WPP"   # UN_WPP (CIL 2.0) | IIASA (reproduce book)
+  force_gdp_sum: true        # true (CIL 2.0) | false (reproduce book)
+tolerances:
+  gdp_sum_pct: 0.1
