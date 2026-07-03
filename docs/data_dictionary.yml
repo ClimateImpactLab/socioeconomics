@@ -1,22 +1,97 @@
-# Placeholder. Describes the final panel: dimensions, variables, units. Finalized
-# alongside the postprocess and write_outputs implementation; units below are
-# indicative until then.
+# Data dictionary for the final impact-region panel
+# (ir_combined_<scenario>_<model>). Intended as the single source of truth for
+# NetCDF attributes, output column checks, and viewer labels, so every field
+# uses the same block shape: description, unit, source, dims.
 
-dimensions:
-  hierid:    "Impact-region identifier (~24,378 terminal regions)"
-  year:      "Calendar year, 1981-2100"
-  scenario:  "SSP scenario (e.g. SSP2, SSP3)"
-  gdp_model: "GDP projection model (OECD | IIASA)"
+keys:
+  hierid:
+    description: Impact-region identifier (~24,378 terminal regions).
+    unit: none
+    dims: [hierid]
+  iso3:
+    description: ISO 3166-1 alpha-3 country code.
+    unit: none
+    dims: [hierid]
+  year:
+    description: Calendar year, 1981-2100.
+    unit: year
+    dims: [year]
+  scenario:
+    description: SSP scenario.
+    unit: none
+    dims: [scenario]
+    values: [SSP2, SSP3]
+  model:
+    description: GDP projection model.
+    unit: none
+    dims: [model]
+    values: [OECD, IIASA]
 
 variables:
-  iso3:            { units: "code",        desc: "ISO3 country code" }
-  gdppc:           { units: "USD PPP (constant base yr TBD)", desc: "GDP per capita, post-processed (smoothed)" }
-  gdppc_raw:       { units: "USD PPP",     desc: "GDP per capita, unsmoothed" }
-  gdp:             { units: "USD PPP",     desc: "gdppc * pop (Delta #2: sums to national GDP)" }
-  pop:             { units: "persons",     desc: "Population (Delta #1: scaled to UN WPP)" }
-  area_km2:        { units: "km^2",        desc: "IR geodesic area (static)" }
-  pop_density:     { units: "persons/km^2", desc: "pop / area_km2" }
-  pop_wtd_density: { units: "persons/km^2", desc: "Population-weighted density (base-year, static)" }
-  pop0to4:         { units: "persons",     desc: "Population age 0-4" }
-  pop5to64:        { units: "persons",     desc: "Population age 5-64" }
-  pop65plus:       { units: "persons",     desc: "Population age 65+" }
+  gdppc:
+    description: >
+      GDP per capita, post-processed: 1981-2015 imputed as the IR mean over
+      1990-2015, 2016+ smoothed with a 13-year backward half-Bartlett kernel,
+      missing set to 0.
+    unit: constant 2005 USD PPP
+    source: Kummu shares calibrated to PWT, projected with SSP growth.
+    dims: [hierid, year, scenario, model]
+  gdppc_raw:
+    description: >
+      GDP per capita before post-processing; 1981-1989 missing, 1990+ raw with
+      missing values preserved.
+    unit: constant 2005 USD PPP
+    source: As gdppc, without imputation or smoothing.
+    dims: [hierid, year, scenario, model]
+  gdppc_raw0:
+    description: >
+      gdppc_raw with missing set to 0 from 1990 onward; 1981-1989 stay missing.
+    unit: constant 2005 USD PPP
+    source: Derived from gdppc_raw.
+    dims: [hierid, year, scenario, model]
+  gdp:
+    description: >
+      Total GDP, gdppc * pop. Under Delta #2 the IR values are scaled so each
+      country-year sum matches national GDP.
+    unit: constant 2005 USD PPP
+    source: Derived from gdppc and pop.
+    dims: [hierid, year, scenario, model]
+  pop:
+    description: >
+      Total population. Under Delta #1 the IR values are scaled to UN WPP
+      national totals.
+    unit: persons
+    source: GHS-POP base-year distribution scaled to national control totals.
+    dims: [hierid, year, scenario]
+  area_km2:
+    description: Impact-region geodesic area (static).
+    unit: km^2
+    source: IR shapefile (shared volume).
+    dims: [hierid]
+  pop_density:
+    description: Population density, pop / area_km2.
+    unit: persons per km^2
+    source: Derived from pop and area_km2.
+    dims: [hierid, year, scenario]
+  pop_wtd_density:
+    description: >
+      Population-weighted density, the density experienced by the average
+      resident, fixed at the 2020 base year.
+    unit: persons per km^2
+    source: GHS-POP grid within each IR.
+    dims: [hierid]
+  pop0to4:
+    description: Population aged 0-4.
+    unit: persons
+    source: National SSP age shares applied to pop.
+    dims: [hierid, year, scenario]
+  pop5to64:
+    description: Population aged 5-64.
+    unit: persons
+    source: National SSP age shares applied to pop.
+    dims: [hierid, year, scenario]
+  pop65plus:
+    description: Population aged 65 and over.
+    unit: persons
+    source: National SSP age shares applied to pop.
+    dims: [hierid, year, scenario]
