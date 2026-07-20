@@ -66,4 +66,3 @@ targets::tar_make()          # build the panels
 ## Conventions
 
 Work happens on the `dev` branch; `main` stays clean until a run is confirmed.
-Pushing is done by the maintainer.
