@@ -51,15 +51,14 @@ variables:
     dims: [hierid, year, scenario, model]
   gdp:
     description: >
-      Total GDP, gdppc * pop. Under Delta #2 the IR values are scaled so each
-      country-year sum matches national GDP.
+      Total GDP, gdppc * pop. IR values are scaled so each country-year sum
+      matches national GDP.
     unit: constant 2005 USD PPP
     source: Derived from gdppc and pop.
     dims: [hierid, year, scenario, model]
   pop:
     description: >
-      Total population. Under Delta #1 the IR values are scaled to UN WPP
-      national totals.
+      Total population. IR values are scaled to UN WPP national totals.
     unit: persons
     source: GHS-POP base-year distribution scaled to national control totals.
     dims: [hierid, year, scenario]

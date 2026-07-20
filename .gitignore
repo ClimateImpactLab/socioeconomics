@@ -5,6 +5,13 @@
 .Ruserdata
 *.Rproj
 
+# --- Python ---
+__pycache__/
+*.pyc
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
 # --- renv: keep renv.lock + activate script; ignore the local library ---
 renv/library/
 renv/local/
@@ -21,7 +28,7 @@ data/source/
 data/cache/
 data/output/
 
-# raw data formats anywhere (belt-and-suspenders; real data lives via DVC)
+# raw data formats anywhere; data is tracked with DVC, not git
 *.tif
 *.tiff
 *.nc

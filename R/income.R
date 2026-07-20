@@ -1,5 +1,5 @@
 # IR-level GDP per capita: Kummu subnational shape times PWT national level for
-# history, rolled forward with SSP growth. Special cases live in special_cases.R.
+# history, rolled forward with SSP growth. Special cases: special_cases.R.
 
 #' Build the IR-level GDP-per-capita panel (historical and projected).
 #'
@@ -11,7 +11,7 @@
 build_income <- function(ir_grid, pwt, ssp, config) {
   # Delta #2 (force_gdp_sum): when true, rescale each country's IR gdppc so
   # sum_IR(gdppc * pop) matches national GDP within tolerances$gdp_sum_pct; when
-  # false, reproduce the book, which only matches the national pop-weighted mean.
-  # The rescale needs population, so the toggle is threaded to where pop is joined.
+  # false, only the national population-weighted mean matches. The rescale needs
+  # population, so the toggle is threaded to where pop is joined.
   stop("not implemented")
 }

@@ -35,12 +35,15 @@ list(
   tar_target(income_cov,  coverage_fallback(income_ven, ssp, config)),
   tar_target(income,      uninhabited_zero(income_cov, ir_grid)),
 
-  # Population (Delta #1) and cohorts.
+  # Population and cohorts.
   tar_target(population, build_population(ir_grid, wpp, ssp, config)),
   tar_target(cohorts,    build_cohorts(population, ssp, config)),
 
   # Final panel.
-  tar_target(panel, postprocess_panel(income, population, cohorts, ir_shapes, config)),
+  tar_target(
+    panel,
+    postprocess_panel(income, population, cohorts, ir_shapes, config)
+  ),
 
   # Contracts gate the writers; validation is diagnostic only.
   tar_target(checks,     check_panel(panel, config)),

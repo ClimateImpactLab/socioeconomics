@@ -12,7 +12,7 @@ inputs:
   kummu_pop_rast: "Kummu/r_pop_GHS_1990_2022_5arcmin.tif"
   kummu_adm0:     "Kummu/tabulated_adm0_gdp_perCapita.csv"
 deltas:
-  pop_control:   "UN_WPP"   # UN_WPP (CIL 2.0) | IIASA (reproduce book)
-  force_gdp_sum: true        # true (CIL 2.0) | false (reproduce book)
+  pop_control:   "UN_WPP"   # UN_WPP: scale to UN WPP | IIASA: to IIASA-WiC
+  force_gdp_sum: true        # true: regions sum to country GDP | false: off
 tolerances:
   gdp_sum_pct: 0.1

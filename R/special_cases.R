@@ -9,7 +9,7 @@
 #' @return income panel with VEN corrected.
 venezuela_fix <- function(income, pwt, ssp, config) {
   # PWT chained PPP breaks after the 2011 ICP survey during hyperinflation;
-  # interpolate the national level between trusted anchors and keep Kummu shares.
+  # interpolate the national level between anchors and keep Kummu shares.
   stop("not implemented")
 }
 
@@ -32,6 +32,6 @@ coverage_fallback <- function(income, ssp, config) {
 #' @return income panel with uninhabited IRs set to NA gdppc.
 uninhabited_zero <- function(income, ir_grid) {
   # IRs with no raster cell and near-zero base-year population carry no weight
-  # downstream (Carleton-consistent); populated no-cell IRs are handled upstream.
+  # downstream; populated no-cell IRs are handled upstream.
   stop("not implemented")
 }

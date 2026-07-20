@@ -1,7 +1,7 @@
-# Diagnostic comparison of the panel against the Carleton benchmark. Reports
-# only; it does not gate the writers.
+# Diagnostic comparison of the panel against the benchmark. Reports only; it
+# does not gate the writers.
 
-#' Compare the panel against the Carleton benchmark.
+#' Compare the panel against the benchmark.
 #'
 #' @param panel Output of postprocess_panel().
 #' @param benchmark Output of read_benchmark().

@@ -5,10 +5,12 @@
 #                  if the file is missing, then check its md5.
 # fetch: manual -> never download; only check the file, and if it is missing
 #                  tell the user where to get it.
+# fetch: script -> never download; only check the file, and if it is missing
+#                  name the script that reproduces it.
 #
-# Any md5 mismatch, and any missing manual file, is fatal. Nothing outside the
-# source dir is touched. A per-file summary is printed before any error is
-# raised, so the whole picture is visible at once.
+# Any md5 mismatch, and any missing manual or script file, is fatal. Nothing
+# outside the source dir is touched. A per-file summary is printed before any
+# error is raised.
 
 library(tools)  # md5sum
 
@@ -77,7 +79,10 @@ obtain_auto <- function(f, dest) {
 # Verify one file that is expected to exist. Returns a status string.
 verify <- function(f, dest) {
   if (!file.exists(dest)) {
-    if (identical(f$fetch, "manual")) "missing (manual)" else "missing (auto)"
+    switch(f$fetch %||% "auto",
+           manual = "missing (manual)",
+           script = "missing (script)",
+           "missing (auto)")
   } else if (md5_of(dest) != f$md5) {
     "mismatch"
   } else {
@@ -118,6 +123,10 @@ main <- function(manifest_path = "data/manifest.yml") {
       } else if (identical(r$f$fetch, "manual")) {
         msg <- r$f$instructions %||% "download from the source and place here."
         message("  ", path, ": ", msg)
+      } else if (identical(r$f$fetch, "script")) {
+        script <- r$f$script %||% "the fetch script"
+        message("  ", path,
+                ": file missing -- reproduce it by running ", script)
       } else {
         url <- r$f$url %||% r$f$archive$url
         message("  ", path, ": automatic fetch failed; download from ", url)
