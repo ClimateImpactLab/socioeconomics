@@ -13,5 +13,8 @@ utils::globalVariables(c(
   "s0_4", "s5_64", "s65", "diff_0_4", "diff_5_64", "diff_65plus",
   "pop_wpp", "pop_ssp",
   "gdppc_w", "gdppc_a", "zero_pop", "num", "pop_wtd_density",
-  "gdppc_natavg", "gdppc_adm0"
+  "gdppc_natavg", "gdppc_adm0",
+  "kummu_ir", "kummu_nat", "pwt", "pop_base", "g_pwt", "g_ssp", "gval",
+  "growth", "gdppc_2023", "g", "base", "b25", "gf", "g25", "g30", "gann",
+  "nat", "p22", "p23", "s22", "s23", "i.gval"
 ))

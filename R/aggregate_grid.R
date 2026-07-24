@@ -70,21 +70,22 @@ aggregate_kummu_to_ir <- function(kummu, ir_shapes, config) {
   )
   pop_ir <- extract_to_long(psum, ids, pop_years, "pop")
 
-  # Population-weighted density: the density the average resident experiences.
-  # For cells j in an IR this is sum(density_j * pop_j * cov) / sum(pop_j * cov)
-  # with density_j = pop_j / area_j. That equals sum(pop_j^2 / area_j * cov)
-  # over the population sum, so one zonal sum of pop^2/area gives every year.
+  # Population-weighted density: the density the average resident experiences,
+  # sum(density_j * pop_j * cov) / sum(pop_j * cov) with density_j = pop_j /
+  # area_j. Done a year at a time on single-band rasters to keep memory small;
+  # zero-population IRs give NaN, set to zero.
   message("Aggregating population-weighted density...")
   area <- terra::cellSize(pop[[1]], unit = "km")
-  num <- exactextractr::exact_extract(
-    (pop * pop) / area, ir_shapes, "sum", stack_apply = TRUE, progress = FALSE
-  )
-  density <- merge(
-    extract_to_long(num, ids, pop_years, "num"), pop_ir,
-    by = c("hierid", "iso3", "year")
-  )
-  density[, pop_wtd_density := data.table::fifelse(pop > 0, num / pop, 0)]
-  density <- density[, .(hierid, iso3, year, pop_wtd_density)]
+  pwd_cols <- lapply(seq_along(pop_years), function(i) {
+    exactextractr::exact_extract(
+      pop[[i]] / area, ir_shapes, "weighted_mean", weights = pop[[i]],
+      progress = FALSE
+    )
+  })
+  density <- extract_to_long(do.call(cbind, pwd_cols), ids, pop_years,
+                             "pop_wtd_density")
+  density[is.nan(pop_wtd_density) | is.na(pop_wtd_density),
+          pop_wtd_density := 0]
 
   # Validation: national population-weighted mean of the IR GDP per capita,
   # compared with the Kummu ADM0 table.
