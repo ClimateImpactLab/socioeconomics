@@ -16,22 +16,29 @@ dataset bundle, extracts `pwt110.xlsx`, and checks its md5.
 
 ## Kummu et al. (2025)
 
-Gridded subnational GDP per capita and a matching population raster, from Zenodo
-record 13943886. Downloaded June 2026.
+Gridded subnational GDP per capita and a matching population raster. The GDP
+data comes from the **revised 1990-2022 release, Zenodo record 16741980**.
 
-Uses the 1990-2022 release. Files taken from the record: `rast_adm2_gdp_perCapita_1990_2022.tif`
-and `tabulated_adm0_gdp_perCapita.csv`.
+We use this record rather than the earlier 13943886 because the reference panel
+was built from it. Both records cover 1990-2022 (33 annual bands) with the same
+national totals, but their subnational downscaling differs; using record 13943886
+left the impact-region income ~18% off the reference, and record 16741980
+reproduces it (for example a sub-cell region whose 2010 value is 8,742 in this
+release and 58,931 in the earlier one, matching the reference exactly). Files
+taken from the record: `rast_adm2_gdp_perCapita_1990_2022.tif` and
+`tabulated_adm0_gdp_perCapita.csv`.
 
 The 5-arcmin population raster `r_pop_GHS_1990_2022_5arcmin.tif` is not a separate
 download. It is inside Kummu's `code_input_data.zip` at
 `code_input_data/data_gis/r_pop_GHS_1990_2022_5arcmin.tif`, already on Kummu's
-grid. It is based on GHS-POP R2023A (JRC), but taken from Kummu's zip so the grid
-matches. `get_data.R` downloads the zip and extracts that one file.
+grid. It is GHS-POP R2023A (JRC), the same product across both releases, so it is
+retained from record 13943886. `get_data.R` downloads the zip and extracts that
+one file. It has 33 bands (1990-2022) and aligns with the GDP raster.
 
-- Zenodo record: https://zenodo.org/records/13943886
+- Zenodo record: https://zenodo.org/records/16741980
 - Code: https://github.com/mattikummu/griddedGDPpc
-- GDP raster: https://zenodo.org/records/13943886/files/rast_adm2_gdp_perCapita_1990_2022.tif?download=1
-- ADM0 table: https://zenodo.org/records/13943886/files/tabulated_adm0_gdp_perCapita.csv?download=1
+- GDP raster: https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif?download=1
+- ADM0 table: https://zenodo.org/records/16741980/files/tabulated_adm0_gdp_perCapita.csv?download=1
 - Input zip (has the GHS-POP raster): https://zenodo.org/records/13943886/files/code_input_data.zip?download=1
 - GHS-POP R2023A (JRC): https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php
 

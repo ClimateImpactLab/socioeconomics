@@ -34,24 +34,26 @@ sources:
   kummu_2025:
     description: >
       Kummu et al. (2025) gridded subnational GDP per capita and the matching
-      GHS-POP population raster. Uses the 1990-2022 release (Zenodo 13943886); a
-      newer record extends to 2024.
-    version: "1990-2022 (Zenodo record 13943886)"
-    doi: "10.5281/zenodo.13943886"
-    homepage: "https://zenodo.org/records/13943886"
+      GHS-POP population raster. Uses the revised 1990-2022 release (Zenodo
+      record 16741980), whose subnational downscaling differs from the earlier
+      record 13943886; national totals are unchanged. The revised subnational
+      values are the ones the reference panel was built from.
+    version: "1990-2022, revised release (Zenodo record 16741980)"
+    doi: "10.5281/zenodo.16741980"
+    homepage: "https://zenodo.org/records/16741980"
     license: "CC BY 4.0"
     files:
       - path: Kummu/rast_adm2_gdp_perCapita_1990_2022.tif
-        md5: 80e3759c980b9fdd7c1b52fd5c930818
-        bytes: 113917143
+        md5: 4068621e31e1a554a68deb17a548644f
+        bytes: 121235153
         fetch: auto
-        url: "https://zenodo.org/records/13943886/files/rast_adm2_gdp_perCapita_1990_2022.tif?download=1"
+        url: "https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif?download=1"
 
       - path: Kummu/tabulated_adm0_gdp_perCapita.csv
-        md5: 3475f057a541e358b77b10c584a1336f
-        bytes: 49480
+        md5: 754fbac8c97e31060ddbb38d616387f3
+        bytes: 50808
         fetch: auto
-        url: "https://zenodo.org/records/13943886/files/tabulated_adm0_gdp_perCapita.csv?download=1"
+        url: "https://zenodo.org/records/16741980/files/tabulated_adm0_gdp_perCapita.csv?download=1"
 
       - path: Kummu/r_pop_GHS_1990_2022_5arcmin.tif
         md5: 8da3fcaf0d7f42f95c39b20dc0d073b8
@@ -59,8 +61,9 @@ sources:
         fetch: auto
         # Not a standalone download: this file ships inside Kummu's
         # code_input_data.zip, already resampled to Kummu's 5-arcmin grid. The
-        # underlying product is GHS-POP R2023A (JRC); the aligned file comes from
-        # Kummu's bundle. Fetch the zip, extract the one member, verify.
+        # underlying product is GHS-POP R2023A (JRC), the same across releases,
+        # so it is retained from record 13943886. Fetch the zip, extract the one
+        # member, verify.
         source_note: "GHS-POP R2023A (JRC), aligned and redistributed by Kummu."
         archive:
           url: "https://zenodo.org/records/13943886/files/code_input_data.zip?download=1"
