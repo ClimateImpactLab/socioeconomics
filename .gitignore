@@ -40,3 +40,6 @@ data/output/
 .dvc/cache
 .dvc/tmp
 .dvc/config.local
+*.sif
+*.sif
+rlibs/

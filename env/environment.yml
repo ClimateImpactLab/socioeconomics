@@ -1,23 +1,27 @@
-# Conda environment for the CIL 2.0 pipeline.
-# Geospatial R stack + targets orchestration. Used for local/cluster runs where
-# conda is preferred over the container images (Dockerfile / apptainer.def).
-name: irpanel
+name: socioeconomics-new
 channels:
   - conda-forge
 dependencies:
-  - r-base>=4.2
+  # R
+  - r-base=4.4
+  - r-data.table>=1.16.0
   - r-targets
+  - r-yaml
+  - r-readxl
+  - r-countrycode
+  - r-testthat
+  # geospatial
   - r-terra
   - r-sf
   - r-exactextractr
-  - r-data.table
-  - r-yaml
+  # output formats
   - r-ncdf4
-  - r-readxl
-  - r-testthat
-  - r-renv
-  # Zarr benchmark support (read via Python bridge until an R reader is wired):
-  - python>=3.10
-  - zarr
+  # python
+  - python=3.11
   - xarray
-  - dvc
+  - zarr
+  - netcdf4
+  - pandas
+  - pip
+  - pip:
+      - pyam-iamc

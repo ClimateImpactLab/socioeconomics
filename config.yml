@@ -7,12 +7,13 @@ paths:
 inputs:
   pwt:            "pwt110.xlsx"
   ssp:            "1706548837040-ssp_basic_drivers_release_3.0_full.xlsx"
+  ssp_hist:       "ssp_wic2025_historical_reference_pop_cohorts.csv"
   wpp:            "WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx"
   kummu_gdp_rast: "Kummu/rast_adm2_gdp_perCapita_1990_2022.tif"
   kummu_pop_rast: "Kummu/r_pop_GHS_1990_2022_5arcmin.tif"
   kummu_adm0:     "Kummu/tabulated_adm0_gdp_perCapita.csv"
 deltas:
-  pop_control:   "UN_WPP"   # UN_WPP: scale to UN WPP | IIASA: to IIASA-WiC
-  force_gdp_sum: true        # true: regions sum to country GDP | false: off
+  pop_control:   "IIASA"    # UN_WPP: scale to UN WPP | IIASA: to IIASA-WiC
+  force_gdp_sum: false       # true: regions sum to country GDP | false: off
 tolerances:
   gdp_sum_pct: 0.1

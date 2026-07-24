@@ -8,7 +8,8 @@ library(targets)
 tar_source("R")
 
 tar_option_set(
-  packages = c("terra", "sf", "exactextractr", "data.table", "yaml", "ncdf4"),
+  packages = c("terra", "sf", "exactextractr", "data.table", "yaml", "ncdf4",
+               "readxl", "countrycode"),
   format   = "rds"
 )
 
