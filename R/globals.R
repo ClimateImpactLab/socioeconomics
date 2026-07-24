@@ -11,5 +11,7 @@ utils::globalVariables(c(
   "growth_ref", "growth_pwt", "ratio", "pct_diff", "flag",
   "share_0_4", "share_5_64", "share_65plus",
   "s0_4", "s5_64", "s65", "diff_0_4", "diff_5_64", "diff_65plus",
-  "pop_wpp", "pop_ssp"
+  "pop_wpp", "pop_ssp",
+  "gdppc_w", "gdppc_a", "zero_pop", "num", "pop_wtd_density",
+  "gdppc_natavg", "gdppc_adm0"
 ))

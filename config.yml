@@ -17,5 +17,8 @@ inputs:
 deltas:
   pop_control:   "IIASA"    # UN_WPP: scale to UN WPP | IIASA: to IIASA-WiC
   force_gdp_sum: false       # true: regions sum to country GDP | false: off
+aggregation:
+  pop_weight_year: 2020     # GHS-POP year used to weight the GDP-pc mean
+  validation_pct:  5        # report countries above this % vs Kummu ADM0
 tolerances:
   gdp_sum_pct: 0.1
