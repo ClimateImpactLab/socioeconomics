@@ -65,39 +65,57 @@ ssp_age_bins <- function(dt, era) {
   w[, .(era, scenario, iso3, year, age0to4, age5to64, age65plus)]
 }
 
+# Melt a wide SSP table (Model/Scenario/Region/Variable/Unit then year columns)
+# to long form keyed on iso3, dropping the copyright footer row if present.
+ssp_wide_to_long <- function(wide) {
+  id_cols <- c("model", "scenario", "region", "variable", "unit")
+  data.table::setnames(wide, names(wide)[1:5], id_cols)
+  wide <- wide[!startsWith(as.character(model), "©")]
+  year_cols <- grep("^[0-9]{4}$", names(wide), value = TRUE)
+  wide[, (year_cols) := lapply(.SD, as.numeric), .SDcols = year_cols]
+  long <- data.table::melt(wide, id.vars = id_cols, measure.vars = year_cols,
+                           variable.name = "year", value.name = "value")
+  long[, year := as.integer(as.character(year))]
+  ssp_regions_to_iso3(long[!is.na(value)])
+}
+
+# Read a wide SSP snapshot CSV. The files carry a byte-order mark that otherwise
+# leaves the real header as the first data row; recover it when that happens.
+read_ssp_wide_csv <- function(path) {
+  d <- data.table::fread(path)
+  if (!"Model" %in% names(d)) {
+    data.table::setnames(d, as.character(unlist(d[1])))
+    d <- d[-1]
+  }
+  d
+}
+
 #' Read national SSP GDP, population, and age cohorts, keyed on ISO3.
 #'
-#' @param config Parsed config.yml list.
+#' @param config Parsed config.yml list. options$ssp_source picks the input:
+#'   "snapshots" (the reference's SSP snapshot CSVs) or "xlsx" (release 3.0).
 #' @return list with three data.tables: gdppc (model, scenario, iso3, year,
 #'   gdppc in 2017 PPP USD), pop (era, scenario, iso3, year, pop in millions),
 #'   cohorts (era, scenario, iso3, year, age0to4, age5to64, age65plus in
 #'   millions). era is "historical" or "projection".
 read_ssp <- function(config) {
   src <- config$paths$source
-  id_cols <- c("model", "scenario", "region", "variable", "unit")
+  mode <- if (is.null(config$options$ssp_source)) "xlsx" else
+    config$options$ssp_source
 
-  # Projection file: wide xlsx, years in columns.
-  proj_wide <- data.table::as.data.table(
-    readxl::read_excel(file.path(src, config$inputs$ssp), sheet = "data")
-  )
-  data.table::setnames(
-    proj_wide,
-    c("Model", "Scenario", "Region", "Variable", "Unit"), id_cols
-  )
-  year_cols <- grep("^[0-9]{4}$", names(proj_wide), value = TRUE)
-  # Some year columns are all-NA and read as logical; coerce so melt keeps
-  # a single type.
-  proj_wide[, (year_cols) := lapply(.SD, as.numeric), .SDcols = year_cols]
-  proj <- data.table::melt(
-    proj_wide, id.vars = id_cols, measure.vars = year_cols,
-    variable.name = "year", value.name = "value"
-  )
-  proj[, year := as.integer(as.character(year))]
-  proj <- ssp_regions_to_iso3(proj[!is.na(value)])
-
-  # History file: long csv, IIASA-WiC POP 2025, scenario "Historical Reference".
-  hist <- data.table::fread(file.path(src, config$inputs$ssp_hist))
-  hist <- ssp_regions_to_iso3(hist[!is.na(value)])
+  if (mode == "snapshots") {
+    # Two snapshot CSVs: projections (2020-2100) and historical (1950-2020).
+    proj <- ssp_wide_to_long(
+      read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_proj)))
+    hist <- ssp_wide_to_long(
+      read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_hist)))
+  } else {
+    # Release 3.0: projections in the xlsx, history in a separate long csv.
+    proj <- ssp_wide_to_long(data.table::as.data.table(
+      readxl::read_excel(file.path(src, config$inputs$ssp), sheet = "data")))
+    hist <- ssp_regions_to_iso3(
+      data.table::fread(file.path(src, config$inputs$ssp_hist))[!is.na(value)])
+  }
 
   # GDP per capita. OECD gives it directly; IIASA gives total GDP only, so its
   # per capita is total GDP divided by the IIASA-WiC POP 2023 population from

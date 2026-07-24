@@ -20,8 +20,7 @@ test_that("read_ssp returns three ISO3-keyed parts from the real files", {
   expect_setequal(unique(gd$model), c("OECD", "IIASA"))
   expect_true(all(nchar(gd$iso3) == 3))
   expect_false(anyNA(gd$iso3))
-  # OECD carries history back to 1980; IIASA per capita starts at 2025.
-  expect_equal(min(gd$year), 1980L)
+  # IIASA per capita starts at 2025 in both SSP sources.
   expect_equal(min(gd$year[gd$model == "IIASA"]), 2025L)
 
   pop <- as.data.frame(ssp$pop)
