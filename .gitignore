@@ -43,3 +43,4 @@ data/output/
 *.sif
 *.sif
 rlibs/
+data/cache/
