@@ -74,6 +74,12 @@ control total instead of IIASA-WiC.
 
 - Downloads: https://population.un.org/wpp/downloads
 
+## Reference outputs
+
+`../ref_data` holds outputs from a previous run, kept apart from the raw inputs
+in `../source_data`. `ir_combined_SSP3_IIASA_v4.csv` there is the per-IR panel
+the comparisons in `R/validate.R` check against.
+
 ## Additional files on the RCC
 
 The IR shapefile and the benchmark panel are read from these paths (see

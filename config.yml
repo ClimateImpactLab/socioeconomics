@@ -1,5 +1,6 @@
 paths:
   source:    "../source_data"     # raw inputs, referenced not copied
+  reference: "../ref_data"        # reference outputs from a previous run
   cache:     "data/cache"
   output:    "data/output"
   ir_shapes: "/project/cil/gcp/regions/world-combo-201710/agglomerated-world-new.shp"
@@ -12,6 +13,7 @@ inputs:
   kummu_gdp_rast: "Kummu/rast_adm2_gdp_perCapita_1990_2022.tif"
   kummu_pop_rast: "Kummu/r_pop_GHS_1990_2022_5arcmin.tif"
   kummu_adm0:     "Kummu/tabulated_adm0_gdp_perCapita.csv"
+  reference:      "ir_combined_SSP3_IIASA_v4.csv"
 deltas:
   pop_control:   "IIASA"    # UN_WPP: scale to UN WPP | IIASA: to IIASA-WiC
   force_gdp_sum: false       # true: regions sum to country GDP | false: off

@@ -5,9 +5,16 @@
 #' Read Penn World Table 11.0 national GDP per capita (rgdpe / pop, 2021 PPP).
 #'
 #' @param config Parsed config.yml list.
-#' @return data.table(iso3, year, gdppc_pwt).
+#' @return data.table(iso3, year, gdppc). PWT already carries ISO3 codes.
 read_pwt <- function(config) {
-  stop("not implemented")
+  d <- data.table::as.data.table(
+    readxl::read_excel(file.path(config$paths$source, config$inputs$pwt),
+                       sheet = "Data")
+  )
+  out <- d[!is.na(rgdpe) & !is.na(pop) & pop > 0,
+           .(iso3 = countrycode, year = as.integer(year),
+             gdppc = rgdpe / pop)]
+  out[!is.na(iso3)][order(iso3, year)]
 }
 
 # Map SSP region names to ISO3, dropping the "World" and R5/R10 aggregates and
@@ -128,36 +135,109 @@ read_ssp <- function(config) {
   )
 }
 
-#' Read Kummu et al. (2025) GDP-pc raster, GHS-POP raster, and ADM0 table.
+#' Read Kummu et al. (2025) national GDP per capita and the raster paths.
 #'
 #' @param config Parsed config.yml list.
-#' @return list(gdp_rast, pop_rast, adm0).
+#' @return list with adm0 (data.table iso3, year, gdppc) and gdp_rast_path /
+#'   pop_rast_path (file paths; the rasters are not loaded here).
 read_kummu <- function(config) {
-  stop("not implemented")
+  src <- config$paths$source
+  wide <- data.table::fread(file.path(src, config$inputs$kummu_adm0))
+  year_cols <- grep("^[0-9]{4}$", names(wide), value = TRUE)
+  adm0 <- data.table::melt(wide, id.vars = "iso3", measure.vars = year_cols,
+                           variable.name = "year", value.name = "gdppc")
+  adm0[, year := as.integer(as.character(year))]
+  adm0 <- adm0[!is.na(iso3) & iso3 != "" & !is.na(gdppc), .(iso3, year, gdppc)]
+  list(
+    adm0          = adm0[order(iso3, year)],
+    gdp_rast_path = normalizePath(file.path(src, config$inputs$kummu_gdp_rast)),
+    pop_rast_path = normalizePath(file.path(src, config$inputs$kummu_pop_rast))
+  )
 }
 
-#' Read UN WPP 2024 national population used as the population control total.
+# Read one WPP sheet (Estimates or Medium variant). The data starts a few rows
+# below a header block, so the header row is found by its "ISO3 Alpha-code"
+# label rather than a fixed offset. Country rows are Type "Country/Area";
+# regional groupings and the World total are dropped. Population is the mid-year
+# (1 July) total, converted from thousands to millions.
+read_wpp_sheet <- function(path, sheet) {
+  raw <- data.table::as.data.table(
+    readxl::read_excel(path, sheet = sheet, col_names = FALSE,
+                       .name_repair = "minimal")
+  )
+  hdr <- which(vapply(
+    seq_len(nrow(raw)),
+    function(i) any(raw[i] == "ISO3 Alpha-code", na.rm = TRUE),
+    logical(1)
+  ))[1]
+  h <- as.character(unlist(raw[hdr]))
+  col <- function(label) which(h == label)[1]
+  body <- raw[(hdr + 1):.N]
+  # Rows below the country data (notes, blanks) do not coerce to number; they
+  # become NA here and are dropped by the filter below.
+  out <- suppressWarnings(data.table::data.table(
+    iso3 = as.character(body[[col("ISO3 Alpha-code")]]),
+    type = as.character(body[[col("Type")]]),
+    year = as.integer(body[[col("Year")]]),
+    pop  = as.numeric(
+      body[[col("Total Population, as of 1 July (thousands)")]]
+    ) / 1e3
+  ))
+  out[type == "Country/Area" & !is.na(iso3) & !is.na(year), .(iso3, year, pop)]
+}
+
+#' Read UN WPP 2024 national population totals, keyed on ISO3 (millions).
 #'
 #' @param config Parsed config.yml list.
-#' @return data.table(iso3, year, pop_wpp, ...).
+#' @return data.table(iso3, year, pop) over estimates and the medium variant.
 read_wpp <- function(config) {
-  stop("not implemented")
+  path <- file.path(config$paths$source, config$inputs$wpp)
+  both <- data.table::rbindlist(list(
+    read_wpp_sheet(path, "Estimates"),
+    read_wpp_sheet(path, "Medium variant")
+  ))
+  # Estimates end at 2023 and the medium variant begins at 2024; keep the
+  # estimate if any year appears in both.
+  data.table::setorder(both, iso3, year)
+  unique(both, by = c("iso3", "year"))
 }
 
-#' Read the impact-region polygons (~24,378 IRs), assigning WGS84 if unset.
+#' Read the impact-region polygons, assigning WGS84 if the CRS is missing.
 #'
 #' @param config Parsed config.yml list.
 #' @return sf polygons keyed on hierid.
 read_ir_shapes <- function(config) {
-  stop("not implemented")
+  shp <- sf::st_read(config$paths$ir_shapes, quiet = TRUE)
+  if (is.na(sf::st_crs(shp))) {
+    sf::st_crs(shp) <- 4326
+  }
+  shp <- sf::st_make_valid(shp)
+  message("read_ir_shapes: ", nrow(shp), " polygons")
+  shp
 }
 
-#' Read the benchmark panel for validation.
+#' Read the benchmark panel, converting the Zarr store to a cached CSV first.
 #'
 #' @param config Parsed config.yml list.
-#' @return benchmark handle / data.table.
+#' @return data.table(region, model, ssp, year, gdp, gdppc, pop).
 read_benchmark <- function(config) {
-  # Benchmark is a Zarr store (integration-econ-bc39.zarr), so it needs
-  # Zarr-capable reading (a Python bridge in a later phase).
-  stop("not implemented")
+  out <- file.path(config$paths$cache, "benchmark.csv.gz")
+  if (!file.exists(out)) {
+    # No dependable Zarr reader in R, so a Python helper writes the store to a
+    # cached CSV once. It needs a Python with xarray and zarr; override the
+    # executable with the PYTHON environment variable if needed.
+    if (!dir.exists(config$paths$cache)) {
+      dir.create(config$paths$cache, recursive = TRUE)
+    }
+    py <- Sys.getenv("PYTHON", unset = "python")
+    message("read_benchmark: converting Zarr store to ", out)
+    status <- system2(py, c(
+      shQuote(file.path("data", "benchmark_to_csv.py")),
+      shQuote(config$paths$benchmark), shQuote(out)
+    ))
+    if (status != 0 || !file.exists(out)) {
+      stop("benchmark conversion failed; need a Python with xarray and zarr")
+    }
+  }
+  data.table::fread(out)
 }
