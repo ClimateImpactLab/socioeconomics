@@ -90,24 +90,6 @@ sources:
           drivers 3.0 full") and save as
           1706548837040-ssp_basic_drivers_release_3.0_full.xlsx.
 
-  ssp_wic_historical:
-    description: >
-      IIASA-WiC historical population and age cohorts (by sex), scenario
-      "Historical Reference". Supplies the pre-2020 cohort history the release
-      3.0 xlsx lacks (which starts at 2020).
-    version: "IIASA-WiC POP 2025, Historical Reference scenario"
-    homepage: "https://data.ece.iiasa.ac.at/ssp"
-    license: "check source"
-    files:
-      - path: ssp_wic2025_historical_reference_pop_cohorts.csv
-        md5: b1d6f3a7efd59298e68814bf7450681d
-        bytes: 18435619
-        source: IIASA SSP database via pyam
-        fetch: script
-        # Reproduced by data/get_ssp_historical.py (pyam query), which writes
-        # the long CSV into the source dir; it was then renamed to this path.
-        script: data/get_ssp_historical.py
-
   un_wpp_2024:
     description: UN World Population Prospects 2024, demographic indicators.
     version: "2024 revision, medium variant"

@@ -1,16 +1,37 @@
-# Apptainer/Singularity definition for the CIL 2.0 pipeline (RCC midway3).
-# Bootstraps from the Docker image built by env/Dockerfile, so the container and
-# the Docker image stay in sync.
+# Apptainer definition for the CIL 2.0 (irpanel) pipeline on the RCC (midway3).
+# Bootstraps from micromamba and builds the version-locked conda environment, so
+# the R 4.4.3 stack (data.table, targets, terra/sf) matches the working conda
+# env exactly and reproduces the same panel. The previous rocker/geospatial:4.2.2
+# base gave R 4.2.2 and broke data.table/targets, so it is no longer used.
+#
+# Build on the cluster with fakeroot, from the repo root:
+#   apptainer build --fakeroot irpanel.sif env/apptainer.def
 Bootstrap: docker
-From: rocker/geospatial:4.2.2
+From: mambaorg/micromamba:2.0.5
+
+%files
+    env/environment-lock.yml /opt/environment-lock.yml
 
 %post
-    cd /opt
-    R -e "install.packages('renv', repos='https://cloud.r-project.org')"
+    # Build the env from the locked versions. Strip the absolute name and prefix
+    # so it installs into a fixed in-image prefix.
+    sed -e '/^name:/d' -e '/^prefix:/d' /opt/environment-lock.yml > /opt/env.yml
+    micromamba create -y -p /opt/env -f /opt/env.yml
+    micromamba clean -a -y
+
+%environment
+    # Put the env on PATH and point GDAL/PROJ at the env's data dirs, so terra
+    # and sf resolve proj.db without running the conda activation hooks.
+    export PATH=/opt/env/bin:$PATH
+    export GDAL_DATA=/opt/env/share/gdal
+    export PROJ_DATA=/opt/env/share/proj
+    export PROJ_LIB=/opt/env/share/proj
 
 %runscript
-    exec R -e "targets::tar_make()" "$@"
+    # Build the panel in a single process. callr_function = NULL keeps targets
+    # from spawning a worker process, which the RCC compute nodes do not allow.
+    exec Rscript -e "targets::tar_make(callr_function = NULL)" "$@"
 
 %labels
     Project CIL 2.0
-    Description "IR socioeconomic panel pipeline (CIL 2.0)"
+    Description "IR socioeconomic panel pipeline (irpanel)"

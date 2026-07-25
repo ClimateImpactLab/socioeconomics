@@ -7,10 +7,8 @@ paths:
   benchmark: "/project/cil/gcp/integration_replication/inputs/econ/raw/integration-econ-bc39.zarr"
 inputs:
   pwt:            "pwt110.xlsx"
-  ssp:            "1706548837040-ssp_basic_drivers_release_3.0_full.xlsx"
-  ssp_hist:       "ssp_wic2025_historical_reference_pop_cohorts.csv"
-  ssp_snap_proj:  "ssp_book_snapshots/ssp_snapshot_1773244388.csv"
-  ssp_snap_hist:  "ssp_book_snapshots/ssp_snapshot_1773341171.csv"
+  ssp_snap_proj:  "ssp_book_snapshots/ssp_snapshot_1773244388.csv"  # 3.1 proj
+  ssp_snap_hist:  "ssp_book_snapshots/ssp_snapshot_1773341171.csv"  # 3.1 hist
   wpp:            "WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx"
   kummu_gdp_rast: "Kummu/rast_adm2_gdp_perCapita_1990_2022.tif"
   kummu_pop_rast: "Kummu/r_pop_GHS_1990_2022_5arcmin.tif"
@@ -22,8 +20,6 @@ deltas:
 aggregation:
   pop_weight_year: 2020     # GHS-POP year used to weight the GDP-pc mean
   validation_pct:  5        # report countries above this % vs Kummu ADM0
-options:
-  ssp_source: "snapshots"   # snapshots (reproduce ref) | xlsx (release 3.0)
 run:
   scenario:  "SSP3"         # SSP scenario the pipeline builds
   gdp_model: "IIASA"        # GDP model: IIASA | OECD

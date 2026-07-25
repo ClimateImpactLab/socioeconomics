@@ -3,12 +3,11 @@
 # (find_repo_root, io_setup) lives in helper-setup.R.
 
 test_that("read_ssp returns three ISO3-keyed parts from the real files", {
-  skip_if_not(requireNamespace("readxl", quietly = TRUE))
   skip_if_not(requireNamespace("countrycode", quietly = TRUE))
   cfg <- io_setup()
   skip_if_not(
-    file.exists(file.path(cfg$paths$source, cfg$inputs$ssp)) &&
-      file.exists(file.path(cfg$paths$source, cfg$inputs$ssp_hist)),
+    file.exists(file.path(cfg$paths$source, cfg$inputs$ssp_snap_proj)) &&
+      file.exists(file.path(cfg$paths$source, cfg$inputs$ssp_snap_hist)),
     "SSP source files not present"
   )
 
@@ -20,7 +19,7 @@ test_that("read_ssp returns three ISO3-keyed parts from the real files", {
   expect_setequal(unique(gd$model), c("OECD", "IIASA"))
   expect_true(all(nchar(gd$iso3) == 3))
   expect_false(anyNA(gd$iso3))
-  # IIASA per capita starts at 2025 in both SSP sources.
+  # IIASA per capita starts at 2025 in the SSP snapshot.
   expect_equal(min(gd$year[gd$model == "IIASA"]), 2025L)
 
   pop <- as.data.frame(ssp$pop)

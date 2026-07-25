@@ -40,7 +40,7 @@ data/output/
 .dvc/cache
 .dvc/tmp
 .dvc/config.local
-*.sif
+
+# --- containers / build artifacts (Apptainer image and R libraries) ---
 *.sif
 rlibs/
-data/cache/

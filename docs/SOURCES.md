@@ -42,54 +42,36 @@ one file. It has 33 bands (1990-2022) and aligns with the GDP raster.
 - Input zip (has the GHS-POP raster): https://zenodo.org/records/13943886/files/code_input_data.zip?download=1
 - GHS-POP R2023A (JRC): https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php
 
-## IIASA SSP — two selectable sources
+## IIASA SSP basic drivers (release 3.1)
 
-`options.ssp_source` picks where the SSP national data comes from:
-`snapshots` (default) or `xlsx`. Both provide the three models the pipeline
-uses: OECD ENV-Growth 2023, IIASA GDP 2023, IIASA-WiC POP 2023.
+National GDP, population, and age cohorts from the SSP basic drivers, release
+3.1 (July 2024). This is the release the pipeline uses. Release 3.0 (January
+2024) shipped the IIASA GDP 2023 projections from the first review version by
+mistake, and release 3.1 corrected them to the second review version. (Release
+3.0.1, March 2024, only added historical population reference data and fixed
+unicode characters in some country names.)
 
-### SSP snapshots (default, `snapshots`)
+The 3.1 data was obtained by exporting it manually from the SSP Scenario
+Explorer (the direct Downloads page does not list this export, so it is exported
+through the explorer). The exported snapshot CSVs are kept in the Box folder
+below.
 
-Two CSV exports from the SSP Scenario Explorer, in
-`../source_data/ssp_book_snapshots`:
+TODO: verify the 3.1 data can be downloaded directly from the official SSP
+explorer (the release 3.1 full file) and reproduce from that instead of the Box
+snapshots.
 
-- `ssp_snapshot_1773244388.csv` — projections (GDP, population, age cohorts),
-  SSP2 and SSP3, 2020-2100.
-- `ssp_snapshot_1773341171.csv` — IIASA-WiC Historical Reference population and
-  age cohorts, 1950-2020.
+- Release notes: https://data.ece.iiasa.ac.at/ssp/#/about
+- Box snapshots: https://uchicago.app.box.com/folder/370257208440?s=fj67ryjmhfg22lgfx16qc9sska2a84v1
 
-These are the exact SSP inputs the reference panel was built from. Their
-Population and OECD GDP series match release 3.0 exactly; their IIASA GDP series
-is a later revision (release 3.0.1 or 3.1 — the snapshots carry no version
-marker; identify by checking IIASA GDP Japan 2030). A third file,
-`ssp_snapshot_1773161072.csv`, is an OECD-gdppc-only subset and is not used.
+## IIASA-WiC historical population and age cohorts
 
-### SSP release 3.0 (`xlsx`)
+Historical population and age cohorts (IIASA-WiC POP, "Historical Reference"),
+used to supply the pre-2020 history the projections do not cover. This currently
+comes from a snapshot CSV kept in the same Box folder.
 
-Release 3.0 "basic drivers full", January 2024, from the SSP Scenario Explorer,
-saved as `1706548837040-ssp_basic_drivers_release_3.0_full.xlsx`. Downloaded June
-2026 and checked by md5. Population and cohorts in this file start at 2020, so
-in this mode the pre-2020 history comes from the IIASA-WiC file below.
+TODO: verify this input can be downloaded manually from the official SSP source.
 
-- SSP Explorer: https://data.ece.iiasa.ac.at/ssp
-
-## IIASA-WiC historical population and age cohorts (xlsx mode)
-
-Used only in `xlsx` mode, to supply the pre-2020 history the release 3.0 file
-lacks. Historical population and age cohorts by sex (Population,
-Population|Male|Age X-Y, Population|Female|Age X-Y), scenario "Historical
-Reference", model IIASA-WiC POP 2025. Covers 1950-2025 in 5-year steps. Saved as
-`ssp_wic2025_historical_reference_pop_cohorts.csv`.
-
-Downloaded with `data/get_ssp_historical.py`, which pulls it from the IIASA SSP
-database through `pyam` and drops the education splits.
-
-This file is IIASA-WiC POP 2025; the projection cohorts (2020 on) come from
-IIASA-WiC POP 2023 in the release 3.0 file. The two are joined at the historical
-years.
-
-- SSP database: https://data.ece.iiasa.ac.at/ssp
-- pyam docs: https://pyam-iamc.readthedocs.io/
+- Box snapshot: https://uchicago.app.box.com/folder/370257208440?s=fj67ryjmhfg22lgfx16qc9sska2a84v1
 
 ## UN WPP 2024
 

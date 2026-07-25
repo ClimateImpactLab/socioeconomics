@@ -92,30 +92,19 @@ read_ssp_wide_csv <- function(path) {
 
 #' Read national SSP GDP, population, and age cohorts, keyed on ISO3.
 #'
-#' @param config Parsed config.yml list. options$ssp_source picks the input:
-#'   "snapshots" (the reference's SSP snapshot CSVs) or "xlsx" (release 3.0).
+#' @param config Parsed config.yml list. The SSP release 3.1 data comes from two
+#'   snapshot CSVs: projections (2020-2100) and history (1950-2020).
 #' @return list with three data.tables: gdppc (model, scenario, iso3, year,
 #'   gdppc in 2017 PPP USD), pop (era, scenario, iso3, year, pop in millions),
 #'   cohorts (era, scenario, iso3, year, age0to4, age5to64, age65plus in
 #'   millions). era is "historical" or "projection".
 read_ssp <- function(config) {
   src <- config$paths$source
-  mode <- if (is.null(config$options$ssp_source)) "xlsx" else
-    config$options$ssp_source
-
-  if (mode == "snapshots") {
-    # Two snapshot CSVs: projections (2020-2100) and historical (1950-2020).
-    proj <- ssp_wide_to_long(
-      read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_proj)))
-    hist <- ssp_wide_to_long(
-      read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_hist)))
-  } else {
-    # Release 3.0: projections in the xlsx, history in a separate long csv.
-    proj <- ssp_wide_to_long(data.table::as.data.table(
-      readxl::read_excel(file.path(src, config$inputs$ssp), sheet = "data")))
-    hist <- ssp_regions_to_iso3(
-      data.table::fread(file.path(src, config$inputs$ssp_hist))[!is.na(value)])
-  }
+  # Release 3.1 snapshots: projections (2020-2100) and history (1950-2020).
+  proj <- ssp_wide_to_long(
+    read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_proj)))
+  hist <- ssp_wide_to_long(
+    read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_hist)))
 
   # GDP per capita. OECD gives it directly; IIASA gives total GDP only, so its
   # per capita is total GDP divided by the IIASA-WiC POP 2023 population from

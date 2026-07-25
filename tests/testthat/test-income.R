@@ -11,7 +11,7 @@ test_that("build_income builds an IR gdppc panel over 1990-2100", {
 
   cache_csv <- file.path(cfg$paths$cache, "ir_gdppc_kummu.csv")
   skip_if_not(file.exists(cache_csv), "aggregation cache not present")
-  skip_if_not(file.exists(file.path(cfg$paths$source, cfg$inputs$ssp)),
+  skip_if_not(file.exists(file.path(cfg$paths$source, cfg$inputs$ssp_snap_proj)),
               "SSP input not present")
 
   inc <- as.data.frame(build_income(cfg, "SSP3", "IIASA"))

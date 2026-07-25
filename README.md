@@ -12,9 +12,8 @@ reference `ir_combined` files.
 
 - Penn World Table 11.0: national GDP per capita, the historical income level
   for the Kummu calibration.
-- IIASA SSP: national GDP growth (2024-2100) and population and age cohorts
-  (2020-2100). Two sources are selectable (see below): the book's SSP snapshots
-  or the release 3.0 xlsx.
+- IIASA SSP basic drivers, release 3.1: national GDP growth (2024-2100) and
+  population and age cohorts (2020-2100), currently from Box snapshot CSVs.
 - IIASA-WiC Historical Reference: population and age cohorts for 1981-2019.
 - Kummu et al. (2025), Zenodo record 16741980: gridded GDP per capita
   (1990-2022), used to downscale income to regions.
@@ -30,8 +29,6 @@ See `docs/SOURCES.md` for details and links.
 Set in `config.yml`, no code changes needed:
 
 - `run.scenario` / `run.gdp_model`: the SSP scenario and GDP model to build.
-- `options.ssp_source`: `snapshots` (the book's SSP snapshot CSVs) or `xlsx`
-  (release 3.0 full).
 - `deltas.pop_control`: scale population to `IIASA` (SSP) or `UN_WPP` totals.
   Only `IIASA` is implemented.
 - `deltas.force_gdp_sum`: require regional GDP to sum to national GDP. Off; the
@@ -52,7 +49,7 @@ _targets.R     the pipeline graph (steps and dependencies)
 R/             modules: io, aggregate_grid, income, population, cohorts,
                postprocess; stubs: checks, write_outputs, validate
 tests/         one test file per module
-data/          manifest, get_data, get_ssp_historical, benchmark_to_csv
+data/          manifest, get_data, benchmark_to_csv
 env/           conda / Docker / Apptainer definitions
 docs/          data sources and data dictionary
 viewer/        panel viewer
@@ -64,12 +61,45 @@ shapefile and the reference panel are read by absolute path (see `config.yml`).
 ## How to run
 
 ```r
-targets::tar_manifest()      # list the steps
-targets::tar_make()          # build and write the panel
+targets::tar_manifest()                    # list the steps
+targets::tar_make(callr_function = NULL)   # build and write the panel
 ```
 
 `Rscript data/get_data.R` downloads or verifies the raw inputs first. The
 aggregation step writes a cache under `data/cache` that the build steps read.
+
+Three notes for running on the RCC:
+
+- Run on a compute node, not the login node. The panel step is heavy enough to
+  be killed on the login node (see Memory below).
+- Use `tar_make(callr_function = NULL)`. This keeps `targets` in one process
+  instead of spawning a worker, which the compute nodes do not allow.
+- Call the environment's `Rscript` by its absolute path, for example
+  `/project/cil/home_dirs/rcc/envs/socioeconomics-new/bin/Rscript`. A `module
+  load` puts the system R (4.3.1) ahead on `PATH` and that build does not have
+  the pipeline's libraries.
+
+The container carries its own R and libraries, so inside it plain `Rscript`
+already resolves to the right one (see `env/`).
+
+## Memory
+
+The panel node is the heavy step. Its peak resident memory is about 8.2 GB
+(measured with `/usr/bin/time -v`, max resident set size 8,159,212 kB, wall
+time 4:10), running inside the Apptainer container on the cluster. The panel
+node dominates because it loads the 618 MB IR shapefile and validates its
+geometry, which expands to several GB in memory.
+
+Run it on a compute node with at least 12 GB of memory. Eight GB is below the
+observed peak and risks an out-of-memory kill.
+
+To re-measure:
+
+```sh
+/usr/bin/time -v \
+  apptainer exec --bind /project/cil irpanel.sif \
+  Rscript -e 'targets::tar_make(callr_function = NULL)'
+```
 
 ## Conventions
 
