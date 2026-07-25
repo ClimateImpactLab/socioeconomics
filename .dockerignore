@@ -1,0 +1,12 @@
+# Keep the build context small: the image copies the code, not the data or the
+# local caches. Raw inputs are bound in at run time, not baked into the image.
+.git
+data/
+_targets/
+rlibs/
+*.sif
+.Rproj.user/
+.Rhistory
+.RData
+__pycache__/
+.ipynb_checkpoints/

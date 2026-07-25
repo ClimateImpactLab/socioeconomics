@@ -60,6 +60,9 @@ TODO: verify the 3.1 data can be downloaded directly from the official SSP
 explorer (the release 3.1 full file) and reproduce from that instead of the Box
 snapshots.
 
+TODO: the Box folder is private; make it public so the snapshots are accessible
+without special permissions, and keep this link once it is public.
+
 - Release notes: https://data.ece.iiasa.ac.at/ssp/#/about
 - Box snapshots: https://uchicago.app.box.com/folder/370257208440?s=fj67ryjmhfg22lgfx16qc9sska2a84v1
 
@@ -95,3 +98,7 @@ The IR shapefile and the benchmark panel are read from these paths (see
 
 - `/project/cil/gcp/regions/world-combo-201710/agglomerated-world-new.shp`
 - `/project/cil/gcp/integration_replication/inputs/econ/raw/integration-econ-bc39.zarr`
+
+TODO: the raw inputs and reference outputs currently sit under a personal home
+dir (`../source_data`, `../ref_data`); move them to a shared location under
+/project/cil/gcp (or similar) and update config.yml and the docs once moved.
