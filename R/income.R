@@ -25,7 +25,6 @@ ssp_growth <- function(ssp_gdppc, gdp_model) {
   oecd_g <- merge(oecd[year >= 2024],
                   oecd[year == 2023, .(iso3, base = gdppc)], by = "iso3")
   oecd_g <- oecd_g[, .(iso3, year, growth = gdppc / base)]
-  if (gdp_model == "OECD") return(oecd_g)
 
   iiasa <- interp_annual(ssp_gdppc[model == "IIASA", .(iso3, year, gdppc)])
   from25 <- merge(iiasa[year > 2025],
@@ -38,7 +37,7 @@ ssp_growth <- function(ssp_gdppc, gdp_model) {
                    .(iso3, year, growth)]
   chained <- merge(from25[iso3 %in% with_oecd], g_o_25, by = "iso3")
   chained <- chained[, .(iso3, year, growth = g25 * gf)]
-  out <- rbind(bridge, chained)
+  iiasa_g <- rbind(bridge, chained)
 
   only <- setdiff(unique(iiasa$iso3), unique(oecd_g$iso3))
   if (length(only) > 0) {
@@ -51,9 +50,19 @@ ssp_growth <- function(ssp_gdppc, gdp_model) {
     g_only_25 <- early[year == 2025, .(iso3, g25 = growth)]
     late <- merge(from25[iso3 %in% only], g_only_25, by = "iso3")
     late <- late[, .(iso3, year, growth = g25 * gf)]
-    out <- rbind(out, early, late)
+    iiasa_g <- rbind(iiasa_g, early, late)
   }
-  out
+
+  # Cross-fill the missing model with the other (reference Step 3c): the IIASA
+  # panel uses OECD growth for OECD-only countries, and the OECD panel uses
+  # IIASA growth for IIASA-only countries.
+  oecd_iso <- unique(oecd_g$iso3)
+  iiasa_iso <- unique(iiasa_g$iso3)
+  if (gdp_model == "IIASA") {
+    rbind(iiasa_g, oecd_g[iso3 %in% setdiff(oecd_iso, iiasa_iso)])
+  } else {
+    rbind(oecd_g, iiasa_g[iso3 %in% setdiff(iiasa_iso, oecd_iso)])
+  }
 }
 
 # Replace Venezuela's 2012-2023 national level, where PWT's chained PPP breaks,
