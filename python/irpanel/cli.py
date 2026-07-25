@@ -13,11 +13,11 @@ import numpy as np
 import pandas as pd
 
 from . import (__version__, cohorts as cohorts_mod, income as income_mod, io,
-               population as population_mod)
+               population as population_mod, postprocess as postprocess_mod)
 from .compare import pct_diff_stats, report
 from .config import load_config
 
-STAGES = ("aggregate", "postprocess", "all")
+STAGES = ("aggregate", "all")
 
 
 def check_io(config):
@@ -45,7 +45,7 @@ def _write_output(config, result, name):
     out_dir = config["paths"]["output_py"]
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / name
-    result.to_csv(out, index=False)
+    result.to_csv(out, index=False, na_rep="NA")
     print(f"{len(result):,} rows -> {out}")
 
 
@@ -102,6 +102,16 @@ def run_cohorts(config):
         _validate(config, result, col, col)
 
 
+def run_postprocess(config):
+    """Assemble the full panel, write it, and validate every data column."""
+    scen = config["run"]["scenario"]
+    gdp_model = config["run"]["gdp_model"]
+    result = postprocess_mod.postprocess_panel(config, scen, gdp_model)
+    _write_output(config, result, f"ir_combined_{scen}_{gdp_model}.csv")
+    for col in postprocess_mod.PANEL_COLS[3:]:
+        _validate(config, result, col, col)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="irpanel", description="IR socioeconomic panel pipeline (Python)")
@@ -112,13 +122,16 @@ def main(argv=None):
     sub.add_parser("population",
                    help="build population and validate vs reference")
     sub.add_parser("cohorts", help="build cohorts and validate vs reference")
+    sub.add_parser("postprocess",
+                   help="assemble the panel and validate vs reference")
     for stage in STAGES:
         sub.add_parser(stage, help="not implemented yet")
     args = parser.parse_args(argv)
 
     config = load_config()
     runners = {"check-io": check_io, "income": run_income,
-               "population": run_population, "cohorts": run_cohorts}
+               "population": run_population, "cohorts": run_cohorts,
+               "postprocess": run_postprocess}
     if args.stage in runners:
         runners[args.stage](config)
     else:
