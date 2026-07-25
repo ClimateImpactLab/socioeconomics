@@ -18,5 +18,6 @@ utils::globalVariables(c(
   "growth", "gdppc_2023", "g", "base", "b25", "gf", "g25", "g30", "gann",
   "nat", "p22", "p23", "s22", "s23", "i.gval",
   "ghs_ir", "ghs_nat", "ssp_nat", "share",
-  "pop_total", "share_0_4", "share_5_64", "share_65plus", "knot"
+  "pop_total", "share_0_4", "share_5_64", "share_65plus", "knot",
+  "gser", "gsm", "area_km2", "pop_density"
 ))
