@@ -156,6 +156,8 @@ _targets.R     the pipeline graph (steps and dependencies)
 R/             modules: io, aggregate_grid, income, population, cohorts,
                postprocess; stubs: checks, write_outputs, validate
 tests/         one test file per module
+python/        Python implementation in progress (irpanel package + tests);
+               validates against the same reference, writes to data/output/py
 data/          manifest, get_data, benchmark_to_csv
 env/           conda spec, lock file, Dockerfile, Apptainer definition
 docs/          data sources and data dictionary

@@ -1,0 +1,21 @@
+# Python environment for the irpanel Python implementation (python/).
+# Human-readable spec; generate a lock file from the solved environment before
+# building containers, as on the R side.
+name: irpanel-py
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas
+  - geopandas
+  - pyogrio
+  - shapely>=2
+  - pyproj
+  - rasterio
+  # Same C++ zonal-statistics engine as R's exactextractr. weighted_mean with
+  # partial-pixel coverage verified in 0.3.0.
+  - exactextract>=0.3.0
+  - country_converter
+  - openpyxl
+  - pyyaml
+  - pytest
