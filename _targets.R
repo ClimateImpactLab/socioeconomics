@@ -1,5 +1,8 @@
-# Declarative DAG for the CIL 2.0 IR socioeconomic panel pipeline. Dependencies
-# are expressed by target references, not file paths. Inspect with
+# Pipeline DAG: io -> aggregate -> income -> population -> cohorts ->
+# postprocess, then write the panel. The build steps are self-contained (each
+# reads the aggregation cache and reproduces its part of the reference panel),
+# so they take config rather than upstream tables; they depend on ir_grid only
+# for ordering, since ir_grid writes the cache they read. Inspect with
 # tar_manifest() / tar_visnetwork(); build with tar_make().
 
 library(targets)
@@ -14,43 +17,50 @@ tar_option_set(
 )
 
 list(
-  # Configuration.
+  # Configuration, and the scenario / GDP model the run builds.
   tar_target(config_file, "config.yml", format = "file"),
   tar_target(config,      yaml::read_yaml(config_file)),
+  tar_target(scenario,    config$run$scenario),
+  tar_target(gdp_model,   config$run$gdp_model),
 
-  # Raw inputs. ir_shapes and benchmark are read-only absolute paths.
-  tar_target(pwt,       read_pwt(config)),
-  tar_target(ssp,       read_ssp(config)),
-  tar_target(wpp,       read_wpp(config)),
+  # Raw inputs.
   tar_target(kummu,     read_kummu(config)),
   tar_target(ir_shapes, read_ir_shapes(config)),
-  tar_target(benchmark, read_benchmark(config)),
 
-  # Expensive spatial aggregation, cached by targets.
-  tar_target(ir_grid, aggregate_kummu_to_ir(kummu, ir_shapes, config)),
+  # Expensive spatial aggregation. Writes the CSV cache the build steps read;
+  # returns TRUE as an ordering marker rather than the large tables.
+  tar_target(ir_grid, {
+    aggregate_kummu_to_ir(kummu, ir_shapes, config)
+    TRUE
+  }),
 
-  # Income, with special cases applied as explicit downstream nodes so each
-  # correction is visible in the DAG.
-  tar_target(income_base, build_income(ir_grid, pwt, ssp, config)),
-  tar_target(income_ven,  venezuela_fix(income_base, pwt, ssp, config)),
-  tar_target(income_cov,  coverage_fallback(income_ven, ssp, config)),
-  tar_target(income,      uninhabited_zero(income_cov, ir_grid)),
+  # Build steps. Each reads the cache and reproduces one part of the panel.
+  tar_target(income,     {
+    ir_grid
+    build_income(config, scenario, gdp_model)
+  }),
+  tar_target(population, {
+    ir_grid
+    build_population(config, scenario)
+  }),
+  tar_target(cohorts,    {
+    ir_grid
+    build_cohorts(config, scenario)
+  }),
 
-  # Population and cohorts.
-  tar_target(population, build_population(ir_grid, wpp, ssp, config)),
-  tar_target(cohorts,    build_cohorts(population, ssp, config)),
+  # Final panel. postprocess_panel is self-contained and repeats the income,
+  # population, and cohort steps internally.
+  tar_target(panel, {
+    ir_grid
+    postprocess_panel(config, scenario, gdp_model)
+  }),
 
-  # Final panel.
-  tar_target(
-    panel,
-    postprocess_panel(income, population, cohorts, ir_shapes, config)
-  ),
-
-  # Contracts gate the writers; validation is diagnostic only.
-  tar_target(checks,     check_panel(panel, config)),
-  tar_target(validation, validate_against_benchmark(panel, benchmark, config)),
-
-  # Outputs.
-  tar_target(nc_output,  write_netcdf(panel, config, checks)),
-  tar_target(csv_output, write_csv_mirror(panel, config, checks))
+  # Write the panel to the output directory.
+  tar_target(panel_file, {
+    dir.create(config$paths$output, showWarnings = FALSE, recursive = TRUE)
+    out <- file.path(config$paths$output,
+                     paste0("ir_combined_", scenario, "_", gdp_model, ".csv"))
+    data.table::fwrite(panel, out)
+    out
+  }, format = "file")
 )

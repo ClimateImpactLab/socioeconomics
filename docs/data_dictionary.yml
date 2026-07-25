@@ -50,17 +50,14 @@ variables:
     source: Derived from gdppc_raw.
     dims: [hierid, year, scenario, model]
   gdp:
-    description: >
-      Total GDP, gdppc * pop. IR values are scaled so each country-year sum
-      matches national GDP.
+    description: Total GDP, gdppc * pop.
     unit: constant 2005 USD PPP
     source: Derived from gdppc and pop.
     dims: [hierid, year, scenario, model]
   pop:
-    description: >
-      Total population. IR values are scaled to UN WPP national totals.
+    description: Total population.
     unit: persons
-    source: GHS-POP base-year distribution scaled to national control totals.
+    source: GHS-POP 2020 distribution scaled to SSP national totals.
     dims: [hierid, year, scenario]
   area_km2:
     description: Impact-region geodesic area (static).
