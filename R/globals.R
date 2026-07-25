@@ -16,5 +16,6 @@ utils::globalVariables(c(
   "gdppc_natavg", "gdppc_adm0",
   "kummu_ir", "kummu_nat", "pwt", "pop_base", "g_pwt", "g_ssp", "gval",
   "growth", "gdppc_2023", "g", "base", "b25", "gf", "g25", "g30", "gann",
-  "nat", "p22", "p23", "s22", "s23", "i.gval"
+  "nat", "p22", "p23", "s22", "s23", "i.gval",
+  "ghs_ir", "ghs_nat", "ssp_nat", "share"
 ))
