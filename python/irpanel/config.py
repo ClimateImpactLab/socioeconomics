@@ -29,7 +29,9 @@ def load_config(root=None):
 
     :param root: repo root; found automatically when omitted.
     :return: dict as in config.yml, with paths.* as absolute Path objects and
-        an added paths.output_py (data/output/py) for Python-side outputs.
+        added paths.output_py (data/output/py) and paths.cache_py
+        (data/cache/py) for Python-side outputs, so the R cache and outputs
+        stay intact.
     """
     root = Path(root) if root else find_repo_root()
     with open(root / "config.yml") as f:
@@ -39,4 +41,5 @@ def load_config(root=None):
         p = Path(val)
         paths[key] = p if p.is_absolute() else (root / p).resolve()
     paths["output_py"] = paths["output"] / "py"
+    paths["cache_py"] = paths["cache"] / "py"
     return config

@@ -256,7 +256,10 @@ def read_ir_shapes(config):
 
     Feature order matters: the aggregation writes extract results in polygon
     order. pyogrio reads shapefile features in file order, the same order
-    sf::st_read gives the R side.
+    sf::st_read gives the R side. Geometry cleaning uses GEOS make_valid;
+    the R side cleans through s2 (sf's st_make_valid for geographic
+    coordinates), and the two libraries resolve degenerate rings differently
+    on a documented set of impact regions — see docs/python-reproduction.md.
 
     :param config: parsed config dict.
     :return: GeoDataFrame keyed on hierid.

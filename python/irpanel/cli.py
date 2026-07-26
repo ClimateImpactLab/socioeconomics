@@ -7,17 +7,18 @@ data/output/py so nothing clobbers the R side.
 """
 
 import argparse
-import sys
 
 import numpy as np
 import pandas as pd
 
-from . import (__version__, cohorts as cohorts_mod, income as income_mod, io,
+from . import (__version__, aggregate as aggregate_mod,
+               cohorts as cohorts_mod, income as income_mod, io,
                population as population_mod, postprocess as postprocess_mod)
 from .compare import pct_diff_stats, report
 from .config import load_config
 
-STAGES = ("aggregate", "all")
+CACHE_FILES = ("ir_gdppc_kummu.csv", "ir_pop_ghs.csv",
+               "ir_pop_wtd_density.csv", "ir_kummu_validation.csv")
 
 
 def check_io(config):
@@ -112,6 +113,51 @@ def run_postprocess(config):
         _validate(config, result, col, col)
 
 
+def run_aggregate(config):
+    """Run the raster aggregation into the Python cache, then compare each
+    cache CSV against the R cache when it is present."""
+    kummu = io.read_kummu(config)
+    ir_shapes = io.read_ir_shapes(config)
+    aggregate_mod.aggregate_kummu_to_ir(kummu, ir_shapes, config)
+
+    r_cache = config["paths"]["cache"]
+    py_cache = config["paths"]["cache_py"]
+    if not all((r_cache / f).exists() for f in CACHE_FILES):
+        print("R cache not present, cache-to-cache comparison skipped")
+        return
+    print("\ncache-to-cache vs R:")
+    for fname in CACHE_FILES:
+        r = pd.read_csv(r_cache / fname)
+        py = pd.read_csv(py_cache / fname)
+        keys = [k for k in ("hierid", "iso3", "year") if k in r.columns]
+        m = py.merge(r, on=keys, suffixes=("_py", "_r"), how="outer",
+                     indicator=True)
+        unmatched = int((m["_merge"] != "both").sum())
+        vals = [c[:-3] for c in m.columns
+                if c.endswith("_py") and m[c].dtype.kind == "f"]
+        worst = 0.0
+        for col in vals:
+            a = m[f"{col}_py"].to_numpy(dtype=float)
+            b = m[f"{col}_r"].to_numpy(dtype=float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                pct = np.abs(a - b) / np.abs(b) * 100
+            pct[(b == 0) & (a == 0)] = 0.0
+            pct[np.isnan(a) & np.isnan(b)] = 0.0
+            worst = max(worst, np.nanmax(pct))
+        print(f"  {fname}: unmatched {unmatched}, max |%diff| {worst:.3g}")
+
+
+def run_all(config):
+    """End to end on the Python cache: aggregate (unless already present),
+    then the full chain reading the Python cache, validated per column."""
+    py_cache = config["paths"]["cache_py"]
+    if not all((py_cache / f).exists() for f in CACHE_FILES):
+        run_aggregate(config)
+    chain_config = {**config,
+                    "paths": {**config["paths"], "cache": py_cache}}
+    run_postprocess(chain_config)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="irpanel", description="IR socioeconomic panel pipeline (Python)")
@@ -124,18 +170,17 @@ def main(argv=None):
     sub.add_parser("cohorts", help="build cohorts and validate vs reference")
     sub.add_parser("postprocess",
                    help="assemble the panel and validate vs reference")
-    for stage in STAGES:
-        sub.add_parser(stage, help="not implemented yet")
+    sub.add_parser("aggregate",
+                   help="raster aggregation into the Python cache")
+    sub.add_parser("all", help="aggregate + full chain on the Python cache")
     args = parser.parse_args(argv)
 
     config = load_config()
     runners = {"check-io": check_io, "income": run_income,
                "population": run_population, "cohorts": run_cohorts,
-               "postprocess": run_postprocess}
-    if args.stage in runners:
-        runners[args.stage](config)
-    else:
-        sys.exit(f"stage '{args.stage}' is not implemented yet")
+               "postprocess": run_postprocess, "aggregate": run_aggregate,
+               "all": run_all}
+    runners[args.stage](config)
 
 
 if __name__ == "__main__":
