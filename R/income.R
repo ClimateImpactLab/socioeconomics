@@ -65,6 +65,30 @@ ssp_growth <- function(ssp_gdppc, gdp_model) {
   }
 }
 
+# Delta #2 (force_gdp_sum): rescale IR gdppc within each country-year so the
+# population-weighted mean — and therefore the sum of IR GDP over the panel
+# population — equals the SSP national gdppc (the level the book validates
+# against, deflated 2017 -> 2005). Applied to the SSP-growth era (2024-2100)
+# where the chosen model defines the national path; the PWT-anchored years
+# stay untouched. Countries without an SSP national level keep their
+# unconstrained values. Zero-population IRs scale with their country, which
+# leaves the sum unchanged and preserves relative income shapes.
+force_income_to_national <- function(income, config, scen, gdp_model,
+                                     ssp_gdppc) {
+  nat <- interp_annual(ssp_gdppc[model == gdp_model, .(iso3, year, gdppc)])
+  nat <- nat[year >= 2024, .(iso3, year, nat_gdppc = gdppc * KUMMU_TO_2005)]
+  pop <- build_population(config, scen)[, .(hierid, year, pop)]
+  x <- merge(income, pop, by = c("hierid", "year"))
+  wm <- x[!is.na(gdppc) & pop > 0,
+          .(wmean = sum(gdppc * pop) / sum(pop)), by = .(iso3, year)]
+  f <- merge(wm[wmean > 0], nat, by = c("iso3", "year"))
+  f <- f[, .(iso3, year, factor = nat_gdppc / wmean)]
+  income <- merge(income, f, by = c("iso3", "year"), all.x = TRUE)
+  income[!is.na(factor), gdppc := gdppc * factor]
+  income[, factor := NULL]
+  income[]
+}
+
 # Replace Venezuela's 2012-2023 national level, where PWT's chained PPP breaks,
 # with a log-linear path from PWT 2011 to the IIASA 2025 level, keeping the
 # Kummu subnational shares. Values in 2005 PPP.
@@ -185,11 +209,10 @@ build_income <- function(config, scen = "SSP3", gdp_model = "IIASA") {
 
   income <- rbind(baseline, proj)
 
-  # Delta #2 (force_gdp_sum) insertion point. In reproduction mode this is off;
-  # when enabled, rescale each country's IR gdppc here so sum_IR(gdppc * pop)
-  # matches national GDP within tolerances$gdp_sum_pct.
+  # Delta #2 (force_gdp_sum): off in reproduction mode.
   if (isTRUE(config$deltas$force_gdp_sum)) {
-    stop("force_gdp_sum is not implemented yet")
+    income <- force_income_to_national(income, config, scen, gdp_model,
+                                       ssp_gdppc)
   }
 
   income[, `:=`(scenario = scen, gdp_model = gdp_model)]
