@@ -1,9 +1,13 @@
 # Pipeline DAG: io -> aggregate -> income -> population -> cohorts ->
-# postprocess, then write the panel. The build steps are self-contained (each
-# reads the aggregation cache and reproduces its part of the reference panel),
-# so they take config rather than upstream tables; they depend on ir_grid only
-# for ordering, since ir_grid writes the cache they read. Inspect with
-# tar_manifest() / tar_visnetwork(); build with tar_make().
+# postprocess, then write one panel per scenario x GDP-model combination
+# (run$scenarios x run$gdp_models in config.yml; SSP2/SSP3 x OECD/IIASA).
+# The build steps are self-contained (each reads the aggregation cache and
+# rebuilds its part), so they take config rather than upstream tables; they
+# depend on ir_grid only for ordering, since ir_grid writes the cache they
+# read. The IR area is computed once and shared by all panels, so the
+# shapefile is read once per tar_make. For a quick single-combination run,
+# name the target: tar_make(names = "panel_file_SSP3_IIASA"). Inspect with
+# tar_manifest() / tar_visnetwork().
 
 library(targets)
 
@@ -16,12 +20,16 @@ tar_option_set(
   format   = "rds"
 )
 
-list(
-  # Configuration, and the scenario / GDP model the run builds.
+# The combination set, read at DAG-definition time to enumerate targets.
+combos <- expand.grid(
+  scen  = yaml::read_yaml("config.yml")$run$scenarios,
+  model = yaml::read_yaml("config.yml")$run$gdp_models,
+  stringsAsFactors = FALSE
+)
+
+shared <- list(
   tar_target(config_file, "config.yml", format = "file"),
   tar_target(config,      yaml::read_yaml(config_file)),
-  tar_target(scenario,    config$run$scenario),
-  tar_target(gdp_model,   config$run$gdp_model),
 
   # Raw inputs.
   tar_target(kummu,     read_kummu(config)),
@@ -34,33 +42,64 @@ list(
     TRUE
   }),
 
-  # Build steps. Each reads the cache and reproduces one part of the panel.
-  tar_target(income,     {
-    ir_grid
-    build_income(config, scenario, gdp_model)
-  }),
-  tar_target(population, {
-    ir_grid
-    build_population(config, scenario)
-  }),
-  tar_target(cohorts,    {
-    ir_grid
-    build_cohorts(config, scenario)
-  }),
-
-  # Final panel. postprocess_panel is self-contained and repeats the income,
-  # population, and cohort steps internally.
-  tar_target(panel, {
-    ir_grid
-    postprocess_panel(config, scenario, gdp_model)
-  }),
-
-  # Write the panel to the output directory.
-  tar_target(panel_file, {
-    dir.create(config$paths$output, showWarnings = FALSE, recursive = TRUE)
-    out <- file.path(config$paths$output,
-                     paste0("ir_combined_", scenario, "_", gdp_model, ".csv"))
-    data.table::fwrite(panel, out)
-    out
-  }, format = "file")
+  # Geodesic IR area, computed once and shared by every panel.
+  tar_target(ir_area, compute_ir_area(config))
 )
+
+# Per-scenario targets: population and cohorts do not depend on the GDP model.
+per_scenario <- unlist(lapply(unique(combos$scen), function(sc) {
+  list(
+    tar_target_raw(
+      paste0("population_", sc),
+      substitute({
+        ir_grid
+        build_population(config, sc)
+      }, list(sc = sc))
+    ),
+    tar_target_raw(
+      paste0("cohorts_", sc),
+      substitute({
+        ir_grid
+        build_cohorts(config, sc)
+      }, list(sc = sc))
+    )
+  )
+}), recursive = FALSE)
+
+# Per-combination targets: income, the panel, and its CSV.
+per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
+  sc  <- combos$scen[i]
+  gm  <- combos$model[i]
+  tag <- paste0(sc, "_", gm)
+  list(
+    tar_target_raw(
+      paste0("income_", tag),
+      substitute({
+        ir_grid
+        build_income(config, sc, gm)
+      }, list(sc = sc, gm = gm))
+    ),
+    tar_target_raw(
+      paste0("panel_", tag),
+      substitute({
+        ir_grid
+        postprocess_panel(config, sc, gm, area = ir_area)
+      }, list(sc = sc, gm = gm))
+    ),
+    tar_target_raw(
+      paste0("panel_file_", tag),
+      substitute({
+        dir.create(config$paths$output, showWarnings = FALSE,
+                   recursive = TRUE)
+        out <- file.path(config$paths$output,
+                         paste0("ir_combined_", sc, "_", gm, ".csv"))
+        data.table::fwrite(panel, out)
+        out
+      }, list(sc = sc, gm = gm,
+              panel = as.symbol(paste0("panel_", tag)))),
+      format = "file"
+    )
+  )
+}), recursive = FALSE)
+
+c(shared, per_scenario, per_combo)

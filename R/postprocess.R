@@ -37,10 +37,13 @@ compute_ir_area <- function(config) {
 #' @param config Parsed config.yml list.
 #' @param scen SSP scenario.
 #' @param gdp_model GDP model, "OECD" or "IIASA".
+#' @param area Optional precomputed compute_ir_area(config) result, so a
+#'   multi-combination run reads the shapefile once; computed here if NULL.
 #' @return data.table with the ir_combined data columns (hierid, iso3, year,
 #'   gdppc, gdppc_raw, gdppc_raw0, gdp, pop, area_km2, pop_density,
 #'   pop_wtd_density, pop0to4, pop5to64, pop65plus).
-postprocess_panel <- function(config, scen = "SSP3", gdp_model = "IIASA") {
+postprocess_panel <- function(config, scen = "SSP3", gdp_model = "IIASA",
+                              area = NULL) {
   # Raw income (1990-2100), extended with empty 1981-1989.
   raw <- build_income(config, scen, gdp_model)[
     , .(hierid, iso3, year, gdppc_raw = gdppc)]
@@ -66,7 +69,7 @@ postprocess_panel <- function(config, scen = "SSP3", gdp_model = "IIASA") {
   pop <- build_population(config, scen)[, .(hierid, iso3, year, pop)]
   coh <- build_cohorts(config, scen)[
     , .(hierid, year, pop0to4, pop5to64, pop65plus)]
-  area <- compute_ir_area(config)
+  if (is.null(area)) area <- compute_ir_area(config)
   pwd <- data.table::fread(
     file.path(config$paths$cache, "ir_pop_wtd_density.csv"))[
     year == config$aggregation$pop_weight_year, .(hierid, pop_wtd_density)]

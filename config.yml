@@ -21,7 +21,11 @@ aggregation:
   pop_weight_year: 2020     # GHS-POP year used to weight the GDP-pc mean
   validation_pct:  5        # report countries above this % vs Kummu ADM0
 run:
-  scenario:  "SSP3"         # SSP scenario the pipeline builds
+  scenario:  "SSP3"         # single-run default (quick runs, Python CLI)
   gdp_model: "IIASA"        # GDP model: IIASA | OECD
+  # Full set for tar_make(): one panel per scenario x model combination,
+  # matching the four CSVs the reproduction target produced.
+  scenarios:  ["SSP2", "SSP3"]
+  gdp_models: ["OECD", "IIASA"]
 tolerances:
   gdp_sum_pct: 0.1
