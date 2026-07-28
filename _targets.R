@@ -66,7 +66,9 @@ per_scenario <- unlist(lapply(unique(combos$scen), function(sc) {
   )
 }), recursive = FALSE)
 
-# Per-combination targets: income, the panel, and its CSV.
+# Per-combination targets: income, the panel, its checks, and its CSV. The
+# CSV depends on the checks, so nothing is written for a panel that failed
+# its contracts.
 per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
   sc  <- combos$scen[i]
   gm  <- combos$model[i]
@@ -87,8 +89,16 @@ per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
       }, list(sc = sc, gm = gm))
     ),
     tar_target_raw(
+      paste0("checks_", tag),
+      substitute(
+        check_panel(panel, config, sc, gm),
+        list(sc = sc, gm = gm, panel = as.symbol(paste0("panel_", tag)))
+      )
+    ),
+    tar_target_raw(
       paste0("panel_file_", tag),
       substitute({
+        checks
         dir.create(config$paths$output, showWarnings = FALSE,
                    recursive = TRUE)
         out <- file.path(config$paths$output,
@@ -96,22 +106,31 @@ per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
         data.table::fwrite(panel, out)
         out
       }, list(sc = sc, gm = gm,
-              panel = as.symbol(paste0("panel_", tag)))),
+              panel = as.symbol(paste0("panel_", tag)),
+              checks = as.symbol(paste0("checks_", tag)))),
       format = "file"
     )
   )
 }), recursive = FALSE)
 
-# The canonical Zarr store, assembled from every combination's CSV as the
-# final stage.
-file_syms <- lapply(
-  paste0("panel_file_", combos$scen, "_", combos$model), as.symbol
+# Cross-panel checks over all combinations, then the canonical Zarr store,
+# gated on them.
+tags <- paste0(combos$scen, "_", combos$model)
+panel_syms <- lapply(paste0("panel_", tags), as.symbol)
+names(panel_syms) <- tags
+cross <- tar_target_raw(
+  "checks_cross",
+  as.call(list(quote(check_cross_panel),
+               as.call(c(list(quote(list)), panel_syms))))
 )
+
+file_syms <- lapply(paste0("panel_file_", tags), as.symbol)
 zarr <- tar_target_raw(
   "zarr_store",
-  as.call(list(quote(write_zarr), quote(config),
-               as.call(c(list(quote(c)), file_syms)))),
+  as.call(list(quote(`{`), quote(checks_cross),
+               as.call(list(quote(write_zarr), quote(config),
+                            as.call(c(list(quote(c)), file_syms)))))),
   format = "file"
 )
 
-c(shared, per_scenario, per_combo, list(zarr))
+c(shared, per_scenario, per_combo, list(cross, zarr))
