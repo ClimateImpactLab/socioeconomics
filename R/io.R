@@ -223,6 +223,24 @@ read_ir_shapes <- function(config) {
   shp
 }
 
+#' Find the Python interpreter for the zarr helpers.
+#'
+#' Resolution order: the PYTHON environment variable, then python3, then
+#' python on the PATH. The environment spec (env/environment.yml) ships the
+#' interpreter with xarray and zarr, so inside the project environment the
+#' PATH lookup succeeds without any override.
+#'
+#' @return Path or name of the interpreter.
+resolve_python <- function() {
+  for (cand in c(Sys.getenv("PYTHON", unset = ""), "python3", "python")) {
+    if (nzchar(cand) && (nzchar(Sys.which(cand)) || file.exists(cand))) {
+      return(cand)
+    }
+  }
+  stop("no Python interpreter found; set the PYTHON environment variable ",
+       "or activate the project environment (env/environment.yml)")
+}
+
 #' Read the benchmark panel, converting the Zarr store to a cached CSV first.
 #'
 #' @param config Parsed config.yml list.
@@ -231,12 +249,11 @@ read_benchmark <- function(config) {
   out <- file.path(config$paths$cache, "benchmark.csv.gz")
   if (!file.exists(out)) {
     # No dependable Zarr reader in R, so a Python helper writes the store to a
-    # cached CSV once. It needs a Python with xarray and zarr; override the
-    # executable with the PYTHON environment variable if needed.
+    # cached CSV once. It needs a Python with xarray and zarr.
     if (!dir.exists(config$paths$cache)) {
       dir.create(config$paths$cache, recursive = TRUE)
     }
-    py <- Sys.getenv("PYTHON", unset = "python")
+    py <- resolve_python()
     message("read_benchmark: converting Zarr store to ", out)
     status <- system2(py, c(
       shQuote(file.path("data", "benchmark_to_csv.py")),

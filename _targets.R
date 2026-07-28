@@ -102,4 +102,16 @@ per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
   )
 }), recursive = FALSE)
 
-c(shared, per_scenario, per_combo)
+# The canonical Zarr store, assembled from every combination's CSV as the
+# final stage.
+file_syms <- lapply(
+  paste0("panel_file_", combos$scen, "_", combos$model), as.symbol
+)
+zarr <- tar_target_raw(
+  "zarr_store",
+  as.call(list(quote(write_zarr), quote(config),
+               as.call(c(list(quote(c)), file_syms)))),
+  format = "file"
+)
+
+c(shared, per_scenario, per_combo, list(zarr))

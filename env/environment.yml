@@ -19,7 +19,9 @@ dependencies:
   # python
   - python=3.11
   - xarray
-  - zarr
+  # zarr 3 defaults to the V3 store format; the canonical output must stay
+  # V2 to remain a drop-in for readers of the bc39 benchmark store.
+  - zarr>=2.18,<3
   - netcdf4
   - pandas
   - pip

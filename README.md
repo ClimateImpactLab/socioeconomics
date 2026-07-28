@@ -144,9 +144,9 @@ Set in `config.yml`, no code changes needed:
 
 The panel-building chain is implemented and reproduces the Climate Compensation
 project panel: io -> aggregate_kummu_to_ir -> build_income -> build_population
--> build_cohorts -> postprocess_panel. Later stages are stubs: `checks` (panel
-contracts), `write_outputs` (NetCDF/CSV writers), and
-`validate_against_benchmark`.
+-> build_cohorts -> postprocess_panel -> write_zarr (one Zarr store over all
+scenario x model combinations, mirroring the benchmark layout). Remaining
+stubs: `checks` (panel contracts) and `validate_against_benchmark`.
 
 ## Layout
 
@@ -154,7 +154,7 @@ contracts), `write_outputs` (NetCDF/CSV writers), and
 config.yml     paths, run settings, data versions
 _targets.R     the pipeline graph (steps and dependencies)
 R/             modules: io, aggregate_grid, income, population, cohorts,
-               postprocess; stubs: checks, write_outputs, validate
+               postprocess, write_outputs; stubs: checks, validate
 tests/         one test file per module
 python/        Python implementation (irpanel package + tests); validates
                against the same reference, writes to data/output/py and
