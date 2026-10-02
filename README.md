@@ -190,6 +190,13 @@ gate the writers) -> write_zarr (one Zarr store over all scenario x model
 combinations, mirroring the benchmark layout). Remaining stub:
 `validate_against_benchmark`.
 
+## Downstream projections
+
+The new-socioeconomics panel was regenerated to update the projections of
+the AMEL sectors (agriculture, mortality, energy, labor). `hpc-jobs/` holds
+the Slurm jobs used for that step, kept for reference and reproducibility;
+see `hpc-jobs/README.md` for run instructions and resource records.
+
 ## Layout
 
 ```
@@ -207,6 +214,7 @@ data/          manifest, get_data, benchmark_to_csv
 env/           conda spec, lock file, Dockerfile, Apptainer definition
 docs/          data sources, data dictionary, Python reproduction status
 viewer/        panel viewer
+hpc-jobs/      Slurm jobs for the AMEL projection runs (see its README)
 ```
 
 Raw inputs live under the source directory in the track configs and are

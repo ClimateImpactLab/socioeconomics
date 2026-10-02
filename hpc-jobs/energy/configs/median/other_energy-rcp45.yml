@@ -1,0 +1,21 @@
+# Energy median (other_energy, rcp45): point estimate over all rcp45 GCMs
+# for every SSP/IAM combination in the new socioeconomic panel (currently
+# SSP2 and SSP3 x low/high; no only-ssp/only-iam filter, so new
+# combinations are picked up once the engine knows them). Every
+# adaptation variant (do_farmers 'always'). Median mode appends its own
+# median/ level: results land under <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/.
+import: "../../model/hddcddspline_OTHERIND_other_energy.yml"
+mode: median
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/median/other_energy
+deltamethod: no
+do_farmers: 'always'
+do_historical: true
+only-rcp: rcp45
+econcovar:
+   class: mean
+   length: 15
+climcovar:
+   class: mean
+   length: 30
+loggdppc-delta: 9.087
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/

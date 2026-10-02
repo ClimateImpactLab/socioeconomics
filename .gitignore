@@ -50,3 +50,6 @@ data/output-wpp/
 rlibs/
 jobs/*.out
 jobs/*.err
+
+# --- HPC job logs ---
+hpc-jobs/logs/
