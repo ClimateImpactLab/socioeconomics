@@ -42,14 +42,21 @@ configs and logs relative to the submission directory.
 1. Check the panel exists:
    `ls /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/` should
    list `ir_combined_<scenario>_<model>.csv` files.
-2. Check the engine is on master:
-   `git -C /project/cil/home_dirs/scadavidsanchez/repos/impact-calculations branch --show-current`
-   (each job also echoes the branch and commit into its log).
+2. Clone the `impact-calculations` engine (if you have no clone yet), check
+   out `master`, and point `IMPACT_CALCULATIONS` at the clone. The jobs
+   refuse to start without it, and each job echoes the clone's branch and
+   commit into its log so every run records which code it used.
 3. Create the log directory if it does not exist (gitignored, so absent on a
    fresh clone): `mkdir -p logs/energy/<run type>`
-4. Submit:
+4. Submit, passing `IMPACT_CALCULATIONS` through to the job, either inline:
    ```bash
    cd hpc-jobs
+   sbatch --export=ALL,IMPACT_CALCULATIONS=/path/to/impact-calculations energy/jobs/quick_test.sbatch
+   ```
+   or exported once (sbatch forwards the environment by default):
+   ```bash
+   cd hpc-jobs
+   export IMPACT_CALCULATIONS=/path/to/impact-calculations
    sbatch energy/jobs/quick_test.sbatch   # 2 tasks, one per fuel
    sbatch energy/jobs/single.sbatch       # 16 tasks, fuel x realization
    sbatch energy/jobs/median.sbatch       # 120 tasks, 30 workers per config

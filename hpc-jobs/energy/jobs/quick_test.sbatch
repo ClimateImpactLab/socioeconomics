@@ -20,8 +20,13 @@ module load python
 source activate /project/cil/home_dirs/rcc/envs/impact-env/
 export IMPERICS_SHAREDDIR=/project/cil/gcp
 
-REPO=/project/cil/home_dirs/scadavidsanchez/repos/impact-calculations
-echo "impact-calculations: $(git -C $REPO rev-parse --abbrev-ref HEAD) @ $(git -C $REPO rev-parse --short HEAD)"
-cd $REPO
+if [ -z "$IMPACT_CALCULATIONS" ]; then
+    echo "ERROR: IMPACT_CALCULATIONS is not set. Point it at your impact-calculations clone:" >&2
+    echo "  sbatch --export=ALL,IMPACT_CALCULATIONS=/path/to/impact-calculations <this script>" >&2
+    exit 1
+fi
+REPO=$IMPACT_CALCULATIONS
+echo "impact-calculations: $(git -C "$REPO" rev-parse --abbrev-ref HEAD) @ $(git -C "$REPO" rev-parse --short HEAD)"
+cd "$REPO"
 echo "Running: $CONFIG"
 ./generate.sh "$CONFIG"
