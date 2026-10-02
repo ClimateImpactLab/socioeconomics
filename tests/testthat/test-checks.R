@@ -77,11 +77,23 @@ test_that("cross-panel checks catch model-dependent population", {
   a <- make_panel()
   b <- make_panel()
   expect_silent(suppressMessages(e$check_cross_panel(
-    list(SSP9_OECD = a, SSP9_IIASA = b))))
+    list(SSP9_OECD = a, SSP9_IIASA = b), cfg)))
   b2 <- copy(b)[1, pop := pop + 1]
   expect_error(suppressMessages(e$check_cross_panel(
-    list(SSP9_OECD = a, SSP9_IIASA = b2))), "pop_model_independent")
+    list(SSP9_OECD = a, SSP9_IIASA = b2), cfg)), "pop_model_independent")
   b3 <- copy(b)[1, area_km2 := area_km2 + 1]
   expect_error(suppressMessages(e$check_cross_panel(
-    list(SSP9_OECD = a, SSP9_IIASA = b3))), "area_identical")
+    list(SSP9_OECD = a, SSP9_IIASA = b3), cfg)), "area_identical")
+})
+
+test_that("cross-panel checks catch scenario-independent population", {
+  e <- check_env()
+  cfg2 <- modifyList(cfg, list(deltas = list(pop_handoff_year = 2019)))
+  a <- make_panel()  # years 2019:2021, so 2020-2021 are post-handoff
+  expect_error(suppressMessages(e$check_cross_panel(
+    list(SSP2_OECD = a, SSP3_OECD = make_panel()), cfg2)),
+    "pop_differs_across_scenarios")
+  b <- copy(a)[year > 2019, pop := pop + 1]
+  expect_silent(suppressMessages(e$check_cross_panel(
+    list(SSP2_OECD = a, SSP3_OECD = b), cfg2)))
 })

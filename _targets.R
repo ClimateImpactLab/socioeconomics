@@ -1,13 +1,19 @@
 # Pipeline DAG: io -> aggregate -> income -> population -> cohorts ->
 # postprocess, then write one panel per scenario x GDP-model combination
-# (run$scenarios x run$gdp_models in config.yml; SSP2/SSP3 x OECD/IIASA).
-# The build steps are self-contained (each reads the aggregation cache and
-# rebuilds its part), so they take config rather than upstream tables; they
-# depend on ir_grid only for ordering, since ir_grid writes the cache they
-# read. The IR area is computed once and shared by all panels, so the
-# shapefile is read once per tar_make. For a quick single-combination run,
-# name the target: tar_make(names = "panel_file_SSP3_IIASA"). Inspect with
-# tar_manifest() / tar_visnetwork().
+# (run$scenarios x run$gdp_models in the track config; SSP2/SSP3 x
+# OECD/IIASA). The build steps are self-contained (each reads the
+# aggregation cache and rebuilds its part), so they take config rather than
+# upstream tables; they depend on ir_grid only for ordering, since ir_grid
+# writes the cache they read. The IR area is computed once and shared by all
+# panels, so the shapefile is read once per tar_make. For a quick
+# single-combination run, name the target:
+# tar_make(names = "panel_file_SSP3_IIASA"). Inspect with tar_manifest() /
+# tar_visnetwork().
+#
+# Tracks: one config per track under configs/, one store per track under
+# stores/ (_targets.yaml). TAR_PROJECT selects both, e.g.
+# TAR_PROJECT=new-socioeconomics; the default is the book reproduction
+# (climate-compensation). IRPANEL_CONFIG overrides the config path.
 
 library(targets)
 
@@ -20,16 +26,30 @@ tar_option_set(
   format   = "rds"
 )
 
+# Track selection: TAR_PROJECT picks configs/<project>.yml to match the store
+# it selects in _targets.yaml; IRPANEL_CONFIG overrides the config path. Both
+# set and disagreeing is a configuration error, not a choice to make here.
+track <- Sys.getenv("TAR_PROJECT", "main")
+if (track == "main") track <- "climate-compensation"
+config_path <- Sys.getenv("IRPANEL_CONFIG")
+if (!nzchar(config_path)) {
+  config_path <- file.path("configs", paste0(track, ".yml"))
+} else if (nzchar(Sys.getenv("TAR_PROJECT")) &&
+           basename(config_path) != paste0(track, ".yml")) {
+  stop("IRPANEL_CONFIG (", config_path, ") contradicts TAR_PROJECT (",
+       Sys.getenv("TAR_PROJECT"), ")")
+}
+
 # The combination set, read at DAG-definition time to enumerate targets.
 combos <- expand.grid(
-  scen  = yaml::read_yaml("config.yml")$run$scenarios,
-  model = yaml::read_yaml("config.yml")$run$gdp_models,
+  scen  = yaml::read_yaml(config_path)$run$scenarios,
+  model = yaml::read_yaml(config_path)$run$gdp_models,
   stringsAsFactors = FALSE
 )
 
 shared <- list(
-  tar_target(config_file, "config.yml", format = "file"),
-  tar_target(config,      yaml::read_yaml(config_file)),
+  tar_target_raw("config_file", config_path, format = "file"),
+  tar_target(config, yaml::read_yaml(config_file)),
 
   # Raw inputs.
   tar_target(kummu,     read_kummu(config)),
@@ -121,7 +141,8 @@ names(panel_syms) <- tags
 cross <- tar_target_raw(
   "checks_cross",
   as.call(list(quote(check_cross_panel),
-               as.call(c(list(quote(list)), panel_syms))))
+               as.call(c(list(quote(list)), panel_syms)),
+               quote(config)))
 )
 
 file_syms <- lapply(paste0("panel_file_", tags), as.symbol)
@@ -133,4 +154,12 @@ zarr <- tar_target_raw(
   format = "file"
 )
 
-c(shared, per_scenario, per_combo, list(cross, zarr))
+# Provenance README in the output folder, rewritten whenever the panels are.
+readme <- tar_target_raw(
+  "output_readme",
+  as.call(list(quote(write_output_readme), quote(config), config_path,
+               as.call(c(list(quote(c)), file_syms)), quote(zarr_store))),
+  format = "file"
+)
+
+c(shared, per_scenario, per_combo, list(cross, zarr, readme))

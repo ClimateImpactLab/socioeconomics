@@ -1,0 +1,9 @@
+main:
+  store: stores/climate-compensation
+  script: _targets.R
+climate-compensation:
+  store: stores/climate-compensation
+  script: _targets.R
+new-socioeconomics:
+  store: stores/new-socioeconomics
+  script: _targets.R

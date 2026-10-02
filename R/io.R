@@ -1,6 +1,6 @@
 # Input readers: one function per raw source, each returning a tidy in-memory
-# object for the pipeline. Paths resolve from config (config.yml); ir_shapes and
-# benchmark are read-only absolute paths on the shared volume.
+# object for the pipeline. Paths resolve from the track config (configs/);
+# ir_shapes and benchmark are read-only absolute paths on the shared volume.
 
 #' Read Penn World Table 11.0 national GDP per capita (rgdpe / pop, 2021 PPP).
 #'

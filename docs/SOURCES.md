@@ -80,8 +80,18 @@ TODO: verify this input can be downloaded manually from the official SSP source.
 
 World Population Prospects 2024, demographic indicators, medium variant, from the
 UN Population Division. Downloaded June 2026 and checked by md5. Saved as
-`WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx`. This is the population
-control total instead of IIASA-WiC.
+`WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx`. With `pop_control:
+UN_WPP` these totals control national population through the handoff year
+(`deltas.pop_handoff_year`); after it the SSP scenario trajectory takes over,
+rebased to the WPP level at the handoff so there is no jump at the seam. The
+rebasing method (multiplicative, WPP(H) x SSP(t) / SSP(H)) is an open point for
+the team. The default handoff is 2023 rather than the 2020 in the team's
+decisions doc: WPP observed estimates run through 2023, and income is likewise
+observed (PWT-anchored) through 2023, so income and population hand off to SSP
+projections in the same year, 2024. Countries without SSP data stay on the WPP
+medium variant. This hybrid is new to the new-socioeconomics track — the
+legacy pipeline used SSP totals in every year and never scaled population to
+UN data.
 
 - Downloads: https://population.un.org/wpp/downloads
 
@@ -94,11 +104,13 @@ the pipeline reproduces.
 ## Additional files on the RCC
 
 The IR shapefile and the benchmark panel are read from these paths (see
-`config.yml`); they are not stored or versioned in this repo:
+the track configs under `configs/`); they are not stored or versioned in this
+repo:
 
 - `/project/cil/gcp/regions/world-combo-201710/agglomerated-world-new.shp`
 - `/project/cil/gcp/integration_replication/inputs/econ/raw/integration-econ-bc39.zarr`
 
 TODO: the raw inputs and reference outputs currently sit under a personal home
 dir (`../source_data`, `../ref_data`); move them to a shared location under
-/project/cil/gcp (or similar) and update config.yml and the docs once moved.
+/project/cil/gcp (or similar) and update the track configs and the docs once
+moved.

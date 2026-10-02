@@ -1,0 +1,34 @@
+paths:
+  source:    "../source_data"     # raw inputs, referenced not copied
+  reference: "../ref_data"        # reference outputs from a previous run
+  cache:     "data/cache"
+  output:    "/project/cil/gcp/outputs_newsocioeconomics/socioeconomics"
+  ir_shapes: "/project/cil/gcp/regions/world-combo-201710/agglomerated-world-new.shp"
+  benchmark: "/project/cil/gcp/integration_replication/inputs/econ/raw/integration-econ-bc39.zarr"
+inputs:
+  pwt:            "pwt110.xlsx"
+  ssp_snap_proj:  "ssp_book_snapshots/ssp_snapshot_1773244388.csv"  # 3.1 proj
+  ssp_snap_hist:  "ssp_book_snapshots/ssp_snapshot_1773341171.csv"  # 3.1 hist
+  wpp:            "WPP2024_GEN_F01_DEMOGRAPHIC_INDICATORS_COMPACT.xlsx"
+  kummu_gdp_rast: "Kummu/rast_adm2_gdp_perCapita_1990_2022.tif"
+  kummu_pop_rast: "Kummu/r_pop_GHS_1990_2022_5arcmin.tif"
+  kummu_adm0:     "Kummu/tabulated_adm0_gdp_perCapita.csv"
+  reference:      "ir_combined_SSP3_IIASA_v4.csv"
+deltas:
+  pop_control:   "UN_WPP"   # UN_WPP: scale to UN WPP | IIASA: to IIASA-WiC
+  pop_handoff_year: 2023    # UN_WPP only: last year the totals follow WPP;
+                            # later years follow the SSP scenario trajectory
+                            # rebased to the WPP level at this year
+  force_gdp_sum: true        # true: regions sum to country GDP | false: off
+aggregation:
+  pop_weight_year: 2020     # GHS-POP year used to weight the GDP-pc mean
+  validation_pct:  5        # report countries above this % vs Kummu ADM0
+run:
+  scenario:  "SSP3"         # single-run default (quick runs, Python CLI)
+  gdp_model: "IIASA"        # GDP model: IIASA | OECD
+  # Full set for tar_make(): one panel per scenario x model combination,
+  # matching the four CSVs the reproduction target produced.
+  scenarios:  ["SSP2", "SSP3"]
+  gdp_models: ["OECD", "IIASA"]
+tolerances:
+  gdp_sum_pct: 0.1

@@ -19,7 +19,7 @@ test_that("build_population builds an IR population panel over 1981-2100", {
   expect_true(all(pop$pop >= 0))
 })
 
-test_that("pop_control UN_WPP scales IRs to the UN WPP national totals", {
+test_that("pop_control UN_WPP follows WPP to the handoff, then rebased SSP", {
   skip_if_not(requireNamespace("readxl", quietly = TRUE))
   skip_if_not(requireNamespace("countrycode", quietly = TRUE))
   cfg <- io_setup()
@@ -30,24 +30,33 @@ test_that("pop_control UN_WPP scales IRs to the UN WPP national totals", {
               "aggregation cache not present")
 
   cfg$deltas$pop_control <- "UN_WPP"
+  cfg$deltas$pop_handoff_year <- 2023
   pop <- build_population(cfg, "SSP3")
   expect_equal(range(pop$year), c(1981L, 2100L))
 
-  # IR populations sum to the WPP national total (persons) where WPP covers
-  # the country.
+  # Through the handoff the IR sums match the WPP national totals.
   wpp <- read_wpp(cfg)
-  sums <- pop[, .(ir_sum = sum(pop)), by = .(iso3, year)]
-  chk <- merge(sums, wpp[, .(iso3, year, wpp_nat = pop * 1e6)],
+  s3 <- pop[, .(ir_sum = sum(pop)), by = .(iso3, year)]
+  chk <- merge(s3[year <= 2023], wpp[, .(iso3, year, wpp_nat = pop * 1e6)],
                by = c("iso3", "year"))
-  expect_gt(nrow(chk), 20000)
+  expect_gt(nrow(chk), 5000)
   expect_lt(max(abs(chk$ir_sum - chk$wpp_nat) / chk$wpp_nat), 1e-9)
 
-  # The toggle changes the projection: totals differ from the IIASA control.
-  cfg$deltas$pop_control <- "IIASA"
-  pop_iiasa <- build_population(cfg, "SSP3")
-  w <- pop[year == 2100, sum(pop)]
-  i <- pop_iiasa[year == 2100, sum(pop)]
-  expect_false(isTRUE(all.equal(w, i)))
+  # After the handoff the scenario matters: SSP2 equals SSP3 at the handoff
+  # and differs from it by 2100.
+  s2 <- build_population(cfg, "SSP2")[, .(ir_sum = sum(pop)),
+                                      by = .(iso3, year)]
+  expect_equal(s2[year == 2023][order(iso3), ir_sum],
+               s3[year == 2023][order(iso3), ir_sum])
+  expect_false(isTRUE(all.equal(s2[year == 2100, sum(ir_sum)],
+                                s3[year == 2100, sum(ir_sum)])))
+
+  # No jump at the seam: India's 2023 -> 2024 growth equals the SSP's.
+  ssp_ann <- pop_linear_annual(read_ssp(cfg)$pop[
+    era == "projection" & scenario == "SSP3", .(iso3, year, nat = pop)])
+  g_ssp <- ssp_ann[iso3 == "IND" & year %in% c(2023, 2024)][order(year), nat]
+  g_pan <- s3[iso3 == "IND" & year %in% c(2023, 2024)][order(year), ir_sum]
+  expect_lt(abs(g_pan[2] / g_pan[1] - g_ssp[2] / g_ssp[1]), 1e-9)
 })
 
 test_that("build_population rejects an unknown pop_control", {

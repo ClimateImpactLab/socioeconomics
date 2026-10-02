@@ -22,13 +22,15 @@ renv/staging/
 renv/sandbox/
 renv/python/
 
-# --- targets pipeline store ---
+# --- targets pipeline stores (one per track) ---
 _targets/
+stores/
 
 # --- data: raw inputs are referenced, never versioned in git ---
 data/source/
 data/cache/
 data/output/
+data/output-wpp/
 
 # raw data formats anywhere; data is tracked with DVC, not git
 *.tif

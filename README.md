@@ -2,28 +2,37 @@
 
 This pipeline builds a per-impact-region socioeconomic panel: income (GDP per
 capita), population, and age cohorts for the 24,378 impact regions, covering
-1981 to 2100. It reproduces the panel from the Climate Compensation project,
-matching `ir_combined_SSP3_IIASA_v4`. The panel is assembled by a chain of R
-modules orchestrated by `targets`.
+1981 to 2100. The panel is assembled by a chain of R modules orchestrated by
+`targets`, in two tracks, each with its own config under `configs/` and its
+own store under `stores/`:
+
+- climate-compensation (default): the book reproduction, matching the Climate
+  Compensation project's `ir_combined_SSP3_IIASA_v4`.
+- new-socioeconomics: the updated panel (UN WPP population control with an
+  SSP handoff, regional GDP forced to the national level).
 
 ## What it produces
 
-One CSV per scenario and GDP model, `ir_combined_<scenario>_<model>.csv`,
-written under `data/output`. Each row is one impact region and year, with these
+One CSV per scenario and GDP model, `ir_combined_<scenario>_<model>.csv`, plus
+a Zarr store and a provenance README.txt, written to the track's output folder
+(`paths.output` in the config: `data/output` for climate-compensation,
+`/project/cil/gcp/outputs_newsocioeconomics/socioeconomics` for
+new-socioeconomics). Each CSV row is one impact region and year, with these
 columns: hierid, iso3, year, gdppc, gdppc_raw, gdppc_raw0, gdp, pop, area_km2,
 pop_density, pop_wtd_density, pop0to4, pop5to64, pop65plus. Definitions are in
 `docs/data_dictionary.yml`.
 
 ## Inputs
 
-Raw inputs are referenced in place, not copied into the repo. `config.yml`
-points at a source directory (`../source_data` by default), `data/manifest.yml`
-records each file with its checksum, and `Rscript data/get_data.R` fetches or
-verifies them. `docs/SOURCES.md` has the full details.
+Raw inputs are referenced in place, not copied into the repo. The track
+configs point at a source directory (`../source_data` by default),
+`data/manifest.yml` records each file with its checksum, and
+`Rscript data/get_data.R` fetches or verifies them. `docs/SOURCES.md` has the
+full details.
 
 TODO: the raw inputs and reference outputs currently sit under a personal home
 dir; move them to a shared location under /project/cil/gcp (or similar) and
-update config.yml and the docs once moved.
+update the configs and the docs once moved.
 
 - Penn World Table 11.0: national GDP per capita, the historical income level
   for the Kummu calibration. https://www.rug.nl/ggdc/productivity/pwt/ (DOI
@@ -45,10 +54,11 @@ update config.yml and the docs once moved.
 - GHS-POP R2023A: gridded population (1990-2022), used for the regional
   population distribution.
   https://human-settlement.emergency.copernicus.eu/ghs_pop2023.php
-- UN WPP 2024: national population totals, used only when `pop_control` is set
-  to UN_WPP. https://population.un.org/wpp/downloads
+- UN WPP 2024: national population totals through the population handoff year,
+  used only when `pop_control` is set to UN_WPP.
+  https://population.un.org/wpp/downloads
 - Impact-region shapefile: the region boundaries, read from the shared data
-  volume. The path is set in `config.yml`; the file is not downloaded.
+  volume. The path is set in the track configs; the file is not downloaded.
 
 ## Build
 
@@ -80,14 +90,26 @@ All commands run from the project root.
 
 The pipeline runs `targets::tar_make(callr_function = NULL)`, which builds
 io -> aggregate_kummu_to_ir -> build_income -> build_population ->
-build_cohorts -> postprocess_panel and writes the panel to `data/output`. Run
-`Rscript data/get_data.R` first to fetch or verify the raw inputs.
+build_cohorts -> postprocess_panel and writes the panel to the track's output
+folder. Run `Rscript data/get_data.R` first to fetch or verify the raw inputs.
+
+The track is selected with the `TAR_PROJECT` environment variable, which picks
+both the config (`configs/<track>.yml`) and the store (`stores/<track>`,
+mapped in `_targets.yaml`), so the tracks never invalidate each other. Unset,
+it runs the book reproduction (climate-compensation). `IRPANEL_CONFIG` can
+point at an explicit config file instead; combined with a contradicting
+`TAR_PROJECT` it is an error.
 
 Directly with the conda environment (`<conda-env-prefix>` is the environment's
 install location):
 
 ```sh
+# book reproduction (default track)
 <conda-env-prefix>/bin/Rscript -e 'targets::tar_make(callr_function = NULL)'
+
+# new-socioeconomics track
+TAR_PROJECT=new-socioeconomics \
+  <conda-env-prefix>/bin/Rscript -e 'targets::tar_make(callr_function = NULL)'
 ```
 
 Inside the Apptainer container. Bind the data volume so the container sees the
@@ -95,8 +117,13 @@ inputs; `<data_root>` is the shared volume that holds the source data and the
 impact-region shapefile:
 
 ```sh
+# book reproduction (default track)
 apptainer exec --bind <data_root> irpanel.sif \
   Rscript -e 'targets::tar_make(callr_function = NULL)'
+
+# new-socioeconomics track
+apptainer exec --bind <data_root> --env TAR_PROJECT=new-socioeconomics \
+  irpanel.sif Rscript -e 'targets::tar_make(callr_function = NULL)'
 ```
 
 Three notes for running on the cluster:
@@ -132,13 +159,27 @@ To re-measure:
 
 ## Configurable choices
 
-Set in `config.yml`, no code changes needed:
+Set per track in `configs/<track>.yml`, no code changes needed:
 
 - `run.scenario` / `run.gdp_model`: the SSP scenario and GDP model to build.
-- `deltas.pop_control`: scale population to `IIASA` (SSP) or `UN_WPP` totals.
-  Only `IIASA` is implemented.
-- `deltas.force_gdp_sum`: require regional GDP to sum to national GDP. Off; the
-  constraint is a marked hook, not yet implemented.
+- `deltas.pop_control`: national population control totals. `IIASA` scales to
+  the SSP scenario totals in every year (the book reproduction). `UN_WPP`
+  scales to UN WPP 2024 through `deltas.pop_handoff_year`, then follows the
+  SSP scenario trajectory rebased to the WPP level at the handoff, so the
+  national path is continuous at the seam and scenarios diverge after it.
+  Countries the SSP does not cover stay on WPP in every year; countries WPP
+  does not cover keep the frozen-GHS fallback. The rebasing method
+  (multiplicative, WPP(H) x SSP(t) / SSP(H)) is an open point for the team.
+  This hybrid is new to the new-socioeconomics track: the legacy pipeline
+  used SSP totals in every year and never scaled population to UN data.
+- `deltas.pop_handoff_year`: the last year population follows UN WPP under
+  `UN_WPP`. The default is 2023, not the 2020 in the team's decisions doc:
+  WPP observed estimates run through 2023, and income is likewise observed
+  (PWT-anchored) through 2023, so income and population hand off to SSP
+  projections in the same year, 2024.
+- `deltas.force_gdp_sum`: rescale regional income so IR GDP sums to the
+  national SSP level from 2024 on. On for the new-socioeconomics track, off
+  for the book reproduction.
 
 ## Status
 
@@ -152,13 +193,15 @@ combinations, mirroring the benchmark layout). Remaining stub:
 ## Layout
 
 ```
-config.yml     paths, run settings, data versions
+configs/       one config per track: climate-compensation (book
+               reproduction, default), new-socioeconomics
 _targets.R     the pipeline graph (steps and dependencies)
+_targets.yaml  track -> store mapping (stores/<track>)
 R/             modules: io, aggregate_grid, income, population, cohorts,
                postprocess, checks, write_outputs; stub: validate
 tests/         one test file per module
 python/        Python implementation (irpanel package + tests); validates
-               against the same reference, writes to data/output/py and
+               against the same reference, writes to <output>/py and
                data/cache/py; known residual: docs/python-reproduction.md
 data/          manifest, get_data, benchmark_to_csv
 env/           conda spec, lock file, Dockerfile, Apptainer definition
@@ -166,9 +209,9 @@ docs/          data sources, data dictionary, Python reproduction status
 viewer/        panel viewer
 ```
 
-Raw inputs live under the source directory in `config.yml` and are referenced,
-not copied. The region shapefile and the reference panel are read from the
-shared data volume by the paths set in `config.yml`.
+Raw inputs live under the source directory in the track configs and are
+referenced, not copied. The region shapefile and the reference panel are read
+from the shared data volume by the paths set there.
 
 ## Conventions
 
