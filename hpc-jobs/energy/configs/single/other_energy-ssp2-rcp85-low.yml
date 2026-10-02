@@ -1,0 +1,22 @@
+# Energy single (other_energy): one realization (rcp85 / CCSM4 / low /
+# SSP2) against the new socioeconomic panel, with every adaptation
+# variant (do_farmers 'always'). Flat output layout (singledir '').
+import: "../hddcddspline_OTHERIND_other_energy.yml"
+mode: single
+singledir: ''
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/single/other_energy
+deltamethod: no
+do_farmers: 'always'
+do_historical: true
+only-rcp: rcp85
+only-models: [CCSM4]
+only-ssp: SSP2
+only-iam: low
+econcovar:
+   class: mean
+   length: 15
+climcovar:
+   class: mean
+   length: 30
+loggdppc-delta: 9.087
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/
