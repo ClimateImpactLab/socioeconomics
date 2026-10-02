@@ -211,9 +211,15 @@ read_wpp <- function(config) {
 
 #' Read the impact-region polygons, assigning WGS84 if the CRS is missing.
 #'
+#' Requires spherical geometry (s2): planar validation silently reassigns
+#' grid cells in the degenerate-geometry regions and breaks the area
+#' column, so refuse to run if s2 cannot be activated.
+#'
 #' @param config Parsed config.yml list.
 #' @return sf polygons keyed on hierid.
 read_ir_shapes <- function(config) {
+  sf::sf_use_s2(TRUE)
+  stopifnot("spherical geometry (s2) must be active" = sf::sf_use_s2())
   shp <- sf::st_read(config$paths$ir_shapes, quiet = TRUE)
   if (is.na(sf::st_crs(shp))) {
     sf::st_crs(shp) <- 4326

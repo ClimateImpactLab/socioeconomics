@@ -73,22 +73,33 @@ sources:
 
   ssp_v3:
     description: >
-      IIASA SSP scenario database, release 3.0 "basic drivers full". Provides the
-      three models the pipeline uses: OECD ENV-Growth 2023, IIASA GDP 2023, and
-      IIASA-WiC POP 2023.
-    version: "3.0 (January 2024)"
+      IIASA SSP scenario database, release 3.1 basic drivers, as two snapshot
+      CSV exports from the SSP Scenario Explorer: projections (2020-2100) and
+      history (1950-2020). Provides the three models the pipeline uses: OECD
+      ENV-Growth 2023, IIASA GDP 2023, and IIASA-WiC POP 2023.
+    version: "3.1"
     homepage: "https://data.ece.iiasa.ac.at/ssp"
     license: "check source (IIASA SSP data licence)"
     files:
-      - path: 1706548837040-ssp_basic_drivers_release_3.0_full.xlsx
-        md5: 28d1b6d7ab6c09dc563567831539ce17
-        bytes: 59431699
+      - path: ssp_book_snapshots/ssp_snapshot_1773244388.csv
+        md5: dad4e2c177038e8ca6bf8209e75ed231
+        bytes: 5670542
         fetch: manual
         # Exported by hand from the Scenario Explorer; no stable single-file URL.
         instructions: >
-          Download from https://data.ece.iiasa.ac.at/ssp (release 3.0, "basic
-          drivers 3.0 full") and save as
-          1706548837040-ssp_basic_drivers_release_3.0_full.xlsx.
+          Snapshot export from https://data.ece.iiasa.ac.at/ssp (release 3.1
+          basic drivers, projections 2020-2100), shared in the project Box
+          folder (see the README Inputs section); save as
+          ssp_book_snapshots/ssp_snapshot_1773244388.csv.
+      - path: ssp_book_snapshots/ssp_snapshot_1773341171.csv
+        md5: a17f3acbc278d896d1fde18900cf8e12
+        bytes: 2346509
+        fetch: manual
+        instructions: >
+          Snapshot export from https://data.ece.iiasa.ac.at/ssp (release 3.1
+          basic drivers, history 1950-2020), shared in the project Box folder
+          (see the README Inputs section); save as
+          ssp_book_snapshots/ssp_snapshot_1773341171.csv.
 
   un_wpp_2024:
     description: UN World Population Prospects 2024, demographic indicators.

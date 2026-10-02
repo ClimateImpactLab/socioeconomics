@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
-"""Compare the new-socioeconomics panel against the previous output-wpp run.
+"""Check the new-socioeconomics panel against the v4 book reference.
 
-Asserts, per scenario x model combination:
-  - identical rows through the population handoff year (2023)
-  - identical gdppc, gdppc_raw, gdppc_raw0 and area_km2 in every year
-  - population that differs after 2023 (the SSP trajectories took over)
+The previous baseline (the July output-wpp run) had broken geometry: it
+was built without spherical (s2) validation, which corrupted the area
+column everywhere and the grid-to-region assignment in the degenerate
+regions. The check that caught this is the one kept here: before the
+population handoff year (2023) the book and the new track share the same
+historical income and geometry, so the SSP3/IIASA panel is compared
+against ir_combined_SSP3_IIASA_v4 for income and area.
+
+Asserts:
+  - every v4 (region, year<=2023) row is present in the new output
+  - area_km2 matches v4 within rounding (AREA_TOL)
+  - gdppc matches v4 within the measured book-reproduction residual:
+    a stable ~1,000-region set differs (2.4% of rows, mean rel ~5e-4),
+    so the contract is a share-within-tolerance plus a mean bound
+  - gdppc_raw matches v4 on rows where both sides are non-NA (the NA
+    conventions differ by design in 1981-1989)
   - SSP2 and SSP3 national populations equal at 2023, different after
+    (internal consistency of the new output; no old baseline involved)
 
-Prints national population for selected countries and the world in 2050 and
-2100, old vs new. Standard library only. Exits nonzero on any failure.
-Override the new output location with the NEW_OUTPUT environment variable.
+Prints national population for selected countries and the world in 2050
+and 2100, v4 book vs new. Standard library only. Exits nonzero on any
+failure. Override locations with NEW_OUTPUT and V4_REF.
 """
 
 import csv
@@ -19,16 +32,27 @@ from multiprocessing import Pool
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-OLD = REPO / "data" / "output-wpp"
 NEW = Path(os.environ.get(
     "NEW_OUTPUT", "/project/cil/gcp/outputs_newsocioeconomics/socioeconomics"))
+V4 = Path(os.environ.get(
+    "V4_REF", REPO.parent / "ref_data" / "ir_combined_SSP3_IIASA_v4.csv"))
 H = 2023
 N_ROWS = 24378 * 120
-IDENTICAL = ("gdppc", "gdppc_raw", "gdppc_raw0", "area_km2")
+N_PRE = 24378 * (H - 1981 + 1)
 FOCUS = ("IND", "NGA", "USA", "CHN")
 NAT_YEARS = ("2023", "2024", "2050", "2100")
 TOL = 1e-9
+# Measured envelope of the book reproduction (see the geometry
+# investigation): area matches v4 to 5.8e-7; gdppc matches exactly in
+# 97.6% of pre-2023 rows with mean rel diff 5.0e-4; gdppc_raw matches in
+# 99.3% of rows where both sides are non-NA.
+AREA_TOL = 1e-6
+GDPPC_SHARE_TOL = 1e-6
+GDPPC_MIN_SHARE = 0.97
+GDPPC_MAX_MEAN = 1e-3
+RAW_MIN_SHARE = 0.99
 COMBOS = [(s, m) for s in ("SSP2", "SSP3") for m in ("IIASA", "OECD")]
+V4_COMBO = ("SSP3", "IIASA")
 
 
 def rel(a, b):
@@ -37,60 +61,70 @@ def rel(a, b):
 
 
 def compare(combo):
-    """Stream one old/new CSV pair; return per-combination statistics."""
+    """Stream one new CSV; the v4 combo also checks against the reference."""
     scen, model = combo
     name = "ir_combined_%s_%s.csv" % (scen, model)
-    s = {"combo": "%s_%s" % (scen, model), "rows": 0, "align_errors": 0,
-         "pre_max": 0.0, "ident_max": 0.0, "pop_diff_rows": 0,
-         "pop_diff_isos": set(), "pop_max": 0.0, "nat": {}}
-    with open(OLD / name) as fo, open(NEW / name) as fn:
-        ro, rn = csv.reader(fo), csv.reader(fn)
-        ho, hn = next(ro), next(rn)
-        if ho != hn:
-            s["align_errors"] += 1
-            return s
-        ix = {c: ho.index(c) for c in ho}
-        iy, ipop, iiso = ix["year"], ix["pop"], ix["iso3"]
-        ident_ix = [ix[c] for c in IDENTICAL]
-        for o, n in zip(ro, rn):
+    s = {"combo": "%s_%s" % (scen, model), "rows": 0, "nat": {}}
+
+    ref = None
+    if combo == V4_COMBO:
+        ref = {}
+        with open(V4) as fv:
+            rv = csv.reader(fv)
+            hv = next(rv)
+            ih, iy = hv.index("hierid"), hv.index("year")
+            ig, igr, ia, ipop = (hv.index("gdppc"), hv.index("gdppc_raw"),
+                                 hv.index("area_km2"), hv.index("pop"))
+            for v in rv:
+                y = v[iy]
+                if y in NAT_YEARS:
+                    po = float(v[ipop])
+                    for key in ((v[0][:3], y), ("GLOBAL", y)):
+                        s["nat"].setdefault(key, [0.0, 0.0])
+                        # v4 national pop goes in slot 0; new in slot 1
+                        s["nat"][key][0] += po
+                if int(y) <= H:
+                    ref[(v[ih], y)] = (v[ig], v[igr], v[ia])
+        s.update(v4_rows=0, v4_missing=0, area_max=0.0,
+                 g_within=0, g_total=0, g_relsum=0.0, g_max=0.0,
+                 raw_within=0, raw_total=0, raw_max=0.0)
+
+    with open(NEW / name) as fn:
+        rn = csv.reader(fn)
+        hn = next(rn)
+        ih, iy, iiso = hn.index("hierid"), hn.index("year"), hn.index("iso3")
+        ig, igr, ia, ipop = (hn.index("gdppc"), hn.index("gdppc_raw"),
+                             hn.index("area_km2"), hn.index("pop"))
+        for n in rn:
             s["rows"] += 1
-            if o[0] != n[0] or o[iy] != n[iy]:
-                s["align_errors"] += 1
-                if s["align_errors"] > 5:
-                    return s
-                continue
-            y = o[iy]
+            y = n[iy]
             if y in NAT_YEARS:
-                po, pn = float(o[ipop]), float(n[ipop])
+                pn = float(n[ipop])
                 for key in ((n[iiso], y), ("GLOBAL", y)):
-                    og, ng = s["nat"].get(key, (0.0, 0.0))
-                    s["nat"][key] = (og + po, ng + pn)
-            if int(y) <= H:
-                # Every column must match through the handoff.
-                for i, (a, b) in enumerate(zip(o, n)):
-                    if a == b:
-                        continue
-                    try:
-                        s["pre_max"] = max(s["pre_max"],
-                                           rel(float(a), float(b)))
-                    except ValueError:
-                        s["pre_max"] = max(s["pre_max"], 1.0)
-            else:
-                # Income and area never change; population is allowed to.
-                for i in ident_ix:
-                    a, b = o[i], n[i]
-                    if a == b:
-                        continue
-                    if a == "" or b == "":
-                        s["ident_max"] = max(s["ident_max"], 1.0)
-                        continue
-                    s["ident_max"] = max(s["ident_max"],
-                                         rel(float(a), float(b)))
-                r = rel(float(o[ipop]), float(n[ipop]))
-                if r > TOL:
-                    s["pop_diff_rows"] += 1
-                    s["pop_diff_isos"].add(n[iiso])
-                    s["pop_max"] = max(s["pop_max"], r)
+                    s["nat"].setdefault(key, [0.0, 0.0])
+                    s["nat"][key][1] += pn
+            if ref is None or int(y) > H:
+                continue
+            v = ref.pop((n[ih], y), None)
+            if v is None:
+                s["v4_missing"] += 1
+                continue
+            s["v4_rows"] += 1
+            s["area_max"] = max(s["area_max"], rel(float(n[ia]), float(v[2])))
+            r = rel(float(n[ig]), float(v[0])) if n[ig] and v[0] else 1.0
+            s["g_total"] += 1
+            s["g_relsum"] += r
+            s["g_max"] = max(s["g_max"], r)
+            if r <= GDPPC_SHARE_TOL:
+                s["g_within"] += 1
+            if n[igr] and v[1]:
+                r = rel(float(n[igr]), float(v[1]))
+                s["raw_total"] += 1
+                s["raw_max"] = max(s["raw_max"], r)
+                if r <= GDPPC_SHARE_TOL:
+                    s["raw_within"] += 1
+    if ref is not None:
+        s["v4_missing"] += len(ref)
     return s
 
 
@@ -106,19 +140,27 @@ def main():
         results = {s["combo"]: s for s in pool.map(compare, COMBOS)}
 
     for tag, s in sorted(results.items()):
-        print("== %s (%s rows)" % (tag, format(s["rows"], ",")))
-        verdict(s["align_errors"] == 0 and s["rows"] == N_ROWS,
-                "%s rows aligned between old and new" % tag)
-        verdict(s["pre_max"] <= TOL,
-                "%s identical through %d (max rel diff %.2e)"
-                % (tag, H, s["pre_max"]))
-        verdict(s["ident_max"] <= TOL,
-                "%s gdppc/raw/raw0/area identical in all years "
-                "(max rel diff %.2e)" % (tag, s["ident_max"]))
-        verdict(s["pop_diff_rows"] > 0,
-                "%s population changed after %d (%s rows, %d countries, "
-                "max rel diff %.2e)" % (tag, H, format(s["pop_diff_rows"], ","),
-                                        len(s["pop_diff_isos"]), s["pop_max"]))
+        verdict(s["rows"] == N_ROWS,
+                "%s has %s rows" % (tag, format(s["rows"], ",")))
+
+    # New output vs the v4 book reference, years <= handoff.
+    s = results["%s_%s" % V4_COMBO]
+    verdict(s["v4_rows"] == N_PRE and s["v4_missing"] == 0,
+            "v4 rows matched through %d (%s matched, %d unmatched)"
+            % (H, format(s["v4_rows"], ","), s["v4_missing"]))
+    verdict(s["area_max"] <= AREA_TOL,
+            "area_km2 matches v4 within %.0e (max rel diff %.2e)"
+            % (AREA_TOL, s["area_max"]))
+    share = s["g_within"] / s["g_total"] if s["g_total"] else 0.0
+    mean = s["g_relsum"] / s["g_total"] if s["g_total"] else 1.0
+    verdict(share >= GDPPC_MIN_SHARE and mean <= GDPPC_MAX_MEAN,
+            "gdppc matches v4 through %d (%.2f%% of rows within %.0e, "
+            "mean rel %.2e, max rel %.2e)"
+            % (H, 100 * share, GDPPC_SHARE_TOL, mean, s["g_max"]))
+    share = s["raw_within"] / s["raw_total"] if s["raw_total"] else 0.0
+    verdict(share >= RAW_MIN_SHARE,
+            "gdppc_raw matches v4 on non-NA rows (%.2f%% within %.0e, "
+            "max rel %.2e)" % (100 * share, GDPPC_SHARE_TOL, s["raw_max"]))
 
     # SSP2 vs SSP3 in the new output: equal at the handoff, apart after it.
     for model in ("IIASA", "OECD"):
@@ -137,20 +179,21 @@ def main():
                     "%s: SSP2 != SSP3 national pop at %s (%d countries "
                     "differ)" % (model, y, n_diff))
 
-    # Report: population in millions, old vs new (IIASA files; population is
-    # model-independent).
+    # Report: population in millions, v4 book (SSP3/IIASA) vs new (IIASA
+    # files; population is model-independent).
     print("\nPopulation, millions (IIASA files)")
     print("%-8s%-6s%12s%12s%12s%12s%12s" %
-          ("iso", "year", "old", "new SSP2", "new SSP3", "SSP2 vs old",
-           "SSP3 vs old"))
+          ("iso", "year", "v4 book", "new SSP2", "new SSP3", "SSP2 vs v4",
+           "SSP3 vs v4"))
+    v4nat = results["SSP3_IIASA"]["nat"]
     for iso in FOCUS + ("GLOBAL",):
         for y in ("2050", "2100"):
-            o2, n2 = results["SSP2_IIASA"]["nat"].get((iso, y), (0.0, 0.0))
-            _, n3 = results["SSP3_IIASA"]["nat"].get((iso, y), (0.0, 0.0))
+            o, n3 = v4nat.get((iso, y), (0.0, 0.0))
+            n2 = results["SSP2_IIASA"]["nat"].get((iso, y), (0.0, 0.0))[1]
             print("%-8s%-6s%12.1f%12.1f%12.1f%11.2f%%%11.2f%%" %
-                  (iso, y, o2 / 1e6, n2 / 1e6, n3 / 1e6,
-                   (n2 - o2) / o2 * 100 if o2 else float("nan"),
-                   (n3 - o2) / o2 * 100 if o2 else float("nan")))
+                  (iso, y, o / 1e6, n2 / 1e6, n3 / 1e6,
+                   (n2 - o) / o * 100 if o else float("nan"),
+                   (n3 - o) / o * 100 if o else float("nan")))
 
     print("\n%d failure(s)" % len(failures) if failures else "\nAll passed")
     sys.exit(1 if failures else 0)
