@@ -3,7 +3,7 @@
 #SBATCH --output=/project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/jobs/newsocio_%j.out
 #SBATCH --error=/project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/jobs/newsocio_%j.err
 #SBATCH --account=cil
-#SBATCH --partition=caslake
+#SBATCH --partition=cil
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G

@@ -48,3 +48,5 @@ data/output-wpp/
 # --- containers / build artifacts (Apptainer image and R libraries) ---
 *.sif
 rlibs/
+jobs/*.out
+jobs/*.err
