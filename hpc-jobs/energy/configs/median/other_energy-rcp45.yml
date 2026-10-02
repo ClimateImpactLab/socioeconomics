@@ -4,7 +4,7 @@
 # combinations are picked up once the engine knows them). Every
 # adaptation variant (do_farmers 'always'). Median mode appends its own
 # median/ level: results land under <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/.
-import: "../../model/hddcddspline_OTHERIND_other_energy.yml"
+import: "../hddcddspline_OTHERIND_other_energy.yml"
 mode: median
 outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/median/other_energy
 deltamethod: no
