@@ -45,15 +45,16 @@ update the configs and the docs once moved.
   https://doi.org/10.34894/FABVLR).
 - IIASA SSP basic drivers, release 3.1: national GDP growth (2024-2100),
   population, and age cohorts (2020-2100), plus IIASA-WiC Historical Reference
-  population and cohorts for the pre-2020 years. This data currently comes from
-  snapshot CSV exports from the SSP Scenario Explorer; the snapshots correspond
-  to release 3.1 of the SSP basic drivers and are shared in this Box folder:
+  population and cohorts for the pre-2020 years. SSP2 and SSP3 come from
+  snapshot CSVs exported from the SSP Scenario Explorer, shared in this Box
+  folder:
   https://uchicago.app.box.com/folder/370257208440?s=fj67ryjmhfg22lgfx16qc9sska2a84v1
-  The same data can also be downloaded directly from the official SSP Scenario
-  Explorer at https://data.ece.iiasa.ac.at/ssp. TODO: verify the release 3.1
-  full file can be downloaded directly from the official explorer and reproduce
-  from that instead of the Box snapshots. TODO: the Box folder is private; make
-  it public so the snapshots are accessible without special permissions.
+  SSP1, SSP4 and SSP5 come from the release 3.1 workbook archived in IIASA's
+  ssp2024_amended GitHub repository (the explorer now serves only a newer
+  release), extracted by `data/make_ssp145_snapshot.py` after it checks that
+  the workbook reproduces the SSP2 and SSP3 snapshot. Details in
+  `docs/SOURCES.md`. TODO: the Box folder is private; make it public so the
+  snapshots are accessible without special permissions.
 - Kummu et al. (2025), Zenodo record 16741980: gridded GDP per capita
   (1990-2022), used to downscale income to regions.
   https://zenodo.org/records/16741980

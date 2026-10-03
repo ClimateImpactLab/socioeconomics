@@ -68,8 +68,6 @@ country count printed so the report-only surface is explicit. National
 population and GDP sums must agree everywhere, residual countries included,
 since both implementations scale to the same national controls.
 
-Results: pending the first python_reproduction run.
-
 ## Data improvement (not part of the reproduction)
 
 TODO: for the new-socioeconomics data, which is not bound to reproduce v4,
