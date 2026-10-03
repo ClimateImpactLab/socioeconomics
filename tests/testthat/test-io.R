@@ -41,6 +41,28 @@ test_that("read_ssp returns three ISO3-keyed parts from the real files", {
   expect_lt(max(abs(m$pop - m$csum)), 1)
 })
 
+test_that("read_ssp stacks several projection snapshots and rejects overlap", {
+  skip_if_not(requireNamespace("countrycode", quietly = TRUE))
+  cfg <- io_setup()
+  skip_if_not(
+    file.exists(file.path(cfg$paths$source, cfg$inputs$ssp_snap_proj)) &&
+      file.exists(file.path(cfg$paths$source, cfg$inputs$ssp_snap_hist)),
+    "SSP source files not present"
+  )
+
+  # A one-element list behaves exactly like the plain string.
+  single <- read_ssp(cfg)
+  cfg_list <- cfg
+  cfg_list$inputs$ssp_snap_proj <- list(cfg$inputs$ssp_snap_proj)
+  expect_equal(read_ssp(cfg_list)$gdppc, single$gdppc)
+
+  # The same file twice duplicates every model/scenario row.
+  cfg_dup <- cfg
+  cfg_dup$inputs$ssp_snap_proj <- list(cfg$inputs$ssp_snap_proj,
+                                       cfg$inputs$ssp_snap_proj)
+  expect_error(read_ssp(cfg_dup), "duplicate")
+})
+
 test_that("read_pwt returns national gdppc keyed on iso3 and year", {
   skip_if_not(requireNamespace("readxl", quietly = TRUE))
   cfg <- io_setup()

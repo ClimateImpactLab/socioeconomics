@@ -126,6 +126,11 @@ apptainer exec --bind <data_root> --env TAR_PROJECT=new-socioeconomics \
   irpanel.sif Rscript -e 'targets::tar_make(callr_function = NULL)'
 ```
 
+On the RCC, the new-socioeconomics track runs as a Slurm job: submit
+`socioeconomics/jobs/build_panel.sbatch` from `hpc-jobs/` (instructions in
+`hpc-jobs/README.md`). The job builds the panel and then checks it against
+the climate compensation data.
+
 Three notes for running on the cluster:
 
 - Run on a compute node, not the login node. The panel step is heavy enough to

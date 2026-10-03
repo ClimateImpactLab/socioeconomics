@@ -94,6 +94,7 @@ write_output_readme <- function(config, config_path, panel_files, ...) {
     paste0("Pipeline: socioeconomics-update panel pipeline (irpanel), branch ",
            git$branch, ", commit ", git$commit),
     paste0("Config: ", config_path),
+    if (!is.null(config$version)) paste0("Version: ", config$version),
     "",
     "Main settings:",
     paste0("  - Population control: ", pop_line),

@@ -101,6 +101,33 @@ sources:
           (see the README Inputs section); save as
           ssp_book_snapshots/ssp_snapshot_1773341171.csv.
 
+  ssp_v31_workbook:
+    description: >
+      Release 3.1 "basic drivers full" workbook, archived in IIASA's
+      ssp2024_amended repository. Source of the SSP1/SSP4/SSP5 projection
+      snapshot (ssp_book_snapshots/ssp_snapshot_ssp145.csv), which
+      data/make_ssp145_snapshot.py derives from it after verifying the
+      workbook sha256 and reproducing every SSP2/SSP3 value of
+      ssp_snapshot_1773244388.csv.
+    version: "3.1 (July 2024)"
+    homepage: "https://github.com/iiasa/ssp2024_amended"
+    license: "check source (IIASA SSP data licence)"
+    files:
+      - path: ssp2024_amended/data/1721734326790-ssp_basic_drivers_release_3.1_full.xlsx
+        md5: 461ad1b8d39dec8d4fe14c0b88f134bf
+        sha256: 5feb3b0aead3d0e7dbf80def75b89cc0e138e4dc13f4517e776b903cea258546
+        bytes: 61556524
+        fetch: manual
+        instructions: >
+          Clone https://github.com/iiasa/ssp2024_amended into the source
+          directory, check out commit 325b83c, and verify the sha256.
+
+      - path: ssp_book_snapshots/ssp_snapshot_ssp145.csv
+        md5: cd18e610498b59b5b66602a34aaebbc0
+        bytes: 10116495
+        fetch: script
+        script: data/make_ssp145_snapshot.py
+
   un_wpp_2024:
     description: UN World Population Prospects 2024, demographic indicators.
     version: "2024 revision, medium variant"

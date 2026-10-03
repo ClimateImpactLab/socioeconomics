@@ -1,9 +1,10 @@
 # HPC jobs
 
 Slurm jobs used to regenerate the projections of the AMEL sectors
-(agriculture, mortality, energy, labor) with the new socioeconomic data.
-Kept for reference and reproducibility. Each sector has its own folder with
-the configs and jobs for its runs.
+(agriculture, mortality, energy, labor) with the new socioeconomic data,
+plus the job that builds that socioeconomic panel itself. Kept for reference
+and reproducibility. Each sector has its own folder with the configs and
+jobs for its runs.
 
 ## Layout
 
@@ -11,6 +12,8 @@ the configs and jobs for its runs.
 energy/
   configs/    model configs, plus quick_test/, single/, median/
   jobs/       quick_test.sbatch, single.sbatch, median.sbatch
+socioeconomics/
+  jobs/       build_panel.sbatch
 logs/         Slurm logs (not tracked by git)
 ```
 
@@ -20,8 +23,14 @@ Run types:
 - `median`: all GCMs and scenarios.
 - `montecarlo`: all GCMs and scenarios, with many draws of the response
   function. Only for sectors that have it (energy doesn't).
+- `build_panel` (socioeconomics): builds the new socioeconomic panel itself
+  (income, population, and age cohorts per impact region) — the input data
+  the sector runs read — and checks it against the climate compensation
+  data.
 
 Results go to `/project/cil/gcp/outputs_newsocioeconomics/<sector>/<run type>/`.
+The socioeconomic panel goes to
+`/project/cil/gcp/outputs_newsocioeconomics/socioeconomics/`.
 
 ## How to run
 
@@ -67,6 +76,15 @@ of Chicago Research Computing Center (RCC).
 
    Same for `single`, `median` and `montecarlo`, changing the run type in both
    lines.
+
+   For the socioeconomic panel, steps 1 and 2 are not needed (the job runs
+   this repository's own pipeline in the `irpanel.sif` container; the main
+   README explains how to build the image). From `hpc-jobs/`:
+
+```bash
+   mkdir -p logs/socioeconomics
+   sbatch socioeconomics/jobs/build_panel.sbatch
+```
 
 4. Check the job while it runs:
 

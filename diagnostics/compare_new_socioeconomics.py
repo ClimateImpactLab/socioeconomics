@@ -17,8 +17,8 @@ Asserts:
     so the contract is a share-within-tolerance plus a mean bound
   - gdppc_raw matches v4 on rows where both sides are non-NA (the NA
     conventions differ by design in 1981-1989)
-  - SSP2 and SSP3 national populations equal at 2023, different after
-    (internal consistency of the new output; no old baseline involved)
+  - every scenario pair has equal national populations at 2023 and
+    different ones after (internal consistency of the new output)
 
 Prints national population for selected countries and the world in 2050
 and 2100, v4 book vs new. Standard library only. Exits nonzero on any
@@ -28,6 +28,7 @@ failure. Override locations with NEW_OUTPUT and V4_REF.
 import csv
 import os
 import sys
+from itertools import combinations
 from multiprocessing import Pool
 from pathlib import Path
 
@@ -51,7 +52,8 @@ GDPPC_SHARE_TOL = 1e-6
 GDPPC_MIN_SHARE = 0.97
 GDPPC_MAX_MEAN = 1e-3
 RAW_MIN_SHARE = 0.99
-COMBOS = [(s, m) for s in ("SSP2", "SSP3") for m in ("IIASA", "OECD")]
+SCENARIOS = ("SSP1", "SSP2", "SSP3", "SSP4", "SSP5")
+COMBOS = [(s, m) for s in SCENARIOS for m in ("IIASA", "OECD")]
 V4_COMBO = ("SSP3", "IIASA")
 
 
@@ -162,38 +164,48 @@ def main():
             "gdppc_raw matches v4 on non-NA rows (%.2f%% within %.0e, "
             "max rel %.2e)" % (100 * share, GDPPC_SHARE_TOL, s["raw_max"]))
 
-    # SSP2 vs SSP3 in the new output: equal at the handoff, apart after it.
+    # Scenario pairs in the new output: equal at the handoff, apart after it.
     for model in ("IIASA", "OECD"):
-        a, b = results["SSP2_" + model]["nat"], results["SSP3_" + model]["nat"]
-        isos = {k[0] for k in a} - {"GLOBAL"}
-        eq_h = max(rel(a[(i, "2023")][1], b[(i, "2023")][1])
-                   for i in isos if (i, "2023") in a and (i, "2023") in b)
+        nat = {s: results[s + "_" + model]["nat"] for s in SCENARIOS}
+        isos = {k[0] for k in nat["SSP2"]} - {"GLOBAL"}
+        eq_h = 0.0
+        for s1, s2 in combinations(SCENARIOS, 2):
+            a, b = nat[s1], nat[s2]
+            eq_h = max([eq_h] + [rel(a[(i, "2023")][1], b[(i, "2023")][1])
+                                 for i in isos
+                                 if (i, "2023") in a and (i, "2023") in b])
         verdict(eq_h <= TOL,
-                "%s: SSP2 == SSP3 national pop at 2023 (max rel %.2e)"
+                "%s: every scenario pair equal at 2023 (max rel %.2e)"
                 % (model, eq_h))
         for y in ("2024", "2050", "2100"):
-            n_diff = sum(1 for i in isos
-                         if (i, y) in a and (i, y) in b
-                         and rel(a[(i, y)][1], b[(i, y)][1]) > TOL)
-            verdict(n_diff > 0,
-                    "%s: SSP2 != SSP3 national pop at %s (%d countries "
-                    "differ)" % (model, y, n_diff))
+            worst, worst_pair = None, None
+            for s1, s2 in combinations(SCENARIOS, 2):
+                a, b = nat[s1], nat[s2]
+                n_diff = sum(1 for i in isos
+                             if (i, y) in a and (i, y) in b
+                             and rel(a[(i, y)][1], b[(i, y)][1]) > TOL)
+                if worst is None or n_diff < worst:
+                    worst, worst_pair = n_diff, (s1, s2)
+            verdict(worst > 0,
+                    "%s: every scenario pair differs at %s (weakest pair "
+                    "%s-%s, %d countries)"
+                    % (model, y, worst_pair[0], worst_pair[1], worst))
 
-    # Report: population in millions, v4 book (SSP3/IIASA) vs new (IIASA
-    # files; population is model-independent).
+    # Report: population in millions, v4 climate compensation data
+    # (SSP3/IIASA) vs the new scenarios (IIASA files; population is
+    # model-independent).
     print("\nPopulation, millions (IIASA files)")
-    print("%-8s%-6s%12s%12s%12s%12s%12s" %
-          ("iso", "year", "v4 book", "new SSP2", "new SSP3", "SSP2 vs v4",
-           "SSP3 vs v4"))
+    hdr = ["iso", "year", "v4"] + ["new " + s for s in SCENARIOS]
+    print(("%-8s%-6s" + "%11s" * (len(SCENARIOS) + 1)) % tuple(hdr))
     v4nat = results["SSP3_IIASA"]["nat"]
     for iso in FOCUS + ("GLOBAL",):
         for y in ("2050", "2100"):
-            o, n3 = v4nat.get((iso, y), (0.0, 0.0))
-            n2 = results["SSP2_IIASA"]["nat"].get((iso, y), (0.0, 0.0))[1]
-            print("%-8s%-6s%12.1f%12.1f%12.1f%11.2f%%%11.2f%%" %
-                  (iso, y, o / 1e6, n2 / 1e6, n3 / 1e6,
-                   (n2 - o) / o * 100 if o else float("nan"),
-                   (n3 - o) / o * 100 if o else float("nan")))
+            o = v4nat.get((iso, y), (0.0, 0.0))[0]
+            vals = [results[s + "_IIASA"]["nat"].get((iso, y),
+                                                     (0.0, 0.0))[1]
+                    for s in SCENARIOS]
+            print(("%-8s%-6s" + "%11.1f" * (len(SCENARIOS) + 1))
+                  % tuple([iso, y, o / 1e6] + [v / 1e6 for v in vals]))
 
     print("\n%d failure(s)" % len(failures) if failures else "\nAll passed")
     sys.exit(1 if failures else 0)

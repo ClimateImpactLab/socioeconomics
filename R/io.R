@@ -92,8 +92,9 @@ read_ssp_wide_csv <- function(path) {
 
 #' Read national SSP GDP, population, and age cohorts, keyed on ISO3.
 #'
-#' @param config Parsed config.yml list. The SSP release 3.1 data comes from two
-#'   snapshot CSVs: projections (2020-2100) and history (1950-2020).
+#' @param config Parsed config.yml list. The SSP release 3.1 data comes from
+#'   snapshot CSVs: one or several projection files (2020-2100, together
+#'   covering the run's scenarios) and one history file (1950-2020).
 #' @return list with three data.tables: gdppc (model, scenario, iso3, year,
 #'   gdppc in 2017 PPP USD), pop (era, scenario, iso3, year, pop in millions),
 #'   cohorts (era, scenario, iso3, year, age0to4, age5to64, age65plus in
@@ -101,8 +102,17 @@ read_ssp_wide_csv <- function(path) {
 read_ssp <- function(config) {
   src <- config$paths$source
   # Release 3.1 snapshots: projections (2020-2100) and history (1950-2020).
-  proj <- ssp_wide_to_long(
-    read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_proj)))
+  # Several projection files stack; a repeated model/scenario row would
+  # silently double-count downstream, so overlap is an error.
+  proj_files <- unlist(config$inputs$ssp_snap_proj)
+  proj <- data.table::rbindlist(lapply(proj_files, function(f) {
+    ssp_wide_to_long(read_ssp_wide_csv(file.path(src, f)))
+  }))
+  if (anyDuplicated(proj, by = c("model", "scenario", "region", "variable",
+                                 "year")) > 0) {
+    stop("read_ssp: duplicate model/scenario rows across the projection ",
+         "snapshots (", paste(proj_files, collapse = ", "), ")")
+  }
   hist <- ssp_wide_to_long(
     read_ssp_wide_csv(file.path(src, config$inputs$ssp_snap_hist)))
 

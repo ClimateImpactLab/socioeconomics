@@ -1,7 +1,7 @@
 # Pipeline DAG: io -> aggregate -> income -> population -> cohorts ->
 # postprocess, then write one panel per scenario x GDP-model combination
-# (run$scenarios x run$gdp_models in the track config; SSP2/SSP3 x
-# OECD/IIASA). The build steps are self-contained (each reads the
+# (run$scenarios x run$gdp_models in the track config). The build steps
+# are self-contained (each reads the
 # aggregation cache and rebuilds its part), so they take config rather than
 # upstream tables; they depend on ir_grid only for ordering, since ir_grid
 # writes the cache they read. The IR area is computed once and shared by all

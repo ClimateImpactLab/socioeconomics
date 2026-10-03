@@ -121,8 +121,9 @@ def _read_snapshot(path):
 def read_ssp(config):
     """Read national SSP GDP, population, and age cohorts, keyed on ISO3.
 
-    The SSP release 3.1 data comes from two snapshot CSVs: projections
-    (2020-2100) and history (1950-2020).
+    The SSP release 3.1 data comes from snapshot CSVs: one or several
+    projection files (2020-2100, together covering the run's scenarios) and
+    one history file (1950-2020).
 
     :param config: parsed config dict.
     :return: dict with three DataFrames: gdppc (model, scenario, iso3, year,
@@ -131,8 +132,17 @@ def read_ssp(config):
         age65plus in millions). era is "historical" or "projection".
     """
     src = config["paths"]["source"]
-    proj = _wide_to_long(
-        _read_snapshot(src / config["inputs"]["ssp_snap_proj"]))
+    proj_files = config["inputs"]["ssp_snap_proj"]
+    if isinstance(proj_files, str):
+        proj_files = [proj_files]
+    proj = pd.concat(
+        [_wide_to_long(_read_snapshot(src / f)) for f in proj_files],
+        ignore_index=True)
+    # A repeated model/scenario row would silently double-count downstream.
+    dup = proj.duplicated(["model", "scenario", "region", "variable", "year"])
+    if dup.any():
+        raise ValueError("read_ssp: duplicate model/scenario rows across "
+                         "the projection snapshots")
     hist = _wide_to_long(
         _read_snapshot(src / config["inputs"]["ssp_snap_hist"]))
 
