@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>AMEL run status</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128202;</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>AMEL run status</h1>
+    <p class="subtitle">New socioeconomics projections. Run progress only, no results.</p>
+  </div>
+  <div class="topbar-right">
+    <div class="seg-toggle" id="view-toggle">
+      <button data-mode="files" class="active">Files</button>
+      <button data-mode="jobs">Jobs</button>
+    </div>
+    <span id="mock-badge" class="badge hidden">mock data</span>
+    <span id="last-scan" class="last-scan"></span>
+    <button id="theme-toggle" class="icon-btn" title="Switch light/dark">&#9681;</button>
+  </div>
+</header>
+
+<div id="stale-banner" class="stale-banner hidden"></div>
+
+<nav id="breadcrumb" class="breadcrumb" aria-label="Zoom level"></nav>
+
+<section id="summary" class="summary"></section>
+
+<section class="controls">
+  <div id="legend" class="legend"></div>
+  <div class="spacer"></div>
+  <button id="failed-toggle" class="toggle-btn">Show failed only</button>
+</section>
+
+<main id="board" class="board"></main>
+
+<section class="su-section">
+  <details id="su-panel">
+    <summary>Service units</summary>
+    <div id="su-content" class="su-content"></div>
+  </details>
+</section>
+
+<footer class="footer">
+  <p>Shows run status only. Data refreshes on a schedule; reload the page to pick up the latest scan.</p>
+</footer>
+
+<div id="tooltip" class="tooltip hidden" role="tooltip"></div>
+
+<aside id="drawer" class="drawer hidden" aria-label="Unit detail">
+  <div class="drawer-head">
+    <h2 id="drawer-title"></h2>
+    <button id="drawer-close" class="icon-btn" title="Close">&#10005;</button>
+  </div>
+  <div id="drawer-body"></div>
+</aside>
+
+<div id="error" class="error hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
