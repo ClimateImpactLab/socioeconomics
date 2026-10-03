@@ -44,44 +44,25 @@ one file. It has 33 bands (1990-2022) and aligns with the GDP raster.
 
 ## IIASA SSP basic drivers (release 3.1)
 
-National GDP, population, and age cohorts from the SSP basic drivers, release
-3.1 (July 2024). This is the release the pipeline uses. Release 3.0 (January
-2024) shipped the IIASA GDP 2023 projections from the first review version by
-mistake, and release 3.1 corrected them to the second review version. (Release
-3.0.1, March 2024, only added historical population reference data and fixed
-unicode characters in some country names.)
+National GDP, population, and age cohorts come from the SSP basic drivers,
+release 3.1 (July 2024). Release 3.1 corrected the IIASA GDP 2023
+projections that release 3.0 shipped by mistake.
 
-The 3.1 data was obtained by exporting it manually from the SSP Scenario
-Explorer (the direct Downloads page does not list this export, so it is exported
-through the explorer). The exported snapshot CSVs are kept in the Box folder
-below.
-
-SSP1, SSP4 and SSP5 (`ssp_snapshot_ssp145.csv`, new-socioeconomics track only)
-come from the release 3.1 full workbook archived in IIASA's GitHub repository
+The release 3.1 file is archived in IIASA's GitHub repository
 [iiasa/ssp2024_amended](https://github.com/iiasa/ssp2024_amended), commit
 `325b83c`, file `data/1721734326790-ssp_basic_drivers_release_3.1_full.xlsx`
-(sha256
-`5feb3b0aead3d0e7dbf80def75b89cc0e138e4dc13f4517e776b903cea258546`), cloned
-under `../source_data/ssp2024_amended/`. `data/make_ssp145_snapshot.py`
-derives the snapshot from it: the script verifies the workbook's sha256,
-requires every SSP2/SSP3 value of the pipeline's models and variables to be
-reproduced by the workbook (matched at float-serialization precision,
-~1e-12, with the 2024 export's mangled accented region names — C?te
-d'Ivoire, Cura?ao, R?union — normalized for the comparison), and only then
-writes SSP1/4/5 in the same wide format, variables, years and per-model
-region sets, keeping the workbook's proper region spellings. The live
-database could not be used instead: it now serves the newer release only and
-no longer carries the 2023-generation models under any run version.
+(sha256 `5feb3b0aead3d0e7dbf80def75b89cc0e138e4dc13f4517e776b903cea258546`).
+The SSP explorer no longer offers it for download, and its API only serves
+newer releases.
 
-TODO: verify the 3.1 data can be downloaded directly from the official SSP
-explorer (the release 3.1 full file) and reproduce from that instead of the Box
-snapshots.
+- SSP2 and SSP3 come from snapshot CSVs exported from the explorer, kept in
+  the Box folder below.
+- SSP1, SSP4 and SSP5 come from the archived file above, through
+  `data/make_ssp145_snapshot.py`, which first checks that the file
+  reproduces the SSP2 and SSP3 snapshot exactly.
 
-TODO: the Box folder is private; make it public so the snapshots are accessible
-without special permissions, and keep this link once it is public.
-
-- Release notes: https://data.ece.iiasa.ac.at/ssp/#/about
-- Box snapshots: https://uchicago.app.box.com/folder/370257208440?s=fj67ryjmhfg22lgfx16qc9sska2a84v1
+A later update of the IIASA GDP numbers (November 2024) in the same
+repository is not used, to keep all scenarios on release 3.1.
 
 ## IIASA-WiC historical population and age cohorts
 
