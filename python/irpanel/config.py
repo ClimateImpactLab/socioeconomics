@@ -40,9 +40,12 @@ def load_config(root=None):
 
     :param root: repo root; found automatically when omitted.
     :return: dict as in the config file, with paths.* as absolute Path
-        objects and added paths.output_py (output/py) and paths.cache_py
-        (cache/py) for Python-side outputs, so the R cache and outputs
-        stay intact.
+        objects and added paths.output_py and paths.cache_py (cache/py) for
+        Python-side outputs, so the R cache and outputs stay intact. For a
+        versioned track (a config with a top-level version), output_py is a
+        validation folder next to the published output
+        (<output parent>/validation/python/<version>), so the published
+        folder only ever holds the R panels; otherwise it is output/py.
     """
     root = Path(root) if root else find_repo_root()
     cfg_path = Path(os.environ.get("IRPANEL_CONFIG", DEFAULT_CONFIG))
@@ -54,6 +57,10 @@ def load_config(root=None):
     for key, val in paths.items():
         p = Path(val)
         paths[key] = p if p.is_absolute() else (root / p).resolve()
-    paths["output_py"] = paths["output"] / "py"
+    if config.get("version"):
+        paths["output_py"] = (paths["output"].parent / "validation"
+                              / "python" / str(config["version"]))
+    else:
+        paths["output_py"] = paths["output"] / "py"
     paths["cache_py"] = paths["cache"] / "py"
     return config

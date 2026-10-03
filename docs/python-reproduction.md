@@ -42,11 +42,39 @@ The cache-to-cache test (`python/tests/test_aggregate.py`) asserts float
 noise for all regions outside the list and that no region outside the
 list regresses.
 
-## CIL 2.0 improvement (not part of the reproduction)
+## New-socioeconomics track
 
-TODO: for the CIL 2.0 data, which is not bound to reproduce v4, repair the
-degenerate-geometry features once at the source (fix zero-area and
-self-crossing rings in the region shapefile, or publish a cleaned copy) so
-that every reader — R, Python, any GEOS or s2 version — assembles the same
-geometry and the aggregation agrees exactly. This is the proper fix; it
-changes the reproduction target, so it belongs to the CIL 2.0 phase.
+The port also implements the new-socioeconomics track: UN WPP population
+through `deltas.pop_handoff_year` with the SSP trajectory rebased to the
+WPP level after it (population.py mirrors R's `wpp_ssp_projection_controls`),
+regional income forced to the national SSP level from 2024 on (income.py
+mirrors `force_income_to_national`), and the five scenarios read from the
+two stacked projection snapshots. `python -m irpanel track` builds every
+`run.scenarios x run.gdp_models` panel on the Python aggregation cache and
+writes R-format CSVs to the validation folder next to the published output
+(`<output parent>/validation/python/<version>` — the published folder only
+ever holds the R panels).
+
+Validation runs through
+`hpc-jobs/socioeconomics/jobs/python_reproduction.sbatch`, which builds the
+panels and then runs `diagnostics/compare_python_r.py`: every column of
+every combination against the published R panels, split by the residual set
+above — tier A (regions outside the set in countries without any member) is
+a hard gate at the same 1e-2 % tolerance as the cache-to-cache test; tiers
+B (other regions of countries containing a set member, where the residual
+spills country-wide through the WPP rescale shares and the force_gdp_sum
+weighted mean) and C (the set itself) are report-only, with the tier B
+country count printed so the report-only surface is explicit. National
+population and GDP sums must agree everywhere, residual countries included,
+since both implementations scale to the same national controls.
+
+Results: pending the first python_reproduction run.
+
+## Data improvement (not part of the reproduction)
+
+TODO: for the new-socioeconomics data, which is not bound to reproduce v4,
+repair the degenerate-geometry features once at the source (fix zero-area
+and self-crossing rings in the region shapefile, or publish a cleaned copy)
+so that every reader — R, Python, any GEOS or s2 version — assembles the
+same geometry and the aggregation agrees exactly. This is the proper fix;
+it changes the reproduction target, so it belongs to the data-update phase.

@@ -99,3 +99,26 @@ def test_ir_shapes_order_matches_r(config):
     block = pd.read_csv(cache_csv, nrows=len(attrs))
     assert block["year"].nunique() == 1, "anchor block is not a single year"
     assert (attrs["hierid"].to_numpy() == block["hierid"].to_numpy()).all()
+
+
+def test_read_ssp_stacks_snapshots(config):
+    """Several projection snapshots stack; a repeated model/scenario row is
+    an error (mirrors the R test)."""
+    src = config["paths"]["source"]
+    skip_unless_exists(src / config["inputs"]["ssp_snap_proj"],
+                       "SSP snapshot")
+    single = io.read_ssp(config)
+
+    cfg_list = {**config,
+                "inputs": {**config["inputs"],
+                           "ssp_snap_proj":
+                               [config["inputs"]["ssp_snap_proj"]]}}
+    stacked = io.read_ssp(cfg_list)
+    pd.testing.assert_frame_equal(stacked["gdppc"], single["gdppc"])
+
+    cfg_dup = {**config,
+               "inputs": {**config["inputs"],
+                          "ssp_snap_proj":
+                              [config["inputs"]["ssp_snap_proj"]] * 2}}
+    with pytest.raises(ValueError, match="duplicate"):
+        io.read_ssp(cfg_dup)

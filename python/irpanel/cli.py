@@ -158,6 +158,27 @@ def run_all(config):
     run_postprocess(chain_config)
 
 
+def run_track(config):
+    """Build every run.scenarios x run.gdp_models combination on the Python
+    cache, writing R-format panels (empty-string NA, same columns) to
+    output_py for the track comparison. The reference validation is skipped:
+    the point of this mode is the comparison against the R panels."""
+    py_cache = config["paths"]["cache_py"]
+    if not all((py_cache / f).exists() for f in CACHE_FILES):
+        run_aggregate(config)
+    chain = {**config, "paths": {**config["paths"], "cache": py_cache}}
+    scens = config["run"].get("scenarios") or [config["run"]["scenario"]]
+    models = config["run"].get("gdp_models") or [config["run"]["gdp_model"]]
+    out_dir = config["paths"]["output_py"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for scen in scens:
+        for gm in models:
+            result = postprocess_mod.postprocess_panel(chain, scen, gm)
+            out = out_dir / f"ir_combined_{scen}_{gm}.csv"
+            result.to_csv(out, index=False, na_rep="")
+            print(f"{scen}/{gm}: {len(result):,} rows -> {out}", flush=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="irpanel", description="IR socioeconomic panel pipeline (Python)")
@@ -173,13 +194,16 @@ def main(argv=None):
     sub.add_parser("aggregate",
                    help="raster aggregation into the Python cache")
     sub.add_parser("all", help="aggregate + full chain on the Python cache")
+    sub.add_parser("track",
+                   help="all run.scenarios x run.gdp_models panels on the "
+                        "Python cache, written R-format for comparison")
     args = parser.parse_args(argv)
 
     config = load_config()
     runners = {"check-io": check_io, "income": run_income,
                "population": run_population, "cohorts": run_cohorts,
                "postprocess": run_postprocess, "aggregate": run_aggregate,
-               "all": run_all}
+               "all": run_all, "track": run_track}
     runners[args.stage](config)
 
 

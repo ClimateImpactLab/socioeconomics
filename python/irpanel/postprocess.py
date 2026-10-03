@@ -53,21 +53,30 @@ def bartlett_smooth(x, window=13):
     return out[0] if one_d else out
 
 
+_AREA_CACHE = {}
+
+
 def compute_ir_area(config):
     """Geodesic IR area in km2 from the shapefile.
 
     Computed on a sphere of radius 6,371,010 m, matching sf::st_area with its
     s2 default (which is what the reference panel carries); the WGS84
     ellipsoid gives areas about 0.4 percent larger and does not match.
+    Cached per shapefile path, so a multi-combination run reads and
+    validates the shapefile once.
 
     :param config: parsed config dict.
     :return: DataFrame(hierid, area_km2).
     """
-    shp = read_ir_shapes(config)
-    geod = pyproj.Geod(a=6_371_010, f=0)
-    areas = np.array([abs(geod.geometry_area_perimeter(geom)[0])
-                      for geom in shp.geometry])
-    return pd.DataFrame({"hierid": shp["hierid"], "area_km2": areas / 1e6})
+    key = str(config["paths"]["ir_shapes"])
+    if key not in _AREA_CACHE:
+        shp = read_ir_shapes(config)
+        geod = pyproj.Geod(a=6_371_010, f=0)
+        areas = np.array([abs(geod.geometry_area_perimeter(geom)[0])
+                          for geom in shp.geometry])
+        _AREA_CACHE[key] = pd.DataFrame(
+            {"hierid": shp["hierid"], "area_km2": areas / 1e6})
+    return _AREA_CACHE[key].copy()
 
 
 def postprocess_panel(config, scen="SSP3", gdp_model="IIASA"):

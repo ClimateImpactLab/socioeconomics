@@ -159,3 +159,42 @@ def test_against_reference(built, config):
 def test_force_gdp_sum_off(config):
     """Reproduction mode keeps the force_gdp_sum hook off."""
     assert not config["deltas"]["force_gdp_sum"]
+
+
+def test_force_gdp_sum_scales_to_national(config):
+    """Mirrors the R test: with force_gdp_sum on, IR GDP sums to the SSP
+    national level from 2024 on, and the PWT-anchored years are untouched."""
+    from irpanel.income import KUMMU_TO_2005, interp_annual
+    from irpanel.io import read_ssp
+    from irpanel.population import build_population
+    skip_unless_exists(config["paths"]["cache"] / "ir_gdppc_kummu.csv",
+                       "aggregation cache")
+    cfg = {**config, "deltas": {**config["deltas"], "force_gdp_sum": True}}
+
+    inc = income.build_income(cfg, "SSP3", "IIASA")
+    pop = build_population(cfg, "SSP3")[["hierid", "year", "pop"]]
+    ssp_gdppc = read_ssp(cfg)["gdppc"]
+    ssp_gdppc = ssp_gdppc[ssp_gdppc["scenario"] == "SSP3"]
+    nat = interp_annual(ssp_gdppc[ssp_gdppc["model"] == "IIASA"][
+        ["iso3", "year", "gdppc"]])
+    nat = nat[nat["year"] >= 2024].assign(
+        nat_gdppc=lambda d: d["gdppc"] * KUMMU_TO_2005)
+
+    x = inc.merge(pop, on=["hierid", "year"])
+    x = x[x["gdppc"].notna() & (x["pop"] > 0)]
+    sums = (x.assign(ir_gdp=x["gdppc"] * x["pop"])
+            .groupby(["iso3", "year"], as_index=False)
+            .agg(ir_gdp=("ir_gdp", "sum"), pop_nat=("pop", "sum")))
+    chk = sums.merge(nat[["iso3", "year", "nat_gdppc"]],
+                     on=["iso3", "year"])
+    assert len(chk) > 10000
+    target = chk["nat_gdppc"] * chk["pop_nat"]
+    assert ((chk["ir_gdp"] - target).abs() / target).max() < 1e-9
+
+    # PWT-anchored years are untouched.
+    inc_off = income.build_income(config, "SSP3", "IIASA")
+    pre = inc[inc["year"] <= 2023].merge(
+        inc_off[inc_off["year"] <= 2023], on=["hierid", "year"],
+        suffixes=("_on", "_off"))
+    both = pre[pre["gdppc_on"].notna() & pre["gdppc_off"].notna()]
+    assert np.allclose(both["gdppc_on"], both["gdppc_off"], rtol=1e-12)

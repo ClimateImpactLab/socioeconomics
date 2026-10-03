@@ -10,10 +10,51 @@ import numpy as np
 import pandas as pd
 
 from .io import read_kummu, read_pwt, read_ssp
+from .population import build_population
 
 # BEA GDP deflator (2017 = 100): 2005 = 81.556, 2021 = 110.186.
 PWT_TO_2005 = 81.556 / 110.186
 KUMMU_TO_2005 = 81.556 / 100
+
+
+def force_income_to_national(income, config, scen, gdp_model, ssp_gdppc):
+    """Delta #2 (force_gdp_sum), mirroring R.
+
+    Rescale IR gdppc within each country-year so the population-weighted
+    mean -- and therefore the sum of IR GDP over the panel population --
+    equals the SSP national gdppc (deflated 2017 -> 2005). Applied to the
+    SSP-growth era (2024-2100) where the chosen model defines the national
+    path; the PWT-anchored years stay untouched. Countries without an SSP
+    national level keep their unconstrained values. Zero-population IRs
+    scale with their country.
+
+    :param income: DataFrame(hierid, iso3, year, gdppc).
+    :param config: parsed config dict.
+    :param scen: SSP scenario (for the population weights).
+    :param gdp_model: "OECD" or "IIASA".
+    :param ssp_gdppc: national SSP gdppc, one scenario.
+    :return: the rescaled income DataFrame.
+    """
+    nat = interp_annual(ssp_gdppc[ssp_gdppc["model"] == gdp_model][
+        ["iso3", "year", "gdppc"]])
+    nat = nat[nat["year"] >= 2024].assign(
+        nat_gdppc=lambda d: d["gdppc"] * KUMMU_TO_2005)[
+        ["iso3", "year", "nat_gdppc"]]
+    pop = build_population(config, scen)[["hierid", "year", "pop"]]
+    x = income.merge(pop, on=["hierid", "year"])
+    x = x[x["gdppc"].notna() & (x["pop"] > 0)]
+    wm = (x.assign(wprod=x["gdppc"] * x["pop"])
+          .groupby(["iso3", "year"], as_index=False)
+          .agg(wprod=("wprod", "sum"), wpop=("pop", "sum")))
+    wm["wmean"] = wm["wprod"] / wm["wpop"]
+    f = wm[wm["wmean"] > 0].merge(nat, on=["iso3", "year"])
+    f = f.assign(factor=f["nat_gdppc"] / f["wmean"])[
+        ["iso3", "year", "factor"]]
+    income = income.merge(f, on=["iso3", "year"], how="left")
+    income["gdppc"] = np.where(income["factor"].notna(),
+                               income["gdppc"] * income["factor"],
+                               income["gdppc"])
+    return income.drop(columns="factor")
 
 
 def interp_annual(df):
@@ -257,11 +298,10 @@ def build_income(config, scen="SSP3", gdp_model="IIASA"):
 
     income = pd.concat([baseline, proj], ignore_index=True)
 
-    # Delta #2 (force_gdp_sum) insertion point. In reproduction mode this is
-    # off; when enabled, rescale each country's IR gdppc here so
-    # sum_IR(gdppc * pop) matches national GDP within tolerances gdp_sum_pct.
+    # Delta #2 (force_gdp_sum): off in reproduction mode.
     if config["deltas"].get("force_gdp_sum"):
-        raise NotImplementedError("force_gdp_sum is not implemented yet")
+        income = force_income_to_national(income, config, scen, gdp_model,
+                                          ssp_gdppc)
 
     income = income.assign(scenario=scen, gdp_model=gdp_model)
     return income.sort_values(["hierid", "year"], ignore_index=True)[
