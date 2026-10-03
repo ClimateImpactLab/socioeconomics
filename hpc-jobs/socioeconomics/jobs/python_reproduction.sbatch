@@ -16,19 +16,22 @@
 # folder) and compares every column against the published R panels. Needs
 # the R run to have finished: submit with
 # --dependency=afterok:<R job id> when it is still going.
+#
+# Runs in the port's own conda environment, not the R container (the
+# container has no pyproj or exactextract).
 set -euo pipefail
-module load apptainer
 
+PY=/project/cil/home_dirs/rcc/envs/irpanel-py/bin/python3
 R_OUT=/project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0
 PY_OUT=/project/cil/gcp/outputs_newsocioeconomics/socioeconomics/validation/python/1.0.0
 cd "$SLURM_SUBMIT_DIR/.."
 
-apptainer exec --bind /project/cil \
-  --env IRPANEL_CONFIG=configs/new-socioeconomics.yml \
-  --env PYTHONPATH=python \
-  irpanel.sif python3 -m irpanel track
+export IRPANEL_CONFIG=configs/new-socioeconomics.yml
+export PYTHONPATH=python
+export PYTHONUNBUFFERED=1
+
+"$PY" -m irpanel track
 
 echo "Python vs R comparison:"
-apptainer exec --bind /project/cil \
-  --env R_OUTPUT="$R_OUT" --env PY_OUTPUT="$PY_OUT" \
-  irpanel.sif python3 diagnostics/compare_python_r.py
+R_OUTPUT="$R_OUT" PY_OUTPUT="$PY_OUT" \
+  "$PY" diagnostics/compare_python_r.py
