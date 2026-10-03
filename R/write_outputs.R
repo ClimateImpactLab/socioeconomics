@@ -1,4 +1,4 @@
-# Serialize the combination panels into the canonical Zarr store. The store
+# Write the combination panels into the main Zarr store. The store
 # mirrors the benchmark layout (integration-econ-bc39.zarr) so it is a
 # drop-in replacement: dims (ssp, region, model, year), float32 variables,
 # model labels "IIASA GDP" / "OECD Env-Growth", plus the additional panel
@@ -6,7 +6,7 @@
 
 #' Assemble the per-combination panel CSVs into one Zarr store.
 #'
-#' Zarr has no dependable R writer, so the serialization runs in Python
+#' Zarr has no dependable R writer, so the store is written in Python
 #' (data/panels_to_zarr.py), which needs pandas, numpy, xarray, and zarr;
 #' the interpreter is resolved by resolve_python (io.R), overridable with
 #' the PYTHON environment variable.
@@ -56,7 +56,72 @@ git_head_info <- function(gitdir = ".git") {
   list(branch = basename(ref), commit = commit)
 }
 
-#' Write a plain-language provenance README.txt into the output folder.
+#' Write the MetaCSV metadata file that sits next to the panel CSVs.
+#'
+#' One ir_combined.header.yml per output folder, shared by every CSV: how
+#' the data was made (title, version,
+#' date, repo state, config, deltas, input versions) plus the per-column
+#' blocks from docs/data_dictionary.yml. The header is bare YAML -- that is
+#' what metacsv's header_file reader expects -- and the CSVs stay plain;
+#' consumers that want the metadata read a panel with
+#' metacsv.read_csv(csv_path, header_file = ".../ir_combined.header.yml").
+#'
+#' @param config Parsed track config list.
+#' @param config_path Path of the track config file.
+#' @param panel_files Character vector of the panel CSV paths.
+#' @param ... Upstream targets accepted only for dependency ordering.
+#' @return The header path, invisibly.
+write_output_metadata <- function(config, config_path, panel_files, ...) {
+  git <- git_head_info()
+  manifest <- yaml::read_yaml(file.path("data", "manifest.yml"))
+  dict <- yaml::read_yaml(file.path("docs", "data_dictionary.yml"))
+  header <- list(
+    title = "Impact-region socioeconomic panel",
+    version = if (is.null(config$version)) "unversioned" else config$version,
+    date = format(Sys.Date()),
+    repo = "socioeconomics-update panel pipeline (irpanel)",
+    branch = git$branch,
+    commit = git$commit,
+    config = config_path,
+    deltas = config$deltas,
+    sources = lapply(manifest$sources, function(s) s$version),
+    files = as.list(basename(panel_files)),
+    variables = c(dict$keys, dict$variables)
+  )
+  out <- file.path(config$paths$output, "ir_combined.header.yml")
+  writeLines(yaml::as.yaml(header), out)
+  invisible(out)
+}
+
+#' Write the self-contained NetCDF over every combination.
+#'
+#' One ir_combined.nc per output folder: dims (ssp, region, model, year)
+#' like the Zarr store, with the metadata file stamped as global
+#' attributes and the data dictionary's descriptions and units on each
+#' variable. The writing runs in Python (data/panels_to_netcdf.py, which
+#' needs xarray and netCDF4); the interpreter is resolved by resolve_python.
+#'
+#' @param config Parsed track config list.
+#' @param panel_files Character vector of the panel CSV paths.
+#' @param header_path Path of the metadata file (write_output_metadata).
+#' @return The NetCDF path, invisibly.
+write_netcdf <- function(config, panel_files, header_path) {
+  out <- file.path(config$paths$output, "ir_combined.nc")
+  py <- resolve_python()
+  status <- system2(py, c(
+    shQuote(file.path("data", "panels_to_netcdf.py")),
+    shQuote(out), shQuote(header_path),
+    shQuote(file.path("docs", "data_dictionary.yml")),
+    vapply(panel_files, shQuote, character(1))
+  ))
+  if (status != 0) {
+    stop("panels_to_netcdf.py failed with status ", status)
+  }
+  invisible(out)
+}
+
+#' Write a plain-language README.txt into the output folder that says how
+#' the data was made.
 #'
 #' Records when the panel was generated, from which repo state (branch and
 #' commit), with which config file and main settings, the input data versions

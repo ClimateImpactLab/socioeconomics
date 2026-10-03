@@ -20,7 +20,7 @@ keys:
     description: SSP scenario.
     unit: none
     dims: [scenario]
-    values: [SSP2, SSP3]
+    values: [SSP1, SSP2, SSP3, SSP4, SSP5]
   model:
     description: GDP projection model.
     unit: none

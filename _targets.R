@@ -40,10 +40,18 @@ if (!nzchar(config_path)) {
        Sys.getenv("TAR_PROJECT"), ")")
 }
 
-# The combination set, read at DAG-definition time to enumerate targets.
+# The combination set, read at DAG-definition time to enumerate targets. A
+# versioned track must write into a folder named after its version, so a
+# mismatched bump stops here, before any target runs.
+cfg_probe <- yaml::read_yaml(config_path)
+if (!is.null(cfg_probe$version) &&
+    basename(cfg_probe$paths$output) != as.character(cfg_probe$version)) {
+  stop("config version ", cfg_probe$version,
+       " does not match the output folder ", cfg_probe$paths$output)
+}
 combos <- expand.grid(
-  scen  = yaml::read_yaml(config_path)$run$scenarios,
-  model = yaml::read_yaml(config_path)$run$gdp_models,
+  scen  = cfg_probe$run$scenarios,
+  model = cfg_probe$run$gdp_models,
   stringsAsFactors = FALSE
 )
 
@@ -88,7 +96,7 @@ per_scenario <- unlist(lapply(unique(combos$scen), function(sc) {
 
 # Per-combination targets: income, the panel, its checks, and its CSV. The
 # CSV depends on the checks, so nothing is written for a panel that failed
-# its contracts.
+# its checks.
 per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
   sc  <- combos$scen[i]
   gm  <- combos$model[i]
@@ -133,7 +141,7 @@ per_combo <- unlist(lapply(seq_len(nrow(combos)), function(i) {
   )
 }), recursive = FALSE)
 
-# Cross-panel checks over all combinations, then the canonical Zarr store,
+# Cross-panel checks over all combinations, then the main Zarr store,
 # gated on them.
 tags <- paste0(combos$scen, "_", combos$model)
 panel_syms <- lapply(paste0("panel_", tags), as.symbol)
@@ -154,7 +162,8 @@ zarr <- tar_target_raw(
   format = "file"
 )
 
-# Provenance README in the output folder, rewritten whenever the panels are.
+# README in the output folder saying how the data was made, rewritten
+# whenever the panels are.
 readme <- tar_target_raw(
   "output_readme",
   as.call(list(quote(write_output_readme), quote(config), config_path,
@@ -162,4 +171,22 @@ readme <- tar_target_raw(
   format = "file"
 )
 
-c(shared, per_scenario, per_combo, list(cross, zarr, readme))
+# MetaCSV metadata file next to the panel CSVs, and the self-contained
+# NetCDF over all combinations carrying the same metadata.
+metadata <- tar_target_raw(
+  "output_metadata",
+  as.call(list(quote(write_output_metadata), quote(config), config_path,
+               as.call(c(list(quote(c)), file_syms)), quote(zarr_store))),
+  format = "file"
+)
+
+netcdf <- tar_target_raw(
+  "netcdf_store",
+  as.call(list(quote(write_netcdf), quote(config),
+               as.call(c(list(quote(c)), file_syms)),
+               quote(output_metadata))),
+  format = "file"
+)
+
+c(shared, per_scenario, per_combo,
+  list(cross, zarr, readme, metadata, netcdf))

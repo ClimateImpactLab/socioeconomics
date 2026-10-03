@@ -14,7 +14,13 @@ own store under `stores/`:
 ## What it produces
 
 One CSV per scenario and GDP model, `ir_combined_<scenario>_<model>.csv`, plus
-a Zarr store and a provenance README.txt, written to the track's output folder
+a Zarr store, a self-contained NetCDF (`ir_combined.nc`, all combinations with
+the metadata as attributes), a README.txt that says how the data was made,
+and a shared MetaCSV
+header (`ir_combined.header.yml`) — the CSVs stay plain, and a consumer that
+wants the metadata reads
+`metacsv.read_csv(csv_path, header_file=".../ir_combined.header.yml")` —
+written to the track's output folder
 (`paths.output` in the config: `data/output` for climate-compensation,
 `/project/cil/gcp/outputs_newsocioeconomics/socioeconomics` for
 new-socioeconomics). Each CSV row is one impact region and year, with these
@@ -143,6 +149,33 @@ Three notes for running on the cluster:
   Inside the container this is not a concern; its own `Rscript` is already the
   right one.
 
+## Releasing a new version
+
+Each new-socioeconomics release lives in its own folder, named by its
+version (`paths.output` ends in the `version` key; the pipeline stops on a
+mismatch). Patch = regeneration or fix with the same methods; minor =
+backward-compatible additions (new scenarios); major = schema or methods
+changes. Published folders are never edited: fixes go to a new version.
+
+1. Bump `version:` and the matching `paths.output` folder in
+   `configs/new-socioeconomics.yml`, together with the change that motivates
+   the release.
+2. Commit. The panel is never regenerated from an uncommitted tree — the
+   output metadata records the commit.
+3. From `hpc-jobs/`: `mkdir -p logs/socioeconomics` and
+   `sbatch socioeconomics/jobs/build_panel.sbatch`. The checks gate the
+   writes; the folder receives the CSVs, the Zarr store, the NetCDF, the
+   README.txt and the MetaCSV header.
+4. `sbatch --dependency=afterok:<job id>
+   socioeconomics/jobs/python_reproduction.sbatch` — the Python
+   implementation must reproduce the new version (tier A PASS).
+5. Spot-check against the previous version with the diagnostics scripts.
+6. Publish by making the folder read-only:
+   `chmod -R a-w /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/<version>`.
+   This is a manual step, deliberately outside the pipeline.
+7. Point the projection configs' `socioeconomic_data_dir` at the new folder
+   in one pass, and record the run in `hpc-jobs/README.md`.
+
 ## Memory
 
 The panel node is the heavy step. Its peak resident memory is about 8.2 GB
@@ -190,7 +223,7 @@ Set per track in `configs/<track>.yml`, no code changes needed:
 
 The panel-building chain is implemented and reproduces the Climate Compensation
 project panel: io -> aggregate_kummu_to_ir -> build_income -> build_population
--> build_cohorts -> postprocess_panel -> check_panel (hard contracts that
+-> build_cohorts -> postprocess_panel -> check_panel (hard checks that
 gate the writers) -> write_zarr (one Zarr store over all scenario x model
 combinations, mirroring the benchmark layout). Remaining stub:
 `validate_against_benchmark`.
