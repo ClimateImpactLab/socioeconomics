@@ -223,7 +223,7 @@ def eta_for(counts, sector, stages):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out", default=os.path.join(HERE, "site", "status.json"))
+    parser.add_argument("--out", default=os.path.join(HERE, "site", "status.mock.json"))
     args = parser.parse_args()
     rng = random.Random(args.seed)
     now = datetime.datetime.now(datetime.timezone.utc)

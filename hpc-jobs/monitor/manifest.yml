@@ -5,12 +5,13 @@
 
 account:
   name: cil
+  su_since: "2026-10-01"   # sacct window start for service-unit sums
 
 # People shown in the service-units panel. Fill in the cluster username for
 # each person; the collector uses it to split sacct usage by person.
 people:
   - name: Sebastian
-    username: null
+    username: cadavidsanchez
   - name: Diana
     username: null
   - name: Marine
@@ -113,6 +114,10 @@ gcms:
 # cells: all        -> every valid SSP-RCP pair crossed with both IAMs
 # gcms: [CCSM4]     -> pinned to one GCM (what the single configs do)
 # gcms: per_rcp     -> the full GCM list above for each RCP
+# array_cells maps Slurm array task ids to units, in the same order as the
+# CELLS list in the sbatch scripts: task = model index x cells + cell index.
+# null means workers claim directories dynamically (median), so job state
+# cannot be assigned to single units from the array id.
 run_types:
   quick_test:
     cells:
@@ -121,18 +126,30 @@ run_types:
       iams: [low]
     gcms: [CCSM4]
     batches: null
+    array_cells: [ssp3-rcp45-low]
   single:
     cells: all
     gcms: [CCSM4]
     batches: null
+    array_cells:
+      - ssp2-rcp45-low
+      - ssp2-rcp45-high
+      - ssp2-rcp85-low
+      - ssp2-rcp85-high
+      - ssp3-rcp45-low
+      - ssp3-rcp45-high
+      - ssp3-rcp85-low
+      - ssp3-rcp85-high
   median:
     cells: all
     gcms: per_rcp
     batches: null
+    array_cells: null
   montecarlo:
     cells: all
     gcms: per_rcp
     batches: 15          # batch0 .. batch14, as in the legacy mortality runs
+    array_cells: null
 
 # Sectors. models are the sub-models that each get their own full grid
 # (crops for agriculture, fuels for energy; "main" means no sub-model).

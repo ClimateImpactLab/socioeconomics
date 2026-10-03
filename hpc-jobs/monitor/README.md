@@ -36,32 +36,59 @@ winsorized/ prefix in the dashboard.
 ```
 monitor/
   manifest.yml          what the dashboard tracks (sectors, scenarios, GCMs, people)
-  make_mock_status.py   writes a realistic mock site/status.json from the manifest
+  collect_status.py     scans outputs, reads markers, joins Slurm, writes status.json
+  make_mock_status.py   writes a realistic mock to site/status.mock.json
   site/                 the static site (deployable as-is)
     index.html
     style.css
     app.js
-    status.json         the data the site reads; mock now, real collector later
+    status.json         the data the site reads
+    status.mock.json    the mock, kept separate
 ```
 
 ## How it fits together
 
 1. `manifest.yml` describes the run universe: sectors and their sub-models
    (crops, fuels), pipeline stages, run types, the valid SSP-RCP pairs, both
-   IAMs, the GCM lists per RCP, the Monte Carlo batch count, and the people
-   to show in the SU panel. Nothing about the universe is hardcoded in code.
-2. A collector (next step, runs on the cluster under scrontab every 4 hours)
-   will read the manifest, scan the output trees and `status-global.txt`
-   files, query squeue and sacct, and write `status.json`.
+   IAMs, the GCM lists per RCP, the Monte Carlo batch count, the expected
+   files per unit, the Slurm job names and array order, and the people to
+   show in the SU panel. Nothing about the universe is hardcoded in code.
+2. `collect_status.py` reads the manifest and writes `site/status.json`:
+   - scans `/project/cil/gcp/outputs_newsocioeconomics/<sector>/<run type>/`
+     and counts the expected files per unit (existing and not empty);
+   - reads `status-global.txt` (finished stages) and `status-<stage>.txt`
+     claim files (work in progress) in each leaf directory;
+   - joins squeue and sacct by job name, and maps array task ids to units
+     for quick_test and single (median workers claim directories
+     dynamically, so their job state applies through the marker files);
+   - sums service units per person and per sector and run type from sacct,
+     and reads the account balance from the RCC accounts tool;
+   - sectors and run types with no outputs yet come out as not started.
 3. The site is static. It fetches `status.json` at load time and renders it.
    Updating the data never requires a redeploy.
 
-Until the collector exists, `make_mock_status.py` produces a `status.json`
-with the same format and a realistic mix of states:
+Run the collector on the cluster, from this directory:
 
 ```
-python3 make_mock_status.py          # writes site/status.json (seeded, repeatable)
-python3 make_mock_status.py --seed 7 # different mix
+module load python
+source activate /project/cil/home_dirs/rcc/envs/impact-env/
+python3 collect_status.py
+```
+
+impact-env is the same environment the projection jobs use and has
+everything the collector needs (Python 3 and PyYAML). To test from a Mac
+with the volume mounted (no Slurm there, so job states come from files
+and markers only):
+
+```
+python3 collect_status.py --cil-root /Volumes/cil
+```
+
+The mock is kept separate so the site can always be demoed:
+
+```
+python3 make_mock_status.py              # writes site/status.mock.json
+cp site/status.mock.json site/status.json   # only if you want the mock shown
 ```
 
 Preview locally:
@@ -167,8 +194,9 @@ npx vercel --prod         # publish to the production URL
 ```
 
 There is no build step; answer "no" if asked about build settings (it is a
-plain static site). To update the deployed mock later, rerun
-`python3 make_mock_status.py` and `npx vercel --prod`.
+plain static site). To refresh the deployed data by hand: run the
+collector on the cluster, then `npx vercel --prod` from the Mac (the repo
+is on the shared volume, so the Mac sees the new `status.json` at once).
 
 Later, when the real collector writes `status.json` somewhere public (for
 example a data branch on GitHub), change the fetch path at the top of
