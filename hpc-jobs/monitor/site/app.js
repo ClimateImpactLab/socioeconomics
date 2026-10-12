@@ -1,12 +1,11 @@
 /* AMEL run-status dashboard. Reads status.json (written by the collector,
-   or by make_mock_status.py for the mock).
+   or by make_mock_status.py for the mock) and renders the grids.
 
-   Navigation is a zoomable hierarchy. Every level fits the screen:
-     all sectors > sector > run type > sub-model > scenario > GCM > batch
-   Levels that do not apply (one sub-model, one GCM, no batches) are
-   skipped. Each block aggregates the units below it; the deepest level is
-   one unit and opens the detail panel. Two display modes share the
-   hierarchy: files (expected output files present) and jobs (Slurm state). */
+   Two views share the same grid shape:
+   - files: each cell shows two bars, projection files on top and
+     aggregation files below, filling in as files appear on disk;
+   - jobs: each cell shows one stripe per pipeline stage, colored by the
+     Slurm state of that stage. */
 
 "use strict";
 
@@ -30,14 +29,15 @@ const STATE_COLORS = {
 const GROUPS = ["projection", "aggregation"];
 
 let DATA = null;
-let view = { mode: "files", failedOnly: false };
-// The zoom position. Fields fill in as the user goes deeper.
-let path = { sector: null, runType: null, model: null, cell: null, gcm: null, batch: null };
-let currentChildren = [];
+let view = {
+  mode: "files", sector: null, runType: null, model: null,
+  failedOnly: false, focusGroup: null,
+};
+let unitIndex = new Map();
 
 const $ = (id) => document.getElementById(id);
 
-/* ---------- formatting ---------- */
+/* ---------- formatting helpers ---------- */
 
 function fmtMin(min) {
   if (min == null) return "";
@@ -66,470 +66,384 @@ function rcpShort(rcp) {
   return rcp.replace("rcp", "").replace("45", "4.5").replace("85", "8.5");
 }
 
-function cellLabel(cell) {
-  return `${cell.ssp} ${rcpShort(cell.rcp)} ${cell.iam}`;
-}
-
 function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function unitKey(u) {
+  return [u.model, u.ssp, u.rcp, u.iam, u.gcm, u.batch ?? ""].join("|");
+}
+
+/* ---------- data access ---------- */
+
+function currentSector() {
+  return DATA.sectors[view.sector];
+}
+
+function currentRT() {
+  return currentSector().run_types[view.runType];
+}
+
+function sectorTotals(sector) {
+  let done = 0, total = 0;
+  for (const rt of Object.values(sector.run_types)) {
+    done += rt.counts.done;
+    total += rt.counts.total;
+  }
+  return { done, total };
 }
 
 function resolveName(name, rcp) {
   return name.split("{rcp}").join(rcp);
 }
 
-/* ---------- hierarchy ---------- */
-
-function rtOf(sectorName, runType) {
-  return DATA.sectors[sectorName].run_types[runType];
+// Expected file totals per unit for one model: {projection: n, aggregation: m}.
+function specTotals(model) {
+  const spec = currentSector().files_spec[model];
+  const out = {};
+  for (const g of GROUPS) out[g] = spec[g].length;
+  return out;
 }
 
-function needModel(rt) { return rt.dims.models.length > 1; }
-function needGcm(rt) {
-  const anyRcp = Object.keys(rt.dims.gcms)[0];
-  return rt.dims.gcms[anyRcp].length > 1;
-}
-function needBatch(rt) { return !!rt.dims.batches; }
-
-// The dimension the children of this path spread over, or null at a unit.
-function nextLevel(p) {
-  if (!p.sector) return "sector";
-  if (!p.runType) return "runType";
-  const rt = rtOf(p.sector, p.runType);
-  if (needModel(rt) && !p.model) return "model";
-  if (!p.cell) return "cell";
-  if (needGcm(rt) && !p.gcm) return "gcm";
-  if (needBatch(rt) && p.batch == null) return "batch";
-  return null;
-}
-
-function childrenOf(p) {
-  const level = nextLevel(p);
-  if (!level) return [];
-  if (level === "sector") {
-    return Object.entries(DATA.sectors).map(([name, s]) =>
-      ({ label: s.label, path: { ...p, sector: name } }));
-  }
-  if (level === "runType") {
-    return Object.keys(DATA.sectors[p.sector].run_types).map((rtName) =>
-      ({ label: rtName, path: { ...p, runType: rtName } }));
-  }
-  const rt = rtOf(p.sector, p.runType);
-  if (level === "model") {
-    return rt.dims.models.map((m) => ({ label: m, path: { ...p, model: m } }));
-  }
-  if (level === "cell") {
-    return rt.dims.cells.map((c) => ({ label: cellLabel(c), path: { ...p, cell: c } }));
-  }
-  if (level === "gcm") {
-    return rt.dims.gcms[p.cell.rcp].map((g) => ({ label: g, path: { ...p, gcm: g } }));
-  }
-  return [...Array(rt.dims.batches).keys()].map((b) =>
-    ({ label: `batch ${b}`, path: { ...p, batch: b } }));
-}
-
-// Model used when the sector has only one (so the level is skipped).
-function effectiveModel(p, rt) {
-  return p.model || rt.dims.models[0];
-}
-
-function unitMatches(u, p) {
-  if (p.model && u.model !== p.model) return false;
-  if (p.cell && (u.ssp !== p.cell.ssp || u.rcp !== p.cell.rcp || u.iam !== p.cell.iam)) return false;
-  if (p.gcm && u.gcm !== p.gcm) return false;
-  if (p.batch != null && u.batch !== p.batch) return false;
-  return true;
-}
-
-// (sector, run type) pairs inside this path's scope.
-function scopePairs(p) {
-  const sectors = p.sector ? [p.sector] : Object.keys(DATA.sectors);
-  const pairs = [];
-  for (const s of sectors) {
-    const rts = p.runType ? [p.runType] : Object.keys(DATA.sectors[s].run_types);
-    for (const rtName of rts) pairs.push([s, rtName]);
-  }
-  return pairs;
-}
-
-/* ---------- aggregation ---------- */
-
-function specTotals(sectorName, model) {
-  const spec = DATA.sectors[sectorName].files_spec[model];
-  return { projection: spec.projection.length, aggregation: spec.aggregation.length };
-}
-
-// Everything the summary cards and blocks need for one node.
-function aggregate(p) {
-  const agg = {
-    unitsTotal: 0, completeUnits: 0,
-    states: Object.fromEntries(STATES.map((s) => [s, 0])),
-    files: { projection: { found: 0, expected: 0 }, aggregation: { found: 0, expected: 0 } },
-    etaHours: null, etaFrom: null,
-  };
-  for (const [sectorName, rtName] of scopePairs(p)) {
-    const rt = rtOf(sectorName, rtName);
-    const models = p.model ? [p.model] : rt.dims.models;
-    const cells = p.cell ? [p.cell] : rt.dims.cells;
-    const batchN = needBatch(rt) ? (p.batch != null ? 1 : rt.dims.batches) : 1;
-
-    let unitsPerModel = 0;
-    for (const cell of cells) {
-      const gcmN = p.gcm ? (rt.dims.gcms[cell.rcp].includes(p.gcm) ? 1 : 0)
-        : rt.dims.gcms[cell.rcp].length;
-      unitsPerModel += gcmN * batchN;
-    }
-    agg.unitsTotal += unitsPerModel * models.length;
-    for (const m of models) {
-      const t = specTotals(sectorName, m);
-      agg.files.projection.expected += unitsPerModel * t.projection;
-      agg.files.aggregation.expected += unitsPerModel * t.aggregation;
-    }
-
-    let listed = 0;
-    for (const u of rt.units) {
-      if (!unitMatches(u, p)) continue;
-      listed += 1;
-      agg.states[u.state] += 1;
-      const t = specTotals(sectorName, u.model);
-      let complete = true;
-      for (const g of GROUPS) {
-        const rec = u.files ? u.files[g] : null;
-        const found = rec ? rec.found : 0;
-        agg.files[g].found += found;
-        if (found < t[g]) complete = false;
-      }
-      if (complete) agg.completeUnits += 1;
-    }
-    agg.states.not_started += unitsPerModel * models.length - listed;
-
-    if (rt.eta_hours != null && (agg.etaHours == null || rt.eta_hours > agg.etaHours)) {
-      agg.etaHours = rt.eta_hours;
-      agg.etaFrom = `slowest: ${DATA.sectors[sectorName].label} ${rtName}`;
-      agg.etaBasis = rt.eta_basis;
-    }
-    agg.pairs = (agg.pairs || 0) + 1;
-  }
-  if (agg.pairs === 1 && agg.etaBasis) agg.etaFrom = agg.etaBasis;
-  return agg;
-}
-
-function leafUnit(p) {
-  const rt = rtOf(p.sector, p.runType);
-  for (const u of rt.units) if (unitMatches(u, p)) return u;
-  return null;
-}
-
-function leafInfo(p) {
-  const rt = rtOf(p.sector, p.runType);
-  return {
-    unit: leafUnit(p),
-    model: effectiveModel(p, rt),
-    ssp: p.cell.ssp, rcp: p.cell.rcp, iam: p.cell.iam,
-    gcm: p.gcm || rt.dims.gcms[p.cell.rcp][0],
-    batch: p.batch,
-  };
-}
-
-function leafFiles(info, sectorName) {
-  const totals = specTotals(sectorName, info.model);
+function unitFiles(unit, model) {
+  const totals = specTotals(model);
   const out = {};
   for (const g of GROUPS) {
-    const rec = info.unit && info.unit.files ? info.unit.files[g] : null;
-    out[g] = { found: rec ? rec.found : 0, expected: rec ? rec.total : totals[g] };
+    const rec = unit && unit.files ? unit.files[g] : null;
+    out[g] = { found: rec ? rec.found : 0, total: rec ? rec.total : totals[g] };
   }
   return out;
 }
 
-/* ---------- navigation ---------- */
-
-function pathToHash(p) {
-  const parts = [];
-  if (p.sector) parts.push(`s=${p.sector}`);
-  if (p.runType) parts.push(`rt=${p.runType}`);
-  if (p.model) parts.push(`m=${p.model}`);
-  if (p.cell) parts.push(`c=${p.cell.ssp}.${p.cell.rcp}.${p.cell.iam}`);
-  if (p.gcm) parts.push(`g=${p.gcm}`);
-  if (p.batch != null) parts.push(`b=${p.batch}`);
-  return parts.length ? "#" + parts.join("&") : "#";
-}
-
-function hashToPath(hash) {
-  const p = { sector: null, runType: null, model: null, cell: null, gcm: null, batch: null };
-  const kv = {};
-  for (const part of hash.replace(/^#/, "").split("&")) {
-    const [k, v] = part.split("=");
-    if (k && v != null) kv[k] = decodeURIComponent(v);
-  }
-  if (!kv.s || !DATA.sectors[kv.s]) return p;
-  p.sector = kv.s;
-  if (!kv.rt || !DATA.sectors[p.sector].run_types[kv.rt]) return p;
-  p.runType = kv.rt;
-  const rt = rtOf(p.sector, p.runType);
-  if (kv.m && rt.dims.models.includes(kv.m)) p.model = kv.m;
-  if (kv.c) {
-    const [ssp, rcp, iam] = kv.c.split(".");
-    p.cell = rt.dims.cells.find((c) => c.ssp === ssp && c.rcp === rcp && c.iam === iam) || null;
-  }
-  if (p.cell && kv.g && rt.dims.gcms[p.cell.rcp].includes(kv.g)) p.gcm = kv.g;
-  if (kv.b != null && needBatch(rt)) {
-    const b = parseInt(kv.b, 10);
-    if (b >= 0 && b < rt.dims.batches) p.batch = b;
-  }
-  return p;
-}
-
-function navigate(newPath, push) {
-  path = newPath;
-  if (push) history.pushState(null, "", pathToHash(path));
-  renderAll();
-}
-
-/* ---------- rendering ---------- */
+/* ---------- top-level render ---------- */
 
 function renderAll() {
-  renderBreadcrumb();
+  renderSectorTabs();
+  renderRunTypeTabs();
   renderSummary();
+  renderModelPills();
   renderLegend();
-  renderBoard();
+  renderGrid();
   renderSU();
 }
 
-function crumbSteps() {
-  const steps = [{ label: "All sectors", path: { sector: null, runType: null, model: null, cell: null, gcm: null, batch: null } }];
-  let p = steps[0].path;
-  if (path.sector) {
-    p = { ...p, sector: path.sector };
-    steps.push({ label: DATA.sectors[path.sector].label, path: p });
+function renderSectorTabs() {
+  const el = $("sector-tabs");
+  el.innerHTML = "";
+  for (const [name, sector] of Object.entries(DATA.sectors)) {
+    const t = sectorTotals(sector);
+    const pct = t.total ? Math.round((100 * t.done) / t.total) : 0;
+    const b = document.createElement("button");
+    b.className = name === view.sector ? "active" : "";
+    b.innerHTML = `${esc(sector.label)}<span class="tab-count">${pct}%</span>`;
+    b.onclick = () => {
+      view.sector = name;
+      const rts = Object.keys(sector.run_types);
+      if (!rts.includes(view.runType)) view.runType = rts[0];
+      view.model = null;
+      view.focusGroup = null;
+      renderAll();
+    };
+    el.appendChild(b);
   }
-  if (path.runType) { p = { ...p, runType: path.runType }; steps.push({ label: path.runType, path: p }); }
-  if (path.model) { p = { ...p, model: path.model }; steps.push({ label: path.model, path: p }); }
-  if (path.cell) { p = { ...p, cell: path.cell }; steps.push({ label: cellLabel(path.cell), path: p }); }
-  if (path.gcm) { p = { ...p, gcm: path.gcm }; steps.push({ label: path.gcm, path: p }); }
-  if (path.batch != null) { p = { ...p, batch: path.batch }; steps.push({ label: `batch ${path.batch}`, path: p }); }
-  return steps;
 }
 
-function renderBreadcrumb() {
-  const el = $("breadcrumb");
+function renderRunTypeTabs() {
+  const el = $("runtype-tabs");
   el.innerHTML = "";
-  const steps = crumbSteps();
-  steps.forEach((step, i) => {
-    if (i) {
-      const sep = document.createElement("span");
-      sep.className = "crumb-sep";
-      sep.textContent = "/";
-      el.appendChild(sep);
-    }
-    const last = i === steps.length - 1;
-    const b = document.createElement(last ? "span" : "button");
-    b.className = last ? "crumb current" : "crumb";
-    b.textContent = step.label;
-    if (!last) b.onclick = () => navigate(step.path, true);
+  const sector = currentSector();
+  for (const [name, rt] of Object.entries(sector.run_types)) {
+    const b = document.createElement("button");
+    b.className = name === view.runType ? "active" : "";
+    b.innerHTML = `${esc(name)}<span class="tab-count">${rt.counts.done}/${rt.counts.total}</span>`;
+    b.onclick = () => {
+      view.runType = name;
+      view.model = null;
+      view.focusGroup = null;
+      renderAll();
+    };
     el.appendChild(b);
-  });
+  }
+}
+
+// File totals across the whole run type (all models, all units).
+function fileTotals(rt) {
+  const perModel = {};
+  for (const m of rt.dims.models) {
+    const t = specTotals(m);
+    perModel[m] = t.projection + t.aggregation;
+  }
+  const unitsPerModel = rt.counts.total / rt.dims.models.length;
+  let expected = 0;
+  for (const m of rt.dims.models) expected += unitsPerModel * perModel[m];
+  let found = 0, complete = 0;
+  for (const u of rt.units) {
+    const f = unitFiles(u, u.model);
+    const uf = f.projection.found + f.aggregation.found;
+    found += uf;
+    if (f.projection.found >= f.projection.total &&
+        f.aggregation.found >= f.aggregation.total) complete += 1;
+  }
+  return { expected: Math.round(expected), found, complete };
 }
 
 function renderSummary() {
-  const agg = aggregate(path);
+  const rt = currentRT();
+  const c = rt.counts;
   const el = $("summary");
   let html = "";
 
   if (view.mode === "files") {
-    const found = agg.files.projection.found + agg.files.aggregation.found;
-    const expected = agg.files.projection.expected + agg.files.aggregation.expected;
-    const pct = expected ? (100 * found) / expected : 0;
-    html += `<div class="card"><div class="num">${fmtN(found)}</div>
-      <div class="lbl">files present of ${fmtN(expected)}</div></div>`;
-    html += `<div class="card"><div class="num">${fmtN(agg.completeUnits)}</div>
-      <div class="lbl">units with all files, of ${fmtN(agg.unitsTotal)}</div></div>`;
-    html += `<div class="card"><div class="num">${fmtN(agg.states.failed)}</div>
+    const ft = fileTotals(rt);
+    const pct = ft.expected ? (100 * ft.found) / ft.expected : 0;
+    html += `<div class="card"><div class="num">${fmtN(ft.found)}</div>
+      <div class="lbl">files present of ${fmtN(ft.expected)}</div></div>`;
+    html += `<div class="card"><div class="num">${fmtN(ft.complete)}</div>
+      <div class="lbl">units with all files, of ${fmtN(c.total)}</div></div>`;
+    html += `<div class="card"><div class="num">${fmtN(c.failed)}</div>
       <div class="lbl"><span class="dot" style="background:${STATE_COLORS.failed}"></span>failed units</div></div>`;
     html += `<div class="card progress-card">
       <div class="lbl">${pct.toFixed(1)}% of expected files</div>
       <div class="progress-bar"><span style="width:${pct}%;background:${STATE_COLORS.done}"></span></div></div>`;
   } else {
     for (const s of STATES) {
-      html += `<div class="card"><div class="num">${fmtN(agg.states[s])}</div>
+      html += `<div class="card"><div class="num">${c[s].toLocaleString("en-US")}</div>
         <div class="lbl"><span class="dot" style="background:${STATE_COLORS[s]}"></span>${STATE_LABELS[s]}</div></div>`;
     }
-    const pct = agg.unitsTotal ? (100 * agg.states.done) / agg.unitsTotal : 0;
+    const pct = c.total ? ((100 * c.done) / c.total) : 0;
     let bar = "";
     for (const s of STATES) {
-      if (s === "not_started" || !agg.states[s]) continue;
-      bar += `<span style="width:${(100 * agg.states[s]) / agg.unitsTotal}%;background:${STATE_COLORS[s]};${s === "partial" ? "opacity:.45;" : ""}"></span>`;
+      if (s === "not_started" || !c[s]) continue;
+      bar += `<span style="width:${(100 * c[s]) / c.total}%;background:${STATE_COLORS[s]};${s === "partial" ? "opacity:.45;" : ""}"></span>`;
     }
     html += `<div class="card progress-card">
-      <div class="lbl">${pct.toFixed(1)}% done of ${fmtN(agg.unitsTotal)} units</div>
+      <div class="lbl">${pct.toFixed(1)}% done of ${fmtN(c.total)} units</div>
       <div class="progress-bar">${bar}</div></div>`;
   }
 
-  html += `<div class="card eta"><div class="num">${fmtEta(agg.etaHours)}</div>
+  html += `<div class="card eta"><div class="num">${fmtEta(rt.eta_hours)}</div>
     <div class="lbl">est. time to finish</div>
-    ${agg.etaFrom && agg.etaHours != null ? `<div class="sub">${esc(agg.etaFrom)}</div>` : ""}</div>`;
+    ${rt.eta_basis ? `<div class="sub">${esc(rt.eta_basis)}</div>` : ""}</div>`;
   el.innerHTML = html;
 }
 
+function renderModelPills() {
+  const rt = currentRT();
+  const el = $("model-pills");
+  el.innerHTML = "";
+  const models = rt.dims.models;
+  // In single-style grids the models are the rows, so no picker is needed.
+  if (models.length < 2 || gridKind(rt) === "models") { view.model = null; return; }
+  if (!view.model) view.model = models[0];
+  for (const m of models) {
+    const b = document.createElement("button");
+    b.className = m === view.model ? "active" : "";
+    b.textContent = m;
+    b.onclick = () => { view.model = m; renderGrid(); };
+    el.appendChild(b);
+  }
+}
+
 function renderLegend() {
+  const sector = currentSector();
   let html;
   if (view.mode === "files") {
     html = `<span class="chip"><span class="sw" style="background:var(--st-none)"></span>no files yet</span>
       <span class="chip"><span class="sw half"></span>files appearing</span>
       <span class="chip"><span class="sw" style="background:${STATE_COLORS.done}"></span>all files present</span>
-      <span class="chip"><span class="sw ring"></span>failures inside</span>
-      <span class="note">Bars show projection and aggregation files. Click a block to zoom in.</span>`;
+      <span class="chip"><span class="sw ring"></span>failed job</span>
+      <span class="note">Each box has two bars: projection files on top, aggregation files below.
+      Click a scenario header to zoom into it, click a box for the file list.</span>`;
   } else {
     const chips = STATES.filter((s) => s !== "partial").map((s) =>
       `<span class="chip"><span class="sw ${s === "queued" ? "queued" : ""}"
         style="background:${STATE_COLORS[s]}"></span>${STATE_LABELS[s]}</span>`).join("");
-    html = chips + `<span class="note">Bars show the share of units in each state. Click a block to zoom in.</span>`;
+    html = chips +
+      `<span class="note">Each box has one stripe per stage, top to bottom: ${sector.stages.join(", ")}.
+      Click a scenario header to zoom into it, click a box for details.</span>`;
   }
   $("legend").innerHTML = html;
 }
 
-function filesBars(files, compact) {
-  let html = "";
-  for (const g of GROUPS) {
-    const pct = files[g].expected ? (100 * files[g].found) / files[g].expected : 0;
-    html += `<div class="nbar">`;
-    if (!compact) html += `<span class="nlbl">${g === "projection" ? "proj" : "aggr"}</span>`;
-    html += `<div class="ntrack"><span style="width:${pct.toFixed(2)}%"></span></div>`;
-    if (!compact) html += `<span class="nval">${Math.round(pct)}%</span>`;
-    html += `</div>`;
-  }
-  return html;
+/* ---------- grid ---------- */
+
+// "models": rows are sub-models (single, quick_test).
+// "gcms": rows are GCMs (median, montecarlo).
+function gridKind(rt) {
+  const anyRcp = Object.keys(rt.dims.gcms)[0];
+  return rt.dims.gcms[anyRcp].length > 1 ? "gcms" : "models";
 }
 
-function stateBar(states, total) {
-  let html = `<div class="dist">`;
-  for (const s of STATES) {
-    if (s === "not_started" || !states[s]) continue;
-    html += `<span style="width:${(100 * states[s]) / total}%;background:${STATE_COLORS[s]};${s === "partial" ? "opacity:.45;" : ""}"></span>`;
+function gcmUnion(gcms) {
+  const lists = Object.values(gcms).sort((a, b) => b.length - a.length);
+  const seen = new Set(lists[0]);
+  const union = [...lists[0]];
+  for (const list of lists.slice(1)) {
+    for (const g of list) if (!seen.has(g)) { seen.add(g); union.push(g); }
   }
-  return html + `</div>`;
+  return union;
 }
 
-function renderBoard() {
-  const board = $("board");
-  board.classList.toggle("failed-only", view.failedOnly);
-  currentChildren = [];
-
-  const children = childrenOf(path);
-  if (!children.length) {
-    // A fully resolved path is a single unit (deep link): show the parent
-    // level with the unit's panel open.
-    const info = leafInfo(path);
-    const parent = crumbSteps().at(-2).path;
-    path = parent;
-    history.replaceState(null, "", pathToHash(path));
-    renderAll();
-    showDrawer(info);
-    return;
+function buildGroups(cells) {
+  const groups = [];
+  for (const cell of cells) {
+    const label = `${cell.ssp} ${rcpShort(cell.rcp)}`;
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) last.cells.push(cell);
+    else groups.push({ label, cells: [cell] });
   }
+  return groups;
+}
 
-  // Lay the blocks out as a grid that fills the available space.
-  const rect = board.getBoundingClientRect();
-  const h = Math.max(320, window.innerHeight - rect.top - 120);
-  board.style.height = `${h}px`;
-  const n = children.length;
-  let cols = Math.max(1, Math.round(Math.sqrt((n * rect.width) / h)));
-  cols = Math.min(cols, n);
-  const rows = Math.ceil(n / cols);
-  cols = Math.ceil(n / rows);
-  board.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  board.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
-  const blockH = h / rows;
-  const blockW = rect.width / cols;
-  const compact = blockH < 84 || blockW < 130;
-  board.classList.toggle("compact", compact);
+function cellInner(unit, model, stages) {
+  if (view.mode === "files") {
+    const f = unitFiles(unit, model);
+    let html = "";
+    for (const g of GROUPS) {
+      const pct = f[g].total ? (100 * f[g].found) / f[g].total : 0;
+      const run = unit && unit.state === "running" ? " fill-run" : "";
+      html += `<div class="fbar"><span class="${run.trim()}" style="width:${pct}%"></span></div>`;
+    }
+    return html;
+  }
+  if (!unit) return stages.map(() => `<div class="seg none"></div>`).join("");
+  return stages.map((st) => {
+    const rec = unit.stages[st] || { state: "not_started" };
+    const cls = rec.state === "not_started" ? "none" : rec.state;
+    return `<div class="seg ${cls}"></div>`;
+  }).join("");
+}
 
-  let html = "";
-  children.forEach((child, i) => {
-    const leaf = nextLevel(child.path) === null;
-    let inner, failed, sub, allDone;
-    if (leaf) {
-      const info = leafInfo(child.path);
-      const files = leafFiles(info, child.path.sector);
-      const state = info.unit ? info.unit.state : "not_started";
-      failed = state === "failed" ? 1 : 0;
-      sub = STATE_LABELS[state];
-      currentChildren.push({ child, leaf, info, files, state });
-      inner = view.mode === "files" ? filesBars(files, compact) :
-        stateBar({ [state]: 1 }, 1);
-      allDone = view.mode === "files" ?
-        GROUPS.every((g) => files[g].found >= files[g].expected) :
-        state === "done";
-    } else {
-      const agg = aggregate(child.path);
-      failed = agg.states.failed;
-      sub = `${fmtN(agg.unitsTotal)} ${agg.unitsTotal === 1 ? "unit" : "units"}`;
-      currentChildren.push({ child, leaf, agg });
-      inner = view.mode === "files" ? filesBars(agg.files, compact) :
-        stateBar(agg.states, agg.unitsTotal);
-      if (view.mode === "files") {
-        const found = agg.files.projection.found + agg.files.aggregation.found;
-        const expected = agg.files.projection.expected + agg.files.aggregation.expected;
-        allDone = expected > 0 && found >= expected;
-      } else {
-        allDone = agg.unitsTotal > 0 && agg.states.done === agg.unitsTotal;
+function unitHtml(key, unit, model, stages, wide) {
+  const state = unit ? unit.state : "not_started";
+  const ring = state === "failed" ? " ring" : "";
+  const fx = unit && state === "failed" && wide ? `<span class="fx">x</span>` : "";
+  return `<div class="unit st-${state}${ring}" data-key="${esc(key)}">` +
+    cellInner(unit, model, stages) + fx + `</div>`;
+}
+
+function renderGrid() {
+  const rt = currentRT();
+  const sector = currentSector();
+  const stages = sector.stages;
+  const wrap = $("grid-wrap");
+  wrap.classList.toggle("failed-only", view.failedOnly);
+
+  unitIndex = new Map();
+  for (const u of rt.units) unitIndex.set(unitKey(u), u);
+
+  const kind = gridKind(rt);
+  const batches = rt.dims.batches;
+  const batchList = batches ? [...Array(batches).keys()] : [null];
+
+  let groups = buildGroups(rt.dims.cells);
+  if (view.focusGroup && groups.some((g) => g.label === view.focusGroup)) {
+    groups = groups.filter((g) => g.label === view.focusGroup);
+  } else {
+    view.focusGroup = null;
+  }
+  $("focus-clear").classList.toggle("hidden", !view.focusGroup);
+
+  const rows = kind === "models" ? rt.dims.models : gcmUnion(rt.dims.gcms);
+  const model = kind === "models" ? null : (view.model || rt.dims.models[0]);
+  const nCols = groups.reduce((n, g) => n + g.cells.length, 0) * batchList.length;
+
+  // Size the cells so the whole grid fits without sideways scrolling.
+  const labelW = kind === "gcms" ? 150 : 92;
+  const availW = wrap.getBoundingClientRect().width - labelW - groups.length - 24;
+  const cw = Math.max(3, Math.min(46, Math.floor(availW / nCols) - 2));
+  const availH = Math.max(240, window.innerHeight * 0.62);
+  const ch = Math.max(7, Math.min(26, Math.floor(availH / rows.length) - 3));
+  wrap.style.setProperty("--cw", `${cw}px`);
+  wrap.style.setProperty("--ch", `${ch}px`);
+  wrap.style.setProperty("--labelw", `${labelW}px`);
+  wrap.classList.toggle("tiny", cw < 9);
+  const wide = cw >= 14;
+
+  let head1 = `<tr><th class="corner group"></th>`;
+  let head2 = `<tr><th class="corner group"></th>`;
+  for (const g of groups) {
+    const focused = view.focusGroup === g.label ? " focused" : "";
+    head1 += `<th class="group gclick${focused}" data-group="${esc(g.label)}"
+      colspan="${g.cells.length * batchList.length}" title="Click to zoom this scenario">${esc(g.label)}</th>`;
+    for (const cell of g.cells) {
+      head2 += `<th class="group" colspan="${batchList.length}">${esc(cell.iam)}</th>`;
+    }
+  }
+  head1 += "</tr>";
+  head2 += "</tr>";
+
+  let body = "";
+  for (const row of rows) {
+    body += `<tr><th title="${esc(row)}">${esc(row)}</th>`;
+    for (const g of groups) {
+      for (const cell of g.cells) {
+        let first = true;
+        for (const b of batchList) {
+          const m = kind === "models" ? row : model;
+          const gcm = kind === "models" ? rt.dims.gcms[cell.rcp][0] : row;
+          const valid = rt.dims.gcms[cell.rcp].includes(gcm);
+          const key = [m, cell.ssp, cell.rcp, cell.iam, gcm, b ?? ""].join("|");
+          const unit = unitIndex.get(key) || null;
+          const inner = valid ? unitHtml(key, unit, m, stages, wide) :
+            `<div class="unit void"></div>`;
+          body += `<td class="${first ? "cellgroup-start" : ""}">${inner}</td>`;
+          first = false;
+        }
       }
     }
-    const doneCls = allDone ? " all-done" : "";
-    html += `<div class="node${failed ? " has-failed" : ""}${doneCls}" data-i="${i}" role="button" tabindex="0">
-      <div class="node-head"><span class="node-label" title="${esc(child.label)}">${esc(child.label)}</span>
-      ${failed ? `<span class="fail-chip">${fmtN(failed)} failed</span>` : ""}</div>
-      ${inner}
-      <div class="node-sub">${esc(sub)}</div>
-    </div>`;
-  });
-  board.innerHTML = html;
+    body += "</tr>";
+  }
+
+  wrap.innerHTML =
+    `<table class="grid"><thead>${head1}${head2}</thead><tbody>${body}</tbody></table>`;
 }
 
 /* ---------- tooltip and drawer ---------- */
+
+function unitFromEl(el) {
+  const key = el.dataset.key;
+  const parts = key.split("|");
+  const unit = unitIndex.get(key) || null;
+  return {
+    unit,
+    model: parts[0], ssp: parts[1], rcp: parts[2], iam: parts[3],
+    gcm: parts[4], batch: parts[5],
+  };
+}
 
 function unitTitle(info) {
   const bits = [];
   if (info.model !== "main") bits.push(info.model);
   bits.push(info.ssp, info.rcp, info.iam, info.gcm);
-  if (info.batch != null && info.batch !== "") bits.push(`batch ${info.batch}`);
+  if (info.batch !== "") bits.push(`batch${info.batch}`);
   return bits.join(" ");
 }
 
-function tooltipHtml(entry) {
-  if (entry.leaf) {
-    const info = entry.info;
-    const state = entry.state;
-    let html = `<div class="tt-title"><span class="tt-dot" style="background:${STATE_COLORS[state]}"></span>${esc(unitTitle(info))}</div>`;
-    html += `<div class="tt-row">${STATE_LABELS[state]}${info.unit && info.unit.fail_reason ? ": " + esc(info.unit.fail_reason) : ""}</div>`;
-    html += `<div class="tt-row">projection files ${entry.files.projection.found} of ${entry.files.projection.expected}, ` +
-      `aggregation ${entry.files.aggregation.found} of ${entry.files.aggregation.expected}</div>`;
-    if (info.unit) {
-      for (const [name, rec] of Object.entries(info.unit.stages)) {
-        if (rec.state === "not_started") continue;
-        let line = `${name}: ${rec.state}`;
-        if (rec.elapsed_min != null) line += `, ${fmtMin(rec.elapsed_min)}`;
-        if (rec.max_rss_gb != null) line += `, ${rec.max_rss_gb} GB`;
-        html += `<div class="tt-row">${esc(line)}</div>`;
-      }
+function tooltipHtml(info) {
+  const state = info.unit ? info.unit.state : "not_started";
+  let html = `<div class="tt-title"><span class="tt-dot" style="background:${STATE_COLORS[state]}"></span>${esc(unitTitle(info))}</div>`;
+  html += `<div class="tt-row">${STATE_LABELS[state]}${info.unit && info.unit.fail_reason ? ": " + esc(info.unit.fail_reason) : ""}</div>`;
+  const f = unitFiles(info.unit, info.model);
+  html += `<div class="tt-row">projection files ${f.projection.found} of ${f.projection.total}, ` +
+    `aggregation ${f.aggregation.found} of ${f.aggregation.total}</div>`;
+  if (info.unit) {
+    for (const [name, rec] of Object.entries(info.unit.stages)) {
+      if (rec.state === "not_started") continue;
+      let line = `${name}: ${rec.state}`;
+      if (rec.elapsed_min != null) line += `, ${fmtMin(rec.elapsed_min)}`;
+      if (rec.max_rss_gb != null) line += `, ${rec.max_rss_gb} GB`;
+      html += `<div class="tt-row">${esc(line)}</div>`;
     }
-    return html + `<div class="tt-row tt-hint">Click for the full file list</div>`;
   }
-  const agg = entry.agg;
-  let html = `<div class="tt-title">${esc(entry.child.label)}</div>`;
-  html += `<div class="tt-row">${fmtN(agg.unitsTotal)} units</div>`;
-  const f = agg.files;
-  html += `<div class="tt-row">projection files ${fmtN(f.projection.found)} of ${fmtN(f.projection.expected)}</div>`;
-  html += `<div class="tt-row">aggregation files ${fmtN(f.aggregation.found)} of ${fmtN(f.aggregation.expected)}</div>`;
-  const parts = STATES.filter((s) => agg.states[s])
-    .map((s) => `${STATE_LABELS[s].toLowerCase()} ${fmtN(agg.states[s])}`);
-  if (parts.length) html += `<div class="tt-row">${esc(parts.join(", "))}</div>`;
-  return html + `<div class="tt-row tt-hint">Click to zoom in</div>`;
+  html += `<div class="tt-row tt-hint">Click for the full file list</div>`;
+  return html;
 }
 
-function fileListHtml(info, sectorName) {
-  const spec = DATA.sectors[sectorName].files_spec[info.model];
-  const files = leafFiles(info, sectorName);
+function fileListHtml(info) {
+  const spec = currentSector().files_spec[info.model];
+  const f = unitFiles(info.unit, info.model);
   let html = "";
   for (const g of GROUPS) {
     const names = spec[g].map((n) => resolveName(n, info.rcp));
@@ -538,7 +452,7 @@ function fileListHtml(info, sectorName) {
     if (!rec || rec.found === 0) missing = new Set(names);
     else if (rec.found >= rec.total) missing = new Set();
     else missing = new Set((rec.missing || []).map((n) => resolveName(n, info.rcp)));
-    html += `<h3>${g} files (${files[g].found} of ${files[g].expected})</h3><div class="filelist">`;
+    html += `<h3>${g} files (${f[g].found} of ${f[g].total})</h3><div class="filelist">`;
     for (const n of names) {
       const miss = missing.has(n);
       html += `<div class="fitem ${miss ? "miss" : "ok"}">
@@ -550,14 +464,13 @@ function fileListHtml(info, sectorName) {
 }
 
 function showDrawer(info) {
-  const sectorName = path.sector;
   const state = info.unit ? info.unit.state : "not_started";
   $("drawer-title").textContent = unitTitle(info);
   let html = `<div class="state-line"><span class="tt-dot" style="background:${STATE_COLORS[state]}"></span>` +
     `${STATE_LABELS[state]}` +
     (info.unit && info.unit.fail_reason ? `: <span class="fail-reason">${esc(info.unit.fail_reason)}</span>` : "") +
     `</div>`;
-  const stages = DATA.sectors[sectorName].stages;
+  const stages = currentSector().stages;
   html += `<table class="stages"><tr><th>stage</th><th>state</th><th>time</th><th>memory</th><th>job</th></tr>`;
   for (const name of stages) {
     const rec = (info.unit && info.unit.stages[name]) || { state: "not_started" };
@@ -567,12 +480,14 @@ function showDrawer(info) {
       `<td>${fmtMin(rec.elapsed_min)}</td><td>${mem}</td><td>${esc(rec.job || "")}</td></tr>`;
   }
   html += `</table>`;
-  if (info.unit && info.unit.log) html += `<div class="meta">log: ${esc(info.unit.log)}</div>`;
+  if (info.unit && info.unit.log) {
+    html += `<div class="meta">log: ${esc(info.unit.log)}</div>`;
+  }
   if (info.unit) {
     const fin = Object.values(info.unit.stages).map((s) => s.finished).filter(Boolean).sort().pop();
     if (fin) html += `<div class="meta">last stage finished ${fmtAgo(fin)}</div>`;
   }
-  html += fileListHtml(info, sectorName);
+  html += fileListHtml(info);
   $("drawer-body").innerHTML = html;
   $("drawer").classList.remove("hidden");
 }
@@ -581,12 +496,12 @@ function showDrawer(info) {
 
 function setupInteractions() {
   const tooltip = $("tooltip");
-  const board = $("board");
+  const wrap = $("grid-wrap");
 
-  board.addEventListener("mousemove", (e) => {
-    const el = e.target.closest(".node");
-    if (!el) { tooltip.classList.add("hidden"); return; }
-    tooltip.innerHTML = tooltipHtml(currentChildren[el.dataset.i]);
+  wrap.addEventListener("mousemove", (e) => {
+    const el = e.target.closest(".unit");
+    if (!el || el.classList.contains("void")) { tooltip.classList.add("hidden"); return; }
+    tooltip.innerHTML = tooltipHtml(unitFromEl(el));
     tooltip.classList.remove("hidden");
     const pad = 14;
     let x = e.clientX + pad, y = e.clientY + pad;
@@ -596,29 +511,19 @@ function setupInteractions() {
     tooltip.style.left = `${x}px`;
     tooltip.style.top = `${y}px`;
   });
-  board.addEventListener("mouseleave", () => tooltip.classList.add("hidden"));
-
-  function openNode(el) {
-    const entry = currentChildren[el.dataset.i];
-    if (!entry) return;
-    if (entry.leaf) showDrawer(entry.info);
-    else navigate(entry.child.path, true);
-  }
-  board.addEventListener("click", (e) => {
-    const el = e.target.closest(".node");
-    if (el) openNode(el);
-  });
-  board.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" && e.key !== " ") return;
-    const el = e.target.closest(".node");
-    if (el) { e.preventDefault(); openNode(el); }
+  wrap.addEventListener("mouseleave", () => tooltip.classList.add("hidden"));
+  wrap.addEventListener("click", (e) => {
+    const gh = e.target.closest("th.gclick");
+    if (gh) {
+      view.focusGroup = view.focusGroup === gh.dataset.group ? null : gh.dataset.group;
+      renderGrid();
+      return;
+    }
+    const el = e.target.closest(".unit");
+    if (el && !el.classList.contains("void")) showDrawer(unitFromEl(el));
   });
 
-  window.addEventListener("popstate", () => {
-    path = hashToPath(location.hash);
-    $("drawer").classList.add("hidden");
-    renderAll();
-  });
+  $("focus-clear").onclick = () => { view.focusGroup = null; renderGrid(); };
 
   $("view-toggle").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-mode]");
@@ -629,7 +534,7 @@ function setupInteractions() {
     }
     renderSummary();
     renderLegend();
-    renderBoard();
+    renderGrid();
   });
 
   $("drawer-close").onclick = () => $("drawer").classList.add("hidden");
@@ -640,7 +545,7 @@ function setupInteractions() {
   $("failed-toggle").onclick = () => {
     view.failedOnly = !view.failedOnly;
     $("failed-toggle").classList.toggle("active", view.failedOnly);
-    $("board").classList.toggle("failed-only", view.failedOnly);
+    $("grid-wrap").classList.toggle("failed-only", view.failedOnly);
   };
 
   $("theme-toggle").onclick = () => {
@@ -654,7 +559,7 @@ function setupInteractions() {
   let resizeTimer = null;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(renderBoard, 150);
+    resizeTimer = setTimeout(renderGrid, 150);
   });
 }
 
@@ -727,7 +632,8 @@ async function boot() {
     b.classList.remove("hidden");
   }
 
-  path = hashToPath(location.hash);
+  view.sector = Object.keys(status.sectors)[0];
+  view.runType = Object.keys(status.sectors[view.sector].run_types)[0];
   setupInteractions();
   renderAll();
 }

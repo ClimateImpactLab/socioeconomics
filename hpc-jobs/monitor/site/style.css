@@ -15,6 +15,7 @@
   --st-running: #2a78d6;
   --st-done: #0ca30c;
   --st-failed: #d03b3b;
+  --st-void: transparent;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -63,7 +64,7 @@ h2 { font-size: 15px; margin: 0; }
   padding: 16px 20px 8px;
 }
 .subtitle { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
-.topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
 .last-scan { color: var(--muted); font-size: 12px; }
 .badge {
   background: var(--st-queued);
@@ -114,42 +115,42 @@ h2 { font-size: 15px; margin: 0; }
   font-size: 13px;
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 20px 0;
-  font-size: 13px;
-}
-.crumb {
+.tabs { display: flex; gap: 4px; padding: 6px 20px 0; flex-wrap: wrap; }
+.tabs button {
   background: none;
   border: none;
-  color: var(--st-running);
+  border-bottom: 2px solid transparent;
+  color: var(--ink-2);
   cursor: pointer;
   font: inherit;
-  font-size: 13px;
-  padding: 2px 4px;
-  border-radius: 4px;
+  padding: 6px 10px;
 }
-.crumb:hover { background: var(--surface); text-decoration: underline; }
-.crumb.current { color: var(--ink); font-weight: 600; cursor: default; }
-.crumb-sep { color: var(--muted); }
+.tabs button:hover { color: var(--ink); }
+.tabs button.active {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--st-running);
+}
+.tabs .tab-count { color: var(--muted); font-size: 12px; margin-left: 4px; }
+.tabs-runtype { border-bottom: 1px solid var(--hairline); padding-bottom: 6px; }
 
 .summary {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  padding: 10px 20px 4px;
+  padding: 14px 20px 4px;
 }
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 14px;
+  padding: 10px 14px;
   min-width: 96px;
 }
-.card .num { font-size: 20px; font-weight: 600; }
+.card .num {
+  font-size: 22px;
+  font-weight: 600;
+}
 .card .lbl {
   color: var(--ink-2);
   font-size: 12px;
@@ -158,13 +159,13 @@ h2 { font-size: 15px; margin: 0; }
   gap: 6px;
 }
 .card .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-.card.eta .num { font-size: 17px; }
+.card.eta .num { font-size: 18px; }
 .card .sub { color: var(--muted); font-size: 11px; margin-top: 2px; max-width: 200px; }
 
-.progress-card { flex: 1 1 240px; display: flex; flex-direction: column; justify-content: center; }
+.progress-card { flex: 1 1 260px; display: flex; flex-direction: column; justify-content: center; }
 .progress-bar {
   display: flex;
-  height: 13px;
+  height: 14px;
   border-radius: 4px;
   overflow: hidden;
   background: var(--st-none);
@@ -177,9 +178,24 @@ h2 { font-size: 15px; margin: 0; }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 20px 0;
+  padding: 8px 20px 0;
 }
 .controls .spacer { flex: 1; }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pills button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--ink-2);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 3px 11px;
+}
+.pills button.active {
+  border-color: var(--st-running);
+  color: var(--ink);
+  font-weight: 600;
+}
 .toggle-btn {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -188,7 +204,6 @@ h2 { font-size: 15px; margin: 0; }
   cursor: pointer;
   font-size: 12px;
   padding: 4px 10px;
-  white-space: nowrap;
 }
 .toggle-btn.active {
   border-color: var(--st-failed);
@@ -201,6 +216,7 @@ h2 { font-size: 15px; margin: 0; }
   flex-wrap: wrap;
   gap: 14px;
   align-items: center;
+  padding: 10px 20px 2px;
   color: var(--ink-2);
   font-size: 12px;
 }
@@ -214,107 +230,122 @@ h2 { font-size: 15px; margin: 0; }
 .legend .sw.ring { background: var(--st-none); border: 1.5px solid var(--st-failed); }
 .legend .note { color: var(--muted); }
 
-/* The zoomable board: one block per child of the current level. */
-.board {
-  display: grid;
-  gap: 8px;
-  margin: 10px 20px;
-  animation: boardin 0.16s ease;
-}
-@keyframes boardin {
-  from { opacity: 0.4; transform: scale(0.985); }
-  to { opacity: 1; transform: scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .board { animation: none; }
-}
-
-.node {
+.grid-wrap {
+  margin: 12px 20px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 10px;
+  overflow: auto;
+  max-height: 72vh;
+  position: relative;
+}
+.grid-wrap .empty-msg { padding: 28px; color: var(--muted); }
+
+table.grid { border-collapse: separate; border-spacing: 0; }
+table.grid th { padding: 2px 3px; }
+table.grid td { padding: 1px; }
+table.grid thead th {
+  position: sticky;
+  background: var(--surface);
+  z-index: 3;
+  font-weight: 500;
+  color: var(--ink-2);
+  font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+}
+table.grid thead tr:first-child th { top: 0; }
+table.grid thead tr:nth-child(2) th { top: 22px; }
+table.grid thead th.group {
+  border-bottom: 1px solid var(--hairline);
+  border-left: 1px solid var(--hairline);
+  height: 22px;
+}
+table.grid tbody th {
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 2;
+  font-weight: 400;
+  color: var(--ink-2);
+  font-size: 11px;
+  text-align: right;
+  padding-right: 8px;
+  white-space: nowrap;
+  max-width: var(--labelw, 150px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+th.gclick { cursor: pointer; }
+th.gclick:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--st-running) 10%, var(--surface));
+}
+th.gclick.focused {
+  color: var(--ink);
+  font-weight: 700;
+  border-bottom: 2px solid var(--st-running);
+}
+table.grid thead th.corner { left: 0; z-index: 4; }
+table.grid td.cellgroup-start { border-left: 1px solid var(--hairline); }
+
+/* One unit of work, sized by the grid so everything fits on screen.
+   Files view: two bars, projection then aggregation. Jobs view: one
+   stripe per stage, top to bottom. */
+.unit {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 4px;
+  gap: 1px;
+  width: var(--cw, 34px);
+  height: var(--ch, 17px);
+  border-radius: 2px;
   cursor: pointer;
-  min-width: 0;
-  min-height: 0;
+  position: relative;
+}
+.unit:hover { outline: 2px solid var(--ink-2); z-index: 1; }
+.unit .seg { flex: 1; border-radius: 1px; }
+.unit.void { visibility: hidden; }
+.unit.ring { outline: 1.5px solid var(--st-failed); outline-offset: 0; }
+.failed-only .unit:not(.st-failed) { opacity: 0.12; }
+.tiny .unit, .tiny .unit .seg, .tiny .fbar { gap: 0; border-radius: 0; }
+
+.fbar {
+  flex: 1;
+  background: var(--st-none);
+  border-radius: 1px;
   overflow: hidden;
 }
-.node:hover, .node:focus-visible {
-  outline: 2px solid var(--st-running);
+.fbar span { display: block; height: 100%; background: var(--st-done); }
+.fbar span.fill-run { animation: pulse 1.6s ease-in-out infinite; }
+
+.seg.none { background: var(--st-none); }
+.seg.queued {
+  background: var(--st-queued);
+  outline: 1px dashed color-mix(in srgb, var(--ink) 45%, transparent);
   outline-offset: -1px;
 }
-.node.has-failed { border-color: var(--st-failed); }
-.node.all-done { border-color: color-mix(in srgb, var(--st-done) 55%, var(--border)); }
-.failed-only .node:not(.has-failed) { opacity: 0.15; }
+.seg.running { background: var(--st-running); animation: pulse 1.6s ease-in-out infinite; }
+.seg.done { background: var(--st-done); }
+.seg.failed { background: var(--st-failed); }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  .seg.running { animation: none; }
+}
 
-.node-head {
+/* Failed marker so failure is not color-alone on bigger cells. */
+.unit .fx {
+  position: absolute;
+  inset: 0;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-  min-width: 0;
-}
-.node-label {
-  font-weight: 600;
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.fail-chip {
-  color: var(--st-failed);
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.node-sub {
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.compact .node { padding: 5px 7px; gap: 2px; border-radius: 6px; }
-.compact .node-label { font-size: 11px; font-weight: 500; }
-.compact .node-sub { font-size: 10px; }
-.compact .fail-chip { font-size: 10px; }
-
-/* Files mode: one small bar per file group. */
-.nbar { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.nbar .nlbl { color: var(--muted); font-size: 10px; width: 28px; flex: none; }
-.nbar .nval {
-  color: var(--ink-2);
+  align-items: center;
+  justify-content: center;
+  color: #fff;
   font-size: 10px;
-  width: 30px;
-  flex: none;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
 }
-.ntrack {
-  flex: 1;
-  height: 7px;
-  background: var(--st-none);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.compact .ntrack { height: 5px; }
-.ntrack span { display: block; height: 100%; background: var(--st-done); }
-
-/* Jobs mode: share of units in each state. */
-.dist {
-  display: flex;
-  height: 9px;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--st-none);
-}
-.compact .dist { height: 6px; }
-.dist span { height: 100%; }
-.dist span + span { margin-left: 1px; }
 
 .su-section { padding: 4px 20px 0; }
 .su-section details {
@@ -353,7 +384,7 @@ table.su td.r { text-align: right; font-variant-numeric: tabular-nums; }
 .tooltip {
   position: fixed;
   z-index: 20;
-  max-width: 320px;
+  max-width: 300px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -364,7 +395,6 @@ table.su td.r { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .tooltip .tt-title { font-weight: 600; margin-bottom: 3px; }
 .tooltip .tt-row { color: var(--ink-2); }
-.tooltip .tt-hint { color: var(--muted); margin-top: 3px; }
 .tooltip .tt-dot {
   width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px;
 }
@@ -374,7 +404,7 @@ table.su td.r { text-align: right; font-variant-numeric: tabular-nums; }
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(400px, 92vw);
+  width: min(380px, 92vw);
   background: var(--surface);
   border-left: 1px solid var(--border);
   box-shadow: -6px 0 22px rgba(0, 0, 0, 0.15);
