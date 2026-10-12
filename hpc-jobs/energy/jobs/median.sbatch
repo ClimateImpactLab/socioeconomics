@@ -3,9 +3,9 @@
 #SBATCH --output=logs/energy/median/med_%A_%a.out
 #SBATCH --error=logs/energy/median/med_%A_%a.err
 #SBATCH --account=cil
-#SBATCH --partition=cil
+#SBATCH --partition=amd
 #SBATCH --ntasks=1
-#SBATCH --mem=50G
+#SBATCH --mem=15G
 #SBATCH --time=36:00:00
 #SBATCH --array=0-119
 

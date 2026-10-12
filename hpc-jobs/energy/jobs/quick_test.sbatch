@@ -3,9 +3,9 @@
 #SBATCH --output=logs/energy/quick_test/qt_%A_%a.out
 #SBATCH --error=logs/energy/quick_test/qt_%A_%a.err
 #SBATCH --account=cil
-#SBATCH --partition=cil
+#SBATCH --partition=amd
 #SBATCH --ntasks=1
-#SBATCH --mem=50G
+#SBATCH --mem=15G
 #SBATCH --time=12:00:00
 #SBATCH --array=0-1
 
