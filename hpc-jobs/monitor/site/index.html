@@ -16,10 +16,6 @@
     <p class="subtitle">New socioeconomics projections. Run progress only, no results.</p>
   </div>
   <div class="topbar-right">
-    <div class="seg-toggle" id="view-toggle">
-      <button data-mode="files" class="active">Files</button>
-      <button data-mode="jobs">Jobs</button>
-    </div>
     <span id="mock-badge" class="badge hidden">mock data</span>
     <span id="last-scan" class="last-scan"></span>
     <button id="theme-toggle" class="icon-btn" title="Switch light/dark">&#9681;</button>
@@ -33,6 +29,22 @@
 
 <section id="summary" class="summary"></section>
 
+<section class="cluster-section">
+  <details id="cluster-panel" open>
+    <summary><span class="cluster-title">Cluster</span><span id="cluster-badges" class="cluster-badges"></span></summary>
+    <div class="cluster-body">
+      <div class="cluster-box">
+        <h3>Jobs running or queued now</h3>
+        <div id="jobs-content"></div>
+      </div>
+      <div class="cluster-box">
+        <h3 id="su-title">Service units</h3>
+        <div id="su-content"></div>
+      </div>
+    </div>
+  </details>
+</section>
+
 <section class="controls">
   <div id="model-pills" class="pills"></div>
   <div class="spacer"></div>
@@ -43,13 +55,6 @@
 <section class="legend" id="legend"></section>
 
 <main id="grid-wrap" class="grid-wrap"></main>
-
-<section class="su-section">
-  <details id="su-panel">
-    <summary>Service units</summary>
-    <div id="su-content" class="su-content"></div>
-  </details>
-</section>
 
 <footer class="footer">
   <p>Shows run status only. Data refreshes on a schedule; reload the page to pick up the latest scan.</p>

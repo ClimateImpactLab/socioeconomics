@@ -1,19 +1,16 @@
 /* AMEL run-status dashboard. Reads status.json (written by the collector,
-   or by make_mock_status.py for the mock) and renders the grids.
-
-   Two views share the same grid shape:
-   - files: each cell shows two bars, projection files on top and
-     aggregation files below, filling in as files appear on disk;
-   - jobs: each cell shows one stripe per pipeline stage, colored by the
-     Slurm state of that stage. */
+   or by make_mock_status.py for the mock) and renders one view:
+   - the cluster strip: jobs each person has running or queued, and
+     service units on the cil account (from Slurm);
+   - the progress grid: each cell shows two bars, projection files on top
+     and aggregation files below, filling in as files appear on disk
+     (from the output folders only). */
 
 "use strict";
 
-const STATES = ["done", "running", "queued", "failed", "partial", "not_started"];
 const STATE_LABELS = {
   done: "Done",
   running: "Running",
-  queued: "Queued",
   failed: "Failed",
   partial: "Partial",
   not_started: "Not started",
@@ -21,7 +18,6 @@ const STATE_LABELS = {
 const STATE_COLORS = {
   done: "var(--st-done)",
   running: "var(--st-running)",
-  queued: "var(--st-queued)",
   failed: "var(--st-failed)",
   partial: "var(--st-done)",
   not_started: "var(--st-none)",
@@ -29,10 +25,8 @@ const STATE_COLORS = {
 const GROUPS = ["projection", "aggregation"];
 
 let DATA = null;
-let view = {
-  mode: "files", sector: null, runType: null, model: null,
-  failedOnly: false, focusGroup: null,
-};
+let view = { sector: null, runType: null, model: null, failedOnly: false, focusGroup: null };
+let openPeople = new Set();
 let unitIndex = new Map();
 
 const $ = (id) => document.getElementById(id);
@@ -125,7 +119,13 @@ function renderAll() {
   renderModelPills();
   renderLegend();
   renderGrid();
-  renderSU();
+}
+
+function defaultRunType(sector) {
+  const rts = Object.keys(sector.run_types);
+  if (rts.includes("montecarlo")) return "montecarlo";
+  if (rts.includes("median")) return "median";
+  return rts[0];
 }
 
 function renderSectorTabs() {
@@ -139,8 +139,7 @@ function renderSectorTabs() {
     b.innerHTML = `${esc(sector.label)}<span class="tab-count">${pct}%</span>`;
     b.onclick = () => {
       view.sector = name;
-      const rts = Object.keys(sector.run_types);
-      if (!rts.includes(view.runType)) view.runType = rts[0];
+      view.runType = defaultRunType(sector);
       view.model = null;
       view.focusGroup = null;
       renderAll();
@@ -163,6 +162,14 @@ function renderRunTypeTabs() {
       view.focusGroup = null;
       renderAll();
     };
+    el.appendChild(b);
+  }
+  for (const name of sector.disabled_run_types || []) {
+    const b = document.createElement("button");
+    b.className = "disabled";
+    b.disabled = true;
+    b.title = "Not part of this sector";
+    b.textContent = name;
     el.appendChild(b);
   }
 }
@@ -191,41 +198,23 @@ function fileTotals(rt) {
 function renderSummary() {
   const rt = currentRT();
   const c = rt.counts;
-  const el = $("summary");
-  let html = "";
-
-  if (view.mode === "files") {
-    const ft = fileTotals(rt);
-    const pct = ft.expected ? (100 * ft.found) / ft.expected : 0;
-    html += `<div class="card"><div class="num">${fmtN(ft.found)}</div>
-      <div class="lbl">files present of ${fmtN(ft.expected)}</div></div>`;
-    html += `<div class="card"><div class="num">${fmtN(ft.complete)}</div>
-      <div class="lbl">units with all files, of ${fmtN(c.total)}</div></div>`;
-    html += `<div class="card"><div class="num">${fmtN(c.failed)}</div>
-      <div class="lbl"><span class="dot" style="background:${STATE_COLORS.failed}"></span>failed units</div></div>`;
-    html += `<div class="card progress-card">
+  const ft = fileTotals(rt);
+  const pct = ft.expected ? (100 * ft.found) / ft.expected : 0;
+  let html = `<div class="card"><div class="num">${fmtN(ft.found)}</div>
+      <div class="lbl">files present of ${fmtN(ft.expected)}</div></div>
+    <div class="card"><div class="num">${fmtN(ft.complete)}</div>
+      <div class="lbl">units with all files, of ${fmtN(c.total)}</div></div>
+    <div class="card"><div class="num">${fmtN(c.running)}</div>
+      <div class="lbl"><span class="dot" style="background:${STATE_COLORS.running}"></span>units being written</div></div>
+    <div class="card"><div class="num">${fmtN(c.failed)}</div>
+      <div class="lbl"><span class="dot" style="background:${STATE_COLORS.failed}"></span>failed units</div></div>
+    <div class="card progress-card">
       <div class="lbl">${pct.toFixed(1)}% of expected files</div>
       <div class="progress-bar"><span style="width:${pct}%;background:${STATE_COLORS.done}"></span></div></div>`;
-  } else {
-    for (const s of STATES) {
-      html += `<div class="card"><div class="num">${c[s].toLocaleString("en-US")}</div>
-        <div class="lbl"><span class="dot" style="background:${STATE_COLORS[s]}"></span>${STATE_LABELS[s]}</div></div>`;
-    }
-    const pct = c.total ? ((100 * c.done) / c.total) : 0;
-    let bar = "";
-    for (const s of STATES) {
-      if (s === "not_started" || !c[s]) continue;
-      bar += `<span style="width:${(100 * c[s]) / c.total}%;background:${STATE_COLORS[s]};${s === "partial" ? "opacity:.45;" : ""}"></span>`;
-    }
-    html += `<div class="card progress-card">
-      <div class="lbl">${pct.toFixed(1)}% done of ${fmtN(c.total)} units</div>
-      <div class="progress-bar">${bar}</div></div>`;
-  }
-
   html += `<div class="card eta"><div class="num">${fmtEta(rt.eta_hours)}</div>
     <div class="lbl">est. time to finish</div>
     ${rt.eta_basis ? `<div class="sub">${esc(rt.eta_basis)}</div>` : ""}</div>`;
-  el.innerHTML = html;
+  $("summary").innerHTML = html;
 }
 
 function renderModelPills() {
@@ -246,24 +235,12 @@ function renderModelPills() {
 }
 
 function renderLegend() {
-  const sector = currentSector();
-  let html;
-  if (view.mode === "files") {
-    html = `<span class="chip"><span class="sw" style="background:var(--st-none)"></span>no files yet</span>
-      <span class="chip"><span class="sw half"></span>files appearing</span>
-      <span class="chip"><span class="sw" style="background:${STATE_COLORS.done}"></span>all files present</span>
-      <span class="chip"><span class="sw ring"></span>failed job</span>
-      <span class="note">Each box has two bars: projection files on top, aggregation files below.
-      Click a scenario header to zoom into it, click a box for the file list.</span>`;
-  } else {
-    const chips = STATES.filter((s) => s !== "partial").map((s) =>
-      `<span class="chip"><span class="sw ${s === "queued" ? "queued" : ""}"
-        style="background:${STATE_COLORS[s]}"></span>${STATE_LABELS[s]}</span>`).join("");
-    html = chips +
-      `<span class="note">Each box has one stripe per stage, top to bottom: ${sector.stages.join(", ")}.
-      Click a scenario header to zoom into it, click a box for details.</span>`;
-  }
-  $("legend").innerHTML = html;
+  $("legend").innerHTML = `<span class="chip"><span class="sw" style="background:var(--st-none)"></span>no files yet</span>
+    <span class="chip"><span class="sw half"></span>files appearing</span>
+    <span class="chip"><span class="sw" style="background:${STATE_COLORS.done}"></span>all files present</span>
+    <span class="chip"><span class="sw ring"></span>failed</span>
+    <span class="note">Each box has two bars: projection files on top, aggregation files below.
+    Click a scenario header to zoom into it, click a box for the file list.</span>`;
 }
 
 /* ---------- grid ---------- */
@@ -296,37 +273,27 @@ function buildGroups(cells) {
   return groups;
 }
 
-function cellInner(unit, model, stages) {
-  if (view.mode === "files") {
-    const f = unitFiles(unit, model);
-    let html = "";
-    for (const g of GROUPS) {
-      const pct = f[g].total ? (100 * f[g].found) / f[g].total : 0;
-      const run = unit && unit.state === "running" ? " fill-run" : "";
-      html += `<div class="fbar"><span class="${run.trim()}" style="width:${pct}%"></span></div>`;
-    }
-    return html;
+function cellInner(unit, model) {
+  const f = unitFiles(unit, model);
+  let html = "";
+  for (const g of GROUPS) {
+    const pct = f[g].total ? (100 * f[g].found) / f[g].total : 0;
+    const run = unit && unit.state === "running" ? "fill-run" : "";
+    html += `<div class="fbar"><span class="${run}" style="width:${pct}%"></span></div>`;
   }
-  if (!unit) return stages.map(() => `<div class="seg none"></div>`).join("");
-  return stages.map((st) => {
-    const rec = unit.stages[st] || { state: "not_started" };
-    const cls = rec.state === "not_started" ? "none" : rec.state;
-    return `<div class="seg ${cls}"></div>`;
-  }).join("");
+  return html;
 }
 
-function unitHtml(key, unit, model, stages, wide) {
+function unitHtml(key, unit, model, wide) {
   const state = unit ? unit.state : "not_started";
   const ring = state === "failed" ? " ring" : "";
   const fx = unit && state === "failed" && wide ? `<span class="fx">x</span>` : "";
   return `<div class="unit st-${state}${ring}" data-key="${esc(key)}">` +
-    cellInner(unit, model, stages) + fx + `</div>`;
+    cellInner(unit, model) + fx + `</div>`;
 }
 
 function renderGrid() {
   const rt = currentRT();
-  const sector = currentSector();
-  const stages = sector.stages;
   const wrap = $("grid-wrap");
   wrap.classList.toggle("failed-only", view.failedOnly);
 
@@ -386,7 +353,7 @@ function renderGrid() {
           const valid = rt.dims.gcms[cell.rcp].includes(gcm);
           const key = [m, cell.ssp, cell.rcp, cell.iam, gcm, b ?? ""].join("|");
           const unit = unitIndex.get(key) || null;
-          const inner = valid ? unitHtml(key, unit, m, stages, wide) :
+          const inner = valid ? unitHtml(key, unit, m, wide) :
             `<div class="unit void"></div>`;
           body += `<td class="${first ? "cellgroup-start" : ""}">${inner}</td>`;
           first = false;
@@ -431,9 +398,8 @@ function tooltipHtml(info) {
   if (info.unit) {
     for (const [name, rec] of Object.entries(info.unit.stages)) {
       if (rec.state === "not_started") continue;
-      let line = `${name}: ${rec.state}`;
-      if (rec.elapsed_min != null) line += `, ${fmtMin(rec.elapsed_min)}`;
-      if (rec.max_rss_gb != null) line += `, ${rec.max_rss_gb} GB`;
+      let line = `${name}: ${STATE_LABELS[rec.state].toLowerCase()}`;
+      if (rec.finished) line += `, ${fmtAgo(rec.finished)}`;
       html += `<div class="tt-row">${esc(line)}</div>`;
     }
   }
@@ -471,22 +437,14 @@ function showDrawer(info) {
     (info.unit && info.unit.fail_reason ? `: <span class="fail-reason">${esc(info.unit.fail_reason)}</span>` : "") +
     `</div>`;
   const stages = currentSector().stages;
-  html += `<table class="stages"><tr><th>stage</th><th>state</th><th>time</th><th>memory</th><th>job</th></tr>`;
+  html += `<table class="stages"><tr><th>stage</th><th>state</th><th>finished</th></tr>`;
   for (const name of stages) {
     const rec = (info.unit && info.unit.stages[name]) || { state: "not_started" };
-    const mem = rec.max_rss_gb != null ?
-      `${rec.max_rss_gb} / ${rec.req_mem_gb ?? "?"} GB` : "";
+    const fin = rec.finished ? `${fmtStamp(rec.finished)} (${fmtAgo(rec.finished)})` : "";
     html += `<tr><td>${esc(name)}</td><td>${esc(STATE_LABELS[rec.state] || rec.state)}</td>` +
-      `<td>${fmtMin(rec.elapsed_min)}</td><td>${mem}</td><td>${esc(rec.job || "")}</td></tr>`;
+      `<td>${fin}</td></tr>`;
   }
   html += `</table>`;
-  if (info.unit && info.unit.log) {
-    html += `<div class="meta">log: ${esc(info.unit.log)}</div>`;
-  }
-  if (info.unit) {
-    const fin = Object.values(info.unit.stages).map((s) => s.finished).filter(Boolean).sort().pop();
-    if (fin) html += `<div class="meta">last stage finished ${fmtAgo(fin)}</div>`;
-  }
   html += fileListHtml(info);
   $("drawer-body").innerHTML = html;
   $("drawer").classList.remove("hidden");
@@ -525,16 +483,13 @@ function setupInteractions() {
 
   $("focus-clear").onclick = () => { view.focusGroup = null; renderGrid(); };
 
-  $("view-toggle").addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-mode]");
-    if (!b || b.dataset.mode === view.mode) return;
-    view.mode = b.dataset.mode;
-    for (const btn of $("view-toggle").querySelectorAll("button")) {
-      btn.classList.toggle("active", btn.dataset.mode === view.mode);
-    }
-    renderSummary();
-    renderLegend();
-    renderGrid();
+  $("jobs-content").addEventListener("click", (e) => {
+    const head = e.target.closest(".person-row.has-jobs");
+    if (!head) return;
+    const name = head.dataset.name;
+    if (openPeople.has(name)) openPeople.delete(name);
+    else openPeople.add(name);
+    renderJobs();
   });
 
   $("drawer-close").onclick = () => $("drawer").classList.add("hidden");
@@ -563,42 +518,105 @@ function setupInteractions() {
   });
 }
 
-/* ---------- service units ---------- */
+/* ---------- cluster strip ---------- */
+
+function fmtDate(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US",
+    { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtStamp(iso) {
+  return new Date(iso).toLocaleString("en-US",
+    { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function taskTotals(jobs) {
+  let running = 0, queued = 0;
+  for (const j of jobs || []) { running += j.tasks.running; queued += j.tasks.queued; }
+  return { running, queued };
+}
+
+function renderCluster() {
+  const people = DATA.people;
+  const known = people.some((p) => p.active_jobs != null);
+  const t = taskTotals(people.flatMap((p) => p.active_jobs || []));
+  const a = DATA.account;
+  const su = a.allocation_status === "ok" ? `${fmtN(a.balance_su)} SU left` :
+    a.allocation_status === "none" ? "no allocation yet" : "balance n/a";
+  $("cluster-badges").innerHTML = known ?
+    `<span class="cbadge run">${fmtN(t.running)} running</span>
+     <span class="cbadge queue">${fmtN(t.queued)} queued</span>
+     <span class="cbadge">${esc(su)}</span>` :
+    `<span class="cbadge">no Slurm data in this scan</span>`;
+  renderJobs();
+  renderSU();
+}
+
+function renderJobs() {
+  let html = "";
+  for (const p of DATA.people) {
+    const jobs = p.active_jobs;
+    const t = taskTotals(jobs);
+    let status;
+    if (!p.linked) status = `<span class="muted">no cluster user set</span>`;
+    else if (jobs == null) status = `<span class="muted">n/a</span>`;
+    else if (!jobs.length) status = `<span class="muted">no jobs</span>`;
+    else {
+      const parts = [];
+      if (t.running) parts.push(`<span class="jstate run">${fmtN(t.running)} running</span>`);
+      if (t.queued) parts.push(`<span class="jstate queue">${fmtN(t.queued)} queued</span>`);
+      status = parts.join(", ") +
+        ` <span class="muted">in ${jobs.length} ${jobs.length === 1 ? "job" : "jobs"}</span>`;
+    }
+    const has = jobs && jobs.length;
+    const open = has && openPeople.has(p.name);
+    html += `<div class="person-row${has ? " has-jobs" : ""}" data-name="${esc(p.name)}">
+      <span class="caret">${has ? (open ? "v" : ">") : ""}</span>
+      <span class="person-name">${esc(p.name)}</span><span class="person-status">${status}</span></div>`;
+    if (open) {
+      html += `<table class="su jobs"><tr><th>job name</th><th>partition</th><th>state</th>
+        <th class="r">running</th><th class="r">queued</th><th class="r">done</th><th class="r">elapsed</th></tr>` +
+        jobs.map((j) => `<tr><td>${esc(j.job_name)}</td><td>${esc(j.partition)}</td>
+          <td><span class="jstate ${j.state === "RUNNING" ? "run" : "queue"}">${j.state === "RUNNING" ? "Running" : "Queued"}</span></td>
+          <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td>
+          <td class="r">${fmtN(j.tasks.done)}</td><td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`
+        ).join("") + `</table>`;
+    }
+  }
+  html += `<div class="su-note">All jobs on the ${esc(DATA.account.name)} account, whatever the job name.
+    Click a name for the job list. Done means tasks that finished successfully.</div>`;
+  $("jobs-content").innerHTML = html;
+}
 
 function renderSU() {
   const a = DATA.account;
-  const usedPct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : 0;
-  let html = `<div class="su-block">
-    <h3>Account: ${esc(a.name)}</h3>
-    <table class="su">
+  $("su-title").textContent = `Service units, ${a.name} account`;
+  let html;
+  if (a.allocation_status === "ok") {
+    const usedPct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : 0;
+    html = `<table class="su">
       <tr><td>Allocation</td><td class="r">${fmtN(a.allocation_su)}</td></tr>
       <tr><td>Used</td><td class="r">${fmtN(a.used_su)}</td></tr>
-      <tr><td>Balance</td><td class="r">${fmtN(a.balance_su)}</td></tr>
+      <tr><td>Remaining balance</td><td class="r">${fmtN(a.balance_su)}</td></tr>
     </table>
     <div class="su-bar acct-bar"><span style="width:${usedPct.toFixed(1)}%"></span></div>
-    <div class="su-note">${usedPct.toFixed(1)}% of allocation used</div>
-  </div>`;
+    <div class="su-note">${usedPct.toFixed(1)}% of allocation used</div>`;
+  } else if (a.allocation_status === "none") {
+    html = `<div class="no-alloc">No allocation yet</div>
+      <div class="su-note">The ${esc(a.name)} account has no allocation, so there is no balance to show.</div>`;
+  } else {
+    html = `<div class="no-alloc muted">Balance not read in this scan</div>`;
+  }
 
   const maxP = Math.max(...DATA.people.map((p) => p.su_used || 0), 1);
-  html += `<div class="su-block"><h3>By person</h3><table class="su">
-    <tr><th>name</th><th>SU used</th><th></th></tr>` +
-    DATA.people.map((p) =>
-      `<tr><td>${esc(p.name)}</td><td class="r">${fmtN(p.su_used)}</td>
-       <td><div class="su-bar"><span style="width:${(100 * (p.su_used || 0)) / maxP}%"></span></div></td></tr>`
-    ).join("") + `</table></div>`;
-
-  let rows = "";
-  for (const [sname, sector] of Object.entries(DATA.sectors)) {
-    for (const [rtName, rt] of Object.entries(sector.run_types)) {
-      if (!rt.su_used) continue;
-      rows += `<tr><td>${esc(sector.label)}</td><td>${esc(rtName)}</td>
-        <td class="r">${fmtN(rt.su_used)}</td></tr>`;
-    }
-  }
-  html += `<div class="su-block"><h3>By sector and run type</h3><table class="su">
-    <tr><th>sector</th><th>run type</th><th>SU used</th></tr>${rows}</table>
-    <div class="su-note">SU means service units, the core-hours charged to the account.</div></div>`;
-
+  html += `<h4>Use per person since ${esc(fmtDate(a.su_since))}</h4><table class="su">` +
+    DATA.people.map((p) => {
+      const val = !p.linked ? `<span class="muted">no cluster user set</span>` :
+        p.su_used == null ? "n/a" : fmtN(p.su_used);
+      return `<tr><td>${esc(p.name)}</td><td class="r">${val}</td>
+        <td><div class="su-bar"><span style="width:${(100 * (p.su_used || 0)) / maxP}%"></span></div></td></tr>`;
+    }).join("") + `</table>
+    <div class="su-note">Core hours of all jobs on the account, not only projection runs.</div>`;
   $("su-content").innerHTML = html;
 }
 
@@ -633,8 +651,9 @@ async function boot() {
   }
 
   view.sector = Object.keys(status.sectors)[0];
-  view.runType = Object.keys(status.sectors[view.sector].run_types)[0];
+  view.runType = defaultRunType(status.sectors[view.sector]);
   setupInteractions();
+  renderCluster();
   renderAll();
 }
 

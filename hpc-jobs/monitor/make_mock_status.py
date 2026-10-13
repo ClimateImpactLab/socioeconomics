@@ -19,38 +19,62 @@ import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# Rough per-stage runtime and memory per sector, used to invent plausible
-# elapsed minutes and MaxRSS values.
-STAGE_PROFILE = {
-    "mortality":   {"generate": (140, 46, 64), "aggregate": (45, 14, 45)},
-    "agriculture": {"generate": (90, 30, 45), "aggregate": (35, 12, 45),
-                    "costs": (30, 10, 45), "post": (20, 6, 45)},
-    "energy":      {"generate": (210, 38, 64), "aggregate": (60, 16, 45)},
-    "labor":       {"generate": (160, 40, 64), "aggregate": (75, 18, 45)},
-}
-
 # How far along each sector and run type is in the mock, as rough fractions
 # of units in each state. Whatever is left over is not started.
 MOCK_PROGRESS = {
     ("mortality", "quick_test"):   {"done": 1.0},
     ("mortality", "single"):       {"done": 1.0},
-    ("mortality", "median"):       {"done": 0.55, "running": 0.12, "queued": 0.18, "failed": 0.03, "partial": 0.05},
-    ("mortality", "montecarlo"):   {"done": 0.12, "running": 0.04, "queued": 0.05, "failed": 0.01, "partial": 0.02},
+    ("mortality", "median"):       {"done": 0.55, "running": 0.12, "failed": 0.03, "partial": 0.05},
+    ("mortality", "montecarlo"):   {"done": 0.12, "running": 0.04, "failed": 0.01, "partial": 0.02},
     ("agriculture", "quick_test"): {"done": 1.0},
-    ("agriculture", "single"):     {"done": 0.60, "running": 0.10, "queued": 0.08, "failed": 0.05, "partial": 0.12},
+    ("agriculture", "single"):     {"done": 0.60, "running": 0.10, "failed": 0.05, "partial": 0.12},
     ("agriculture", "median"):     {},
     ("agriculture", "montecarlo"): {},
     ("energy", "quick_test"):      {"failed": 1.0},
     ("energy", "single"):          {"done": 0.80, "running": 0.06, "failed": 0.07, "partial": 0.07},
-    ("energy", "median"):          {"queued": 0.25, "running": 0.05},
+    ("energy", "median"):          {"running": 0.05},
     ("energy", "montecarlo"):      {},
     ("labor", "quick_test"):       {"done": 1.0},
     ("labor", "single"):           {"done": 1.0},
-    ("labor", "median"):           {"done": 0.30, "running": 0.15, "queued": 0.25, "failed": 0.02, "partial": 0.08},
+    ("labor", "median"):           {"done": 0.30, "running": 0.15, "failed": 0.02, "partial": 0.08},
     ("labor", "montecarlo"):       {},
 }
 
-FAIL_REASONS = ["OUT_OF_MEMORY", "TIMEOUT", "FAILED", "NODE_FAIL"]
+FAIL_REASONS = ["aggregate ended as Incomplete",
+                "generate stopped: no file changes for 6 h",
+                "aggregate stopped: no file changes for 6 h"]
+
+# Job names people might have on the account, projection runs or not.
+MOCK_JOB_NAMES = [
+    ("mortality-median", "caslake", 120), ("labor-median", "caslake", 120),
+    ("energy-median", "caslake", 120), ("agriculture-single", "caslake", 56),
+    ("energy-quick-test", "cil", 2), ("sccs-pipeline", "caslake", 30),
+    ("interactive", "cil", 1), ("jupyter", "cil", 1),
+]
+
+
+def mock_active_jobs(rng):
+    """Zero to three running or queued jobs for one person."""
+    jobs = []
+    for name, partition, size in rng.sample(MOCK_JOB_NAMES, rng.randint(0, 3)):
+        running = rng.randint(1, min(size, 40))
+        queued = rng.randint(0, size - running) if rng.random() < 0.6 else 0
+        jobs.append({
+            "job_name": name,
+            "partition": partition,
+            "state": "RUNNING",
+            "tasks": {"running": running, "queued": queued,
+                      "done": rng.randint(0, max(size - running - queued, 0))},
+            "elapsed_min": round(rng.uniform(5, 2400), 1),
+        })
+    if rng.random() < 0.4:
+        name, partition, size = rng.choice(MOCK_JOB_NAMES)
+        queued = rng.randint(1, size)
+        jobs.append({"job_name": name, "partition": partition, "state": "PENDING",
+                     "tasks": {"running": 0, "queued": queued, "done": 0},
+                     "elapsed_min": 0.0})
+    jobs.sort(key=lambda j: (j["state"] != "RUNNING", -j["elapsed_min"]))
+    return jobs
 
 
 def file_spec_for(files_cfg, sector_name):
@@ -144,7 +168,7 @@ def expand_units(cells, rcp_gcms, batches, models):
 
 def pick_state(index, total, fractions, rng):
     """Assign a state so progress looks like a sweep with ragged edges."""
-    order = ["done", "partial", "failed", "running", "queued"]
+    order = ["done", "partial", "failed", "running"]
     position = (index + rng.uniform(-0.04, 0.04) * total) / max(total, 1)
     cumulative = 0.0
     for state in order:
@@ -155,69 +179,52 @@ def pick_state(index, total, fractions, rng):
     return "not_started"
 
 
-def make_stage(sector, stage, state, rng, job_base, array_index, now):
-    """One stage record: state plus job id, elapsed time and memory."""
-    typical_min, typical_gb, req_gb = STAGE_PROFILE[sector][stage]
+def make_stage(state, rng, now):
+    """One stage record: its state, and when it finished if done."""
     record = {"state": state}
-    if state == "queued":
-        record["job"] = f"{job_base}_{array_index}"
-        return record
-    if state == "not_started":
-        return record
-    elapsed = typical_min * rng.uniform(0.6, 1.5)
-    record.update({
-        "job": f"{job_base}_{array_index}",
-        "elapsed_min": round(elapsed if state != "running" else elapsed * rng.uniform(0.2, 0.8), 1),
-        "max_rss_gb": round(typical_gb * rng.uniform(0.7, 1.1), 1),
-        "req_mem_gb": req_gb,
-    })
-    if state in ("done", "failed"):
-        finished = now - datetime.timedelta(hours=rng.uniform(2, 240))
+    if state == "done":
+        finished = now - datetime.timedelta(hours=rng.uniform(1, 240))
         record["finished"] = finished.strftime("%Y-%m-%dT%H:%M:%SZ")
     return record
 
 
-def make_unit(sector, stages, unit, state, rng, job_base, array_index, log_prefix, now):
+def make_unit(stages, unit, state, rng, now):
     """Fill in per-stage records consistent with the unit's overall state."""
     unit = dict(unit)
     unit["state"] = state
-    stage_records = {}
     if state == "done":
         done_until = len(stages)
     elif state == "partial":
         done_until = rng.randint(1, max(len(stages) - 1, 1))
-    elif state in ("running", "failed"):
+    else:  # running or failed
         done_until = rng.randint(0, len(stages) - 1)
-    else:  # queued
-        done_until = 0
+    stage_records = {}
     for i, stage in enumerate(stages):
         if i < done_until:
             stage_state = "done"
-        elif i == done_until and state in ("running", "failed", "queued"):
-            stage_state = state if state != "queued" else "queued"
+        elif i == done_until and state in ("running", "failed"):
+            stage_state = state
         else:
             stage_state = "not_started"
-        stage_records[stage] = make_stage(sector, stage, stage_state, rng,
-                                          job_base, array_index, now)
+        stage_records[stage] = make_stage(stage_state, rng, now)
     if state == "failed":
         unit["fail_reason"] = rng.choice(FAIL_REASONS)
     unit["stages"] = stage_records
-    unit["log"] = f"{log_prefix}_{job_base}_{array_index}.out"
     return unit
 
 
-def eta_for(counts, sector, stages):
-    """Plausible time to finish from remaining work and current activity."""
-    remaining = counts["not_started"] + counts["queued"] + counts["running"] + counts["partial"]
-    if remaining == 0:
+def eta_for(counts, stages, rng):
+    """Plausible estimate in the collector's terms: stage steps left over
+    the pace of the last 24 hours."""
+    left_units = counts["not_started"] + counts["running"] + counts["partial"] + counts["failed"]
+    if left_units == 0:
         return None, None
-    active = max(counts["running"], 1)
-    hours_per_unit = sum(STAGE_PROFILE[sector][s][0] for s in stages) / 60.0
-    if counts["running"] == 0 and counts["queued"] == 0:
-        return None, "no jobs running or queued"
-    eta = remaining * hours_per_unit / active
-    basis = f"{remaining} units left, {counts['running']} running, ~{hours_per_unit:.1f} h per unit"
-    return round(eta, 1), basis
+    if counts["running"] == 0:
+        return None, "nothing finished in the last 24 h"
+    steps_left = left_units * len(stages)
+    recent = max(1, round(counts["running"] * rng.uniform(1.5, 4)))
+    return round(steps_left / (recent / 24), 1), \
+        f"{steps_left} stage steps left, {recent} finished in the last 24 h"
 
 
 def main():
@@ -232,7 +239,6 @@ def main():
         manifest = yaml.safe_load(f)
 
     sectors_out = {}
-    sector_su = {}
     for sector_name, sector in manifest["sectors"].items():
         files_spec = file_spec_for(manifest["files"], sector_name)
         run_types_out = {}
@@ -244,25 +250,19 @@ def main():
             all_units = expand_units(cells, rcp_gcms, batches, sector["models"])
             fractions = MOCK_PROGRESS.get((sector_name, run_type), {})
 
-            job_base = rng.randint(59_900_000, 60_100_000)
-            log_prefix = sector["log_prefixes"][run_type]
-            counts = {s: 0 for s in
-                      ["not_started", "queued", "running", "partial", "done", "failed"]}
+            counts = {s: 0 for s in ["not_started", "running", "partial", "done", "failed"]}
             listed = []
             for i, unit in enumerate(all_units):
                 state = pick_state(i, len(all_units), fractions, rng)
                 counts[state] += 1
                 if state != "not_started":
-                    made = make_unit(sector_name, sector["stages"], unit,
-                                     state, rng, job_base, i, log_prefix, now)
+                    made = make_unit(sector["stages"], unit, state, rng, now)
                     made["files"] = files_for_unit(files_spec[made["model"]],
                                                    made["stages"], sector["stages"], rng)
                     listed.append(made)
             counts["total"] = len(all_units)
 
-            eta_hours, eta_basis = eta_for(counts, sector_name, sector["stages"])
-            cpu_h = sum(st.get("elapsed_min", 0) for u in listed
-                        for st in u["stages"].values()) / 60.0 * 28
+            eta_hours, eta_basis = eta_for(counts, sector["stages"], rng)
             run_types_out[run_type] = {
                 "dims": {
                     "models": sector["models"],
@@ -273,28 +273,29 @@ def main():
                 "counts": counts,
                 "eta_hours": eta_hours,
                 "eta_basis": eta_basis,
-                "su_used": round(cpu_h),
                 "units": listed,
             }
-            sector_su[sector_name] = sector_su.get(sector_name, 0) + round(cpu_h)
         sectors_out[sector_name] = {
             "label": sector["label"],
             "stages": sector["stages"],
+            "disabled_run_types": sector.get("disabled_run_types", []),
             "files_spec": files_spec,
             "run_types": run_types_out,
         }
 
-    total_su = sum(sector_su.values())
+    total_su = 0
     people = []
     weights = [rng.uniform(0.5, 2.0) for _ in manifest["people"]]
     for person, w in zip(manifest["people"], weights):
         people.append({
             "name": person["name"],
-            "username": person.get("username"),
-            "su_used": round(total_su * w / sum(weights)),
+            "linked": True,
+            "su_used": round(40_000 * w),
+            "active_jobs": mock_active_jobs(rng),
         })
 
-    allocation = 5_000_000
+    total_su = sum(p["su_used"] for p in people)
+    allocation = 1_000_000
     status = {
         "schema_version": 1,
         "source": "mock",
@@ -302,9 +303,11 @@ def main():
         "scan_interval_hours": 4,
         "account": {
             "name": manifest["account"]["name"],
+            "allocation_status": "ok",
             "allocation_su": allocation,
             "used_su": total_su,
             "balance_su": allocation - total_su,
+            "su_since": manifest["account"]["su_since"],
         },
         "people": people,
         "sectors": sectors_out,

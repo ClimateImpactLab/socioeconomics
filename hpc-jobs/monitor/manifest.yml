@@ -7,8 +7,8 @@ account:
   name: cil
   su_since: "2026-10-01"   # sacct window start for service-unit sums
 
-# People shown in the service-units panel. Fill in the cluster username for
-# each person; the collector uses it to split sacct usage by person.
+# People shown in the cluster strip (jobs and service units). The username
+# links a display name to a cluster user; it is never published.
 people:
   - name: Sebastian
     username: cadavidsanchez
@@ -114,10 +114,9 @@ gcms:
 # cells: all        -> every valid SSP-RCP pair crossed with both IAMs
 # gcms: [CCSM4]     -> pinned to one GCM (what the single configs do)
 # gcms: per_rcp     -> the full GCM list above for each RCP
-# array_cells maps Slurm array task ids to units, in the same order as the
-# CELLS list in the sbatch scripts: task = model index x cells + cell index.
-# null means workers claim directories dynamically (median), so job state
-# cannot be assigned to single units from the array id.
+# subdir is a folder the engine adds itself after the config's outputdir.
+# Median mode writes <outputdir>/median/<rcp>/<GCM>/<iam>/<SSP>/, so its
+# leaves sit one level deeper than the run type folder.
 run_types:
   quick_test:
     cells:
@@ -126,36 +125,29 @@ run_types:
       iams: [low]
     gcms: [CCSM4]
     batches: null
-    array_cells: [ssp3-rcp45-low]
+    subdir: null
   single:
     cells: all
     gcms: [CCSM4]
     batches: null
-    array_cells:
-      - ssp2-rcp45-low
-      - ssp2-rcp45-high
-      - ssp2-rcp85-low
-      - ssp2-rcp85-high
-      - ssp3-rcp45-low
-      - ssp3-rcp45-high
-      - ssp3-rcp85-low
-      - ssp3-rcp85-high
+    subdir: null
   median:
     cells: all
     gcms: per_rcp
     batches: null
-    array_cells: null
+    subdir: median
   montecarlo:
     cells: all
     gcms: per_rcp
     batches: 15          # batch0 .. batch14, as in the legacy mortality runs
-    array_cells: null
+    subdir: null         # check against the first montecarlo outputs
 
 # Sectors. models are the sub-models that each get their own full grid
 # (crops for agriculture, fuels for energy; "main" means no sub-model).
 # stages are the pipeline steps a unit needs before it counts as done.
 # derived_models are created by the post stage, not run on their own.
-# Paths are relative to the cluster filesystem (/project/cil = /Volumes/cil).
+# Paths are on the cluster filesystem (/project/cil = /Volumes/cil).
+# The grid is built from these folders only.
 sectors:
   mortality:
     label: Mortality
@@ -163,17 +155,6 @@ sectors:
     stages: [generate, aggregate]
     run_types: [quick_test, single, median, montecarlo]
     output_root: /project/cil/gcp/outputs_newsocioeconomics/mortality
-    logs_root: logs/mortality
-    job_names:
-      quick_test: mortality-quick-test
-      single: mortality-single
-      median: mortality-median
-      montecarlo: mortality-montecarlo
-    log_prefixes:
-      quick_test: qt
-      single: sg
-      median: med
-      montecarlo: mc
 
   agriculture:
     label: Agriculture
@@ -182,35 +163,14 @@ sectors:
     stages: [generate, aggregate, costs, post]
     run_types: [quick_test, single, median, montecarlo]
     output_root: /project/cil/gcp/outputs_newsocioeconomics/agriculture
-    logs_root: logs/agriculture
-    job_names:
-      quick_test: agriculture-quick-test
-      single: agriculture-single
-      median: agriculture-median
-      montecarlo: agriculture-montecarlo
-    log_prefixes:
-      quick_test: qt
-      single: sg
-      median: med
-      montecarlo: mc
 
   energy:
     label: Energy
     models: [electricity, other_energy]
     stages: [generate, aggregate]
-    run_types: [quick_test, single, median, montecarlo]
+    run_types: [quick_test, single, median]
+    disabled_run_types: [montecarlo]   # shown as a greyed-out tab, not tracked
     output_root: /project/cil/gcp/outputs_newsocioeconomics/energy
-    logs_root: logs/energy
-    job_names:
-      quick_test: energy-quick-test
-      single: energy-single
-      median: energy-median
-      montecarlo: energy-montecarlo
-    log_prefixes:
-      quick_test: qt
-      single: sg
-      median: med
-      montecarlo: mc
 
   labor:
     label: Labor
@@ -218,17 +178,6 @@ sectors:
     stages: [generate, aggregate]
     run_types: [quick_test, single, median, montecarlo]
     output_root: /project/cil/gcp/outputs_newsocioeconomics/labor
-    logs_root: logs/labor
-    job_names:
-      quick_test: labor-quick-test
-      single: labor-single
-      median: labor-median
-      montecarlo: labor-montecarlo
-    log_prefixes:
-      quick_test: qt
-      single: sg
-      median: med
-      montecarlo: mc
 
 # Expected output files per unit, split into the projection files (written by
 # the generate stage) and the aggregation files (aggregate, and for
