@@ -56,6 +56,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   records (jobs sacct still shows as running but squeue does not have)
   are left out of the numbers.
 - Resources and SLURM jobs start collapsed.
+- Run types can be left out with `enabled: false` under `run_types` in the
+  manifest. quick_test is off this way: no tab, and it is not in any count,
+  percent, card or SU estimate. Set it back to true to show it again.
 - Phones and tablets: the grid shrinks to fit the screen width, down to
   60%; wider grids (montecarlo) scroll sideways inside their own box, with
   the climate model names pinned on the left. On a phone held upright the

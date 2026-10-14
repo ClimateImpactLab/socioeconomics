@@ -305,6 +305,8 @@ def main():
         run_types_out = {}
         for run_type in sector["run_types"]:
             rt_cfg = manifest["run_types"][run_type]
+            if not rt_cfg.get("enabled", True):
+                continue
             cells = cells_for(rt_cfg, manifest["scenarios"])
             rcp_gcms = gcms_for(rt_cfg, manifest["gcms"])
             batches = rt_cfg.get("batches")

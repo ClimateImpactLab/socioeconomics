@@ -113,8 +113,12 @@ gcms:
 # subdir is a folder the engine adds itself after the config's outputdir.
 # Median mode writes <outputdir>/median/<rcp>/<GCM>/<iam>/<SSP>/, so its
 # leaves sit one level deeper than the run type folder.
+# enabled: false leaves a run type out of the dashboard entirely (no tab,
+# and not in any count, percent, card or SU estimate). Set it back to true,
+# or remove the line, to show it again.
 run_types:
   quick_test:
+    enabled: false
     cells:
       ssps: [SSP3]
       rcps: [rcp45]

@@ -749,6 +749,8 @@ def main():
         spec = file_spec_for(manifest["files"], sector_name)
         run_types_out = {}
         for rt_name in sector["run_types"]:
+            if not manifest["run_types"][rt_name].get("enabled", True):
+                continue
             details = {}
             out = scan_run_type(sector, rt_name, manifest, spec, args.cil_root, now, details)
             write_details(args.out_dir, sector_name, rt_name, details)
