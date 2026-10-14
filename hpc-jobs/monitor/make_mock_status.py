@@ -56,11 +56,11 @@ MOCK_JOB_NAMES = [
 
 
 
-def mock_usage(rng, scale):
-    """SUs and core hours on the scarce partitions, and a few flagged jobs."""
+def mock_usage(rng, scale, charged):
+    """Compute used and core hours on the compute partitions, and a few flagged jobs."""
     core, su = {}, {}
-    for p, share in zip(["amd", "caslake", "amd-hm"], [0.55, 0.35, 0.1]):
-        if rng.random() < 0.8 or p == "amd":
+    for p, share in zip(["cil", "amd", "caslake", "amd-hm"], [0.4, 0.3, 0.22, 0.08]):
+        if rng.random() < 0.8 or p == "cil":
             core[p] = round(scale * share * rng.uniform(0.4, 1.6), 2)
             su[p] = round(core[p] * rng.uniform(0.6, 1.0), 2)
     flagged = {}
@@ -68,7 +68,8 @@ def mock_usage(rng, scale):
         flagged["bigmem"] = {"jobs": rng.randint(1, 6), "hours": round(rng.uniform(5, 300), 2),
                              "reason": "bigmem partition"}
     order = lambda d: {k: v for k, v in sorted(d.items(), key=lambda x: -x[1]) if v > 0}
-    return {"su_used": round(sum(su.values()), 2), "su_by_partition": order(su),
+    return {"compute_used": round(sum(su.values()), 2), "compute_by_partition": order(su),
+            "su_charged": round(sum(v for p, v in su.items() if p in charged), 2),
             "core_hours": round(sum(core.values()), 2), "core_hours_by_partition": order(core),
             "su_flagged": flagged}
 
@@ -363,21 +364,23 @@ def main():
 
     # Placeholder usernames: the mock never shows real accounts.
     users = []
-    for i in range(1, 10):
-        users.append({"user": f"user{i:02d}", **mock_usage(rng, 40_000 * rng.uniform(0.1, 2.0)),
-                      "active_jobs": mock_active_jobs(rng)})
     acct = manifest["account"]
+    charged = acct.get("su_charged_partitions", [])
+    for i in range(1, 10):
+        users.append({"user": f"user{i:02d}", **mock_usage(rng, 40_000 * rng.uniform(0.1, 2.0), charged),
+                      "active_jobs": mock_active_jobs(rng)})
     if acct.get("highlight_user"):
-        users.append({"user": acct["highlight_user"], **mock_usage(rng, 30_000), "active_jobs": mock_active_jobs(rng)})
+        users.append({"user": acct["highlight_user"], **mock_usage(rng, 30_000, charged),
+                      "active_jobs": mock_active_jobs(rng)})
     for name in acct.get("always_show_users", []):
-        users.append({"user": name, "su_used": 0, "su_by_partition": {}, "core_hours": 0,
-                      "core_hours_by_partition": {}, "su_flagged": {}, "active_jobs": []})
-    users.sort(key=lambda r: -r["su_used"])
+        users.append({"user": name, "compute_used": 0, "compute_by_partition": {}, "su_charged": 0,
+                      "core_hours": 0, "core_hours_by_partition": {}, "su_flagged": {}, "active_jobs": []})
+    users.sort(key=lambda r: -r["compute_used"])
 
-    total_su = round(sum(u["su_used"] for u in users), 2)
-    allocation = 1_000_000
+    total_su = round(sum(u["su_charged"] for u in users), 2)
+    allocation = 1_200_000
     status = {
-        "schema_version": 3,
+        "schema_version": 4,
         "source": "mock",
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 4,
@@ -385,24 +388,25 @@ def main():
             "name": manifest["account"]["name"],
             "allocation_status": "ok",
             "allocation_su": allocation,
-            "used_su": round(total_su * 0.6),
-            "balance_su": allocation - round(total_su * 0.6),
+            "used_su": round(total_su),
+            "balance_su": allocation - round(total_su),
             "su_since": manifest["account"]["su_since"],
-            "su_estimated_since": total_su,
+            "compute_total": round(sum(u["compute_used"] for u in users), 2),
+            "su_charged_total": total_su,
             "su_stale_records": [
                 {"job_id": "53282084_1", "user": "user03", "state": "RUNNING", "partition": "caslake", "hours": 1580.2},
                 {"job_id": "50096159", "user": "user05", "state": "RUNNING", "partition": "amd", "hours": 1610.7},
             ],
             "highlight_user": manifest["account"].get("highlight_user"),
-            "su_billing_partitions": manifest["account"]["su_billing_partitions"],
-            "su_free_partitions": manifest["account"].get("su_free_partitions", []),
+            "compute_partitions": acct["compute_partitions"],
+            "su_charged_partitions": charged,
             "storage": [
                 {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5},
                 {"label": "cil /cds3", "used": "61.2T", "quota": "125.0T", "used_pct": 49.0},
             ],
         },
         "users": users,
-        "ended_badly": mock_ended_badly(rng, [u["user"] for u in users if u["su_used"]], now),
+        "ended_badly": mock_ended_badly(rng, [u["user"] for u in users if u["compute_used"]], now),
         "ended_badly_days": manifest["account"].get("ended_badly_days", 3),
         "sectors": sectors_out,
     }

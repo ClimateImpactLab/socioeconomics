@@ -5,12 +5,14 @@
 
 account:
   name: cil
-  su_since: "2026-10-01"   # start of the current cycle; service units count from here
-  # RCC formula for non GPU jobs: SUs = ElapsedRaw / 3600 x billing, with
-  # billing read from each job's AllocTRES. It applies on these partitions.
-  su_billing_partitions: [amd, caslake, amd-hm]
-  # The group's own nodes: no SUs, shown as core hours only.
-  su_free_partitions: [cil]
+  su_since: "2026-10-14"   # the day the allocation started; nothing before it was charged
+  # Compute used = ElapsedRaw / 3600 x billing, with billing read from each
+  # job's AllocTRES (the RCC formula for SUs on non GPU jobs). It is counted
+  # on these partitions, whether RCC charges them or not.
+  compute_partitions: [cil, amd, caslake, amd-hm]
+  # The partitions RCC actually charges SUs for. Moving a partition between
+  # charged and not charged only needs a change here.
+  su_charged_partitions: [caslake, amd-hm]
   # bigmem and GPU jobs (and any partition not listed above) use other
   # formulas: they are listed as flagged, with their hours, not counted.
   # Cluster users always listed in Resources, even with no jobs yet.

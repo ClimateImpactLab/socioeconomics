@@ -527,3 +527,24 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
   .grp-header, .fd-sec { padding-top: 8px; padding-bottom: 8px; }
   .batch:hover { opacity: 1; }
 }
+/* The two use bars, one below the other, at the same width. */
+.su-blocks { gap: 6px; }
+.su-bar-block { display: flex; flex-direction: column; gap: 4px; }
+.su-bar-block + .su-bar-block { margin-top: 4px; }
+.su-blocks > .ukey { margin-top: 4px; }
+.su-est .ukey.ukey-left { justify-content: flex-start; }
+.su-since { text-align: center; font-size: 10px; color: var(--tx3); }
+.ptag { font-size: 8.5px; color: var(--tx3); border: 0.5px solid var(--bd2); border-radius: 7px; padding: 0 4px; }
+.ptag.on { color: var(--st-pend); border-color: var(--st-pend); }
+@media (max-width: 900px) { .su-blocks { display: flex; } }
+/* Bar titles and the date line start from the left, like the user key. */
+.su-blocks .su-est-head { justify-content: flex-start; }
+.su-blocks .su-since { text-align: left; }
+.su-blocks .ukey-item[data-user], .su-blocks .ukey-item[data-part] { cursor: pointer; }
+/* The "i" box opens next to its button. */
+.info-wrap { position: relative; display: inline-flex; align-items: center; }
+.su-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; width: max-content; max-width: min(540px, calc(100vw - 32px));
+  padding: 7px 10px; background: var(--bg); border: 0.5px solid var(--bd2); border-radius: 6px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14); font-size: 10px; font-weight: 400; color: var(--tx2); line-height: 1.5; text-align: left; white-space: normal; }
+.su-pop code { display: block; margin-top: 3px; font-family: var(--mono); background: var(--bg2); padding: 2px 5px; border-radius: 3px; user-select: all; white-space: nowrap; }
+@media (max-width: 600px) { .su-pop code { white-space: normal; overflow-wrap: anywhere; } }

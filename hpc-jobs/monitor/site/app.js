@@ -685,93 +685,92 @@ function renderResources() {
     `<div class="res-foot">${new Date(DATA.generated_at).toLocaleString()}</div>`;
 }
 
-// Official SUs come from RCC (rcchelp). The sacct figure is an estimate,
-// shown apart: one bar for the account, one colored segment per user, and
-// inside each user's segment one textured part per partition. Scarce
-// partitions only (the group's own partition is left out).
+// Official SUs come from RCC (rcchelp). Below it, two bars from sacct, one
+// colored segment per user and one textured part per partition inside it:
+// service units charged (only the partitions RCC charges) and compute used
+// (the same measure on every partition, charged or not).
 function serviceUnitsHtml() {
   const a = DATA.account;
-  const free = a.su_free_partitions || [];
   const since = esc(fmtDate(a.su_since));
-  const users = (DATA.users || []).map((u) => {
-    const su = u.su_used || 0;
-    const core = Object.entries(u.core_hours_by_partition || {})
-      .filter(([p]) => !free.includes(p)).reduce((n, [, v]) => n + v, 0);
-    return { ...u, su, core };
-  }).sort((x, y) => y.su - x.su || x.user.localeCompare(y.user));
-  const total = users.reduce((n, u) => n + u.su, 0);
+  const charged = a.su_charged_partitions || [];
+  const computeParts = a.compute_partitions || a.su_billing_partitions || [];
 
-  // Official: RCC's own figure.
   let html;
   if (a.allocation_status === "ok") {
     const pct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : null;
-    html = resRow("Official (RCC)", pct, `${fmtN(a.used_su)}/${fmtN(a.allocation_su)}`,
+    html = resRow("Official (RCC)", pct, `${fmtN(a.used_su)}/${fmtN(a.allocation_su)}, ${fmtN(a.balance_su)} left`,
       `Charged by RCC: ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`);
   } else {
-    const note = a.allocation_status === "none" ? "no allocation yet, nothing charged" : "not read in this scan";
+    const note = a.allocation_status === "none" ? "no allocation listed" : "not read in this scan";
     html = `<div class="res-row"><span class="res-label">Official (RCC)</span>` +
       `<span class="res-bar placeholder"><span class="ticks"></span></span>` +
       `<span class="res-pct" style="color:var(--tx3)">0 SU</span><span class="res-counts">${esc(note)}</span></div>`;
   }
+  if (!DATA.users) return html + `<div class="res-note muted" style="margin-top:6px">Use by user not read in this scan</div>`;
 
-  if (!DATA.users) return html + `<div class="res-note muted" style="margin-top:6px">Estimate not read in this scan</div>`;
+  const byPart = (u) => u.compute_by_partition || u.su_by_partition || {};
+  const sum = (u, parts) => Object.entries(byPart(u)).filter(([p]) => parts.includes(p)).reduce((n, [, v]) => n + v, 0);
+  const users = (DATA.users || []).map((u) => ({ user: u.user, vals: byPart(u),
+    charged: sum(u, charged), compute: sum(u, computeParts), ran: !!(u.compute_used || u.su_used) }))
+    .sort((x, y) => y.compute - x.compute || x.user.localeCompare(y.user));
+  const info = `<span class="info-wrap"><button class="info-btn" id="su-info-btn" aria-expanded="false" aria-controls="su-info"
+      title="About these numbers">i</button><span class="su-pop hidden" id="su-info" role="dialog">SUs = elapsed hours &times; billing.
+      To check a job: <code>sacct -X -j &lt;jobid&gt; -n -P -o JobID,ElapsedRaw,Partition,AllocTRES</code></span></span>`;
+  html += `<div class="su-est su-blocks"><div class="su-since">Since ${since}</div>` +
+    usageBar("Service units charged", "SU", charged, users, info) +
+    usageBar("Compute used", "SU equivalent", computeParts, users, "");
 
-  // Estimate from sacct: users by color, partitions by texture.
-  const parts = {};
-  let bar = "";
-  for (const u of users) {
-    if (!u.su) continue;
-    const segs = Object.entries(u.su_by_partition || {}).filter(([p, v]) => v > 0 && !free.includes(p))
-      .sort((x, y) => y[1] - x[1]);
-    for (const [p, v] of segs) {
-      parts[p] = (parts[p] || 0) + v;
-      bar += `<span class="seg ${partTexture(p)}" data-user="${esc(u.user)}" data-part="${esc(p)}"
-        style="width:${((100 * v) / (total || 1)).toFixed(2)}%;background-color:${userColor(u.user)}"
-        title="${esc(u.user)}, ${esc(p)}: ${fmtN(v)} SU"></span>`;
-    }
-  }
-  html += `<div class="su-est"><div class="su-est-head">Estimated since ${since}
-      <span class="est-tag">not charged by RCC yet</span> <b>${fmtN(total)} SU</b>
-      <button class="info-btn" id="su-info-btn" aria-expanded="false" aria-controls="su-info" title="About these numbers">i</button></div>
-    <div class="su-bar-all">${bar}</div>`;
-  html += `<div class="ukey">` + users.map((u) =>
+  // One key for both bars: each user's SU charged and compute used, then
+  // the partition textures, marking the charged ones.
+  const byName = [...users].sort((x, y) => x.user.localeCompare(y.user));
+  html += `<div class="ukey ukey-left">` + byName.map((u) =>
     `<span class="ukey-item" data-user="${esc(u.user)}"><span class="udot" style="background:${userColor(u.user)}"></span>${userName(u.user)}
-      <span class="mono">${u.su ? `${fmtN(u.su)} SU, ${fmtN(u.core)} core h, ${((100 * u.su) / (total || 1)).toFixed(1)}%` : "no jobs yet"}</span></span>`).join("") + `</div>`;
-  // Partitions that use SUs are always listed, like users with no jobs yet.
-  const used = Object.keys(parts).sort((x, y) => parts[y] - parts[x]);
-  const order = [...used, ...(a.su_billing_partitions || []).filter((p) => !used.includes(p))];
+      <span class="mono">${u.ran ? `${fmtN(u.charged)} SU charged, ${fmtN(u.compute)} compute` : "no jobs yet"}</span></span>`).join("") + `</div>`;
+  const partTotal = (p) => users.reduce((n, u) => n + (u.vals[p] || 0), 0);
+  const order = [...charged.filter((p) => computeParts.includes(p)), ...computeParts.filter((p) => !charged.includes(p))];
   if (order.length) {
-    html += `<div class="ukey pkey">` + order.map((p) =>
-      `<span class="ukey-item" data-part="${esc(p)}">${partSwatch(p)}${esc(p)} <span class="mono">${parts[p] ? `${fmtN(parts[p])} SU` : "no use yet"}</span></span>`).join("") + `</div>`;
+    html += `<div class="ukey pkey">` + order.map((p) => {
+      const t = partTotal(p);
+      return `<span class="ukey-item" data-part="${esc(p)}">${partSwatch(p)}${esc(p)}
+        <span class="ptag${charged.includes(p) ? " on" : ""}">${charged.includes(p) ? "charged" : "not charged"}</span>
+        <span class="mono">${t ? fmtN(t) : "no use yet"}</span></span>`;
+    }).join("") + `</div>`;
   }
-
   html += `</div>`;
-
-  // Notes behind the "i" button.
-  const notes = `<p>The cil account has no allocation yet for the October 2026 to 2027 cycle. This will be updated soon.</p>
-    <p>For now, SUs are only an estimate, from jobs on partitions that are not charging SUs yet.</p>
-    <p>SUs = elapsed hours &times; billing. To check a job:
-    <code>sacct -X -j &lt;jobid&gt; -n -P -o JobID,ElapsedRaw,Partition,AllocTRES</code></p>`;
-  html += `<div class="su-info hidden" id="su-info">${notes}</div>`;
   return html;
 }
 
-// Hovering a segment of the SU bar highlights its user and partition in the
-// keys; a click keeps it selected until it is clicked again.
-let suPicked = null;
-function suHighlight(seg) {
-  const box = document.querySelector(".su-est");
-  if (!box) return;
-  const user = seg ? seg.dataset.user : null, part = seg ? seg.dataset.part : null;
-  box.classList.toggle("has-hl", !!seg);
-  box.querySelectorAll(".seg").forEach((el) => el.classList.toggle("hl", el === seg));
-  box.querySelectorAll(".ukey-item[data-user]").forEach((el) => el.classList.toggle("hl", el.dataset.user === user));
-  box.querySelectorAll(".ukey-item[data-part]").forEach((el) => el.classList.toggle("hl", el.dataset.part === part));
+// One bar of use by user and partition, on the given partitions.
+function usageBar(title, unit, partitions, users, extra) {
+  const total = users.reduce((n, u) => n + partitions.reduce((m, p) => m + (u.vals[p] || 0), 0), 0);
+  let bar = "";
+  for (const u of users) {
+    const segs = partitions.map((p) => [p, u.vals[p] || 0]).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
+    for (const [p, v] of segs) {
+      bar += `<span class="seg ${partTexture(p)}" data-user="${esc(u.user)}" data-part="${esc(p)}"
+        style="width:${((100 * v) / (total || 1)).toFixed(2)}%;background-color:${userColor(u.user)}"
+        title="${esc(u.user)}, ${esc(p)}: ${fmtN(v)} ${unit}"></span>`;
+    }
+  }
+  return `<div class="su-bar-block"><div class="su-est-head">${title} <b>${fmtN(total)} ${unit}</b>${extra}</div>
+    <div class="su-bar-all">${bar}</div></div>`;
 }
-function pickedSeg() {
-  if (!suPicked) return null;
-  return [...document.querySelectorAll(".su-bar-all .seg")]
-    .find((el) => el.dataset.user === suPicked.user && el.dataset.part === suPicked.part) || null;
+
+// The bars and the shared key highlight each other. A selection is a user,
+// a partition, or both (one segment); hovering shows it and a click keeps it
+// until the same thing is clicked again.
+let suPicked = null;
+function suSelection(el) {
+  if (!el) return null;
+  return { user: el.dataset.user || null, part: el.dataset.part || null };
+}
+function suHighlight(box, sel) {
+  if (!box) return;
+  const hit = (el) => !!sel && (!sel.user || el.dataset.user === sel.user) && (!sel.part || el.dataset.part === sel.part);
+  box.classList.toggle("has-hl", !!sel);
+  box.querySelectorAll(".seg").forEach((el) => el.classList.toggle("hl", hit(el)));
+  box.querySelectorAll(".ukey-item[data-user]").forEach((el) => el.classList.toggle("hl", !!sel && el.dataset.user === sel.user));
+  box.querySelectorAll(".ukey-item[data-part]").forEach((el) => el.classList.toggle("hl", !!sel && el.dataset.part === sel.part));
 }
 
 /* ---------- SLURM jobs ---------- */
@@ -953,28 +952,46 @@ function setup() {
     $("pa-info-btn").classList.toggle("on", open);
   });
   const rc = $("resources-content");
+  const SU_TARGET = ".su-bar-all .seg, .su-blocks .ukey-item[data-user], .su-blocks .ukey-item[data-part]";
   rc.addEventListener("mouseover", (e) => {
-    const seg = e.target.closest(".su-bar-all .seg");
-    if (seg) suHighlight(seg);
+    const t = e.target.closest(SU_TARGET);
+    if (t) suHighlight(t.closest(".su-blocks"), suSelection(t));
   });
   rc.addEventListener("mouseout", (e) => {
-    const seg = e.target.closest(".su-bar-all .seg");
-    if (seg && !seg.contains(e.relatedTarget)) suHighlight(pickedSeg());
+    const t = e.target.closest(SU_TARGET);
+    if (t && !t.contains(e.relatedTarget)) suHighlight(t.closest(".su-blocks"), suPicked);
   });
+  const closePop = () => {
+    const pop = $("su-info"), b = $("su-info-btn");
+    if (!pop || pop.classList.contains("hidden")) return;
+    pop.classList.add("hidden");
+    b.setAttribute("aria-expanded", "false");
+    b.classList.remove("on");
+  };
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".info-wrap")) closePop();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
   rc.addEventListener("click", (e) => {
-    const seg = e.target.closest(".su-bar-all .seg");
-    if (seg) {
-      const same = suPicked && suPicked.user === seg.dataset.user && suPicked.part === seg.dataset.part;
-      suPicked = same ? null : { user: seg.dataset.user, part: seg.dataset.part };
-      suHighlight(same ? null : seg);
+    const t = e.target.closest(SU_TARGET);
+    if (t) {
+      const sel = suSelection(t);
+      const same = suPicked && suPicked.user === sel.user && suPicked.part === sel.part;
+      suPicked = same ? null : sel;
+      suHighlight(t.closest(".su-blocks"), suPicked);
       return;
     }
     const b = e.target.closest("#su-info-btn");
     if (!b) return;
-    const box = $("su-info");
-    const open = box.classList.toggle("hidden") === false;
-    b.setAttribute("aria-expanded", String(open));
-    b.classList.toggle("on", open);
+    const pop = $("su-info");
+    if (!pop.classList.contains("hidden")) { closePop(); return; }
+    pop.classList.remove("hidden");
+    b.setAttribute("aria-expanded", "true");
+    b.classList.add("on");
+    // Keep the box on screen on narrow screens.
+    pop.style.left = "";
+    const r = pop.getBoundingClientRect();
+    if (r.right > innerWidth - 8) pop.style.left = `${Math.round(innerWidth - 8 - r.right)}px`;
   });
   $("jobs-content").addEventListener("click", (e) => {
     const h = e.target.closest(".grp-header");

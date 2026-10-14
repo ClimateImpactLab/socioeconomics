@@ -36,25 +36,37 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Resources: storage of the cil account as thin bars, then service units
   in two clearly separate parts:
   - Official (RCC): what RCC charges, from `rcchelp balance`, used out of
-    allocation. Today that is no allocation and nothing charged; when RCC
-    starts charging, this figure will show it.
-  - Estimated since the start date in the manifest, labeled "not charged
-    by RCC yet": one bar for the account, one colored segment per cluster
-    user, and inside each user's segment one textured part per partition
-    (amd stripes, caslake dots, amd-hm solid). A key gives each user's
-    SUs, core hours and share, and a texture key the totals per partition.
-    The texture key always lists the partitions that use SUs, even with no
-    use yet. Hovering a segment marks its user and partition in the keys;
-    a click keeps it marked, and a second click clears it.
-    It counts only the scarce partitions (amd, caslake, amd-hm); the cil
-    partition is the group's own nodes and is not shown at all. Users in
-    `account.always_show_users` are always listed, and
-    `account.highlight_user` shows in black.
-  A small "i" button next to the bar opens three short notes: the account
-  has no allocation yet for this cycle, the SUs are only an estimate, and
-  the SU formula with the sacct command to check a job. Stale accounting
-  records (jobs sacct still shows as running but squeue does not have)
-  are left out of the numbers.
+    allocation, and the balance left (the cil allocation started on
+    2026-10-14 with 1,200,000 SU). RCC gives no use per user
+    (`rcchelp usage -a cil --byuser` returns nothing), so the split by user
+    comes from the bars below.
+  - Two bars from sacct, one below the other, both since the start date
+    in the manifest (`su_since`, the day the allocation started). Each has
+    one colored segment per cluster user and, inside it, one textured part
+    per partition (cil lines, amd stripes, caslake dots, amd-hm solid):
+    - Service units charged: only the partitions RCC
+      charges (`account.su_charged_partitions`, now caslake and amd-hm).
+    - Compute used: the same
+      measure (elapsed hours x billing, in SU equivalent) on every
+      partition in `account.compute_partitions` (cil, amd, caslake,
+      amd-hm), with each user's core hours.
+    The start date shows once, above both bars. One key below both bars,
+    from the left and in alphabetical order, gives each user's color with
+    SU charged and compute used side by side, and one texture key gives each partition's
+    total, marked charged or not charged. Users in
+    `account.always_show_users` and every compute partition are always
+    listed, even with no use yet, and `account.highlight_user` shows in
+    charcoal. Highlighting works both ways: hovering a segment of either
+    bar marks its user and partition in the shared key, and hovering a
+    user or a partition in the key marks the matching segments in both
+    bars. A click keeps the highlight until the same thing is clicked
+    again. The date line and the bar titles start from the left.
+    Moving a partition between charged and not charged only needs a change
+    to `su_charged_partitions` in the manifest.
+  A small "i" button opens a popup next to it with the SU formula and the
+  sacct command to check a job; clicking outside or the button again
+  closes it. Stale accounting records (jobs sacct still shows as running but
+  squeue does not have) are left out of the numbers.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: no tab, and it is not in any count,
@@ -209,11 +221,11 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   AllocTRES (not assumed equal to the CPUs). For example, a job on amd with
   billing=1, cpu=1, mem=45G that ran 36 h 25 s used 36.01 SUs. To check a
   job: `sacct -X -j <jobid> -n -P -o JobID,ElapsedRaw,Partition,AllocTRES`.
-  The formula applies on `account.su_billing_partitions` (amd, caslake,
-  amd-hm). The cil partition is the group's own nodes
-  (`account.su_free_partitions`): it uses no SUs and is left out.
-  Core hours are elapsed hours x the job's allocated CPUs (cpu= in
-  AllocTRES). Only the scarce partitions are counted. GPU jobs, bigmem, other partitions and
+  The same measure is counted as compute used on every partition in
+  `account.compute_partitions` (cil, amd, caslake, amd-hm); only the part
+  on `account.su_charged_partitions` (caslake, amd-hm) counts as service
+  units charged. Core hours are elapsed hours x the job's allocated CPUs
+  (cpu= in AllocTRES). GPU jobs, bigmem, other partitions and
   jobs without a billing value are flagged with their elapsed hours
   instead of counted. Only jobs that have finished (they have an end
   time) or that squeue shows right now count: sacct sometimes keeps a job
@@ -223,37 +235,39 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   allocation and balance come from `rcchelp balance -a cil`, and storage
   from `rcchelp quota` (group filesets of the cil account).
 
-## status.json format (schema 3)
+## status.json format (schema 4)
 
 The contract between the collector and the page; the mock follows it.
 
 ```jsonc
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "source": "collector",             // "mock" or "collector"
   "generated_at": "2026-10-13T18:00:00Z",
   "scan_interval_hours": 4,
   "account": {
     "name": "cil",
-    "allocation_status": "none",     // "ok", "none" (no allocation yet) or "unknown"
-    "allocation_su": null, "used_su": null, "balance_su": null,
-    "su_since": "2026-10-01",        // start of the cycle for SUs and core hours
-    "su_estimated_since": 219.4,     // sacct estimate, scarce partitions; not what RCC charges
+    "allocation_status": "ok",       // "ok", "none" (no allocation listed) or "unknown"
+    "allocation_su": 1200000, "used_su": 0, "balance_su": 1200000,
+    "su_since": "2026-10-14",        // the day the allocation started; SUs and core hours count from here
+    "compute_total": 319.4,          // compute used, all compute partitions, SU equivalent
+    "su_charged_total": 69.2,        // the part on charged partitions; an estimate, RCC's figure is used_su
     "su_stale_records": [{"job_id": "53282084_1", "user": "someuser", "state": "RUNNING",
                           "partition": "caslake", "hours": 1580.2}],   // not counted
     "highlight_user": "cadavidsanchez",
-    "su_billing_partitions": ["amd", "caslake", "amd-hm"],
-    "su_free_partitions": ["cil"],
+    "compute_partitions": ["cil", "amd", "caslake", "amd-hm"],
+    "su_charged_partitions": ["caslake", "amd-hm"],
     "storage": [                     // null when rcchelp could not be read
       {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5}
     ]
   },
   "users": [                         // every user with jobs or usage, by cluster username; null without Slurm
     {"user": "someuser",
-     "su_used": 219.4,               // SUs since su_since
-     "su_by_partition": {"amd": 150.2, "caslake": 69.2},   // largest first
-     "core_hours": 219.4,            // elapsed hours x CPUs, scarce partitions only
-     "core_hours_by_partition": {"amd": 150.2, "caslake": 69.2},
+     "compute_used": 319.4,          // elapsed hours x billing since su_since, all compute partitions
+     "compute_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},   // largest first
+     "su_charged": 69.2,             // the part on charged partitions
+     "core_hours": 319.4,            // elapsed hours x CPUs
+     "core_hours_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},
      "su_flagged": {"bigmem": {"jobs": 2, "hours": 30.5, "reason": "bigmem partition"}},
      "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
                       "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0}]}

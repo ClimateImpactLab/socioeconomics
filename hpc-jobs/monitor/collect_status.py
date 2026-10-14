@@ -556,14 +556,14 @@ def tres_value(tres, key):
     return float(m.group(1)) if m else None
 
 
-def usage_by_user(account, since, billing_partitions, free_partitions, live):
-    """SUs and core hours on the account since the start date, per user and partition.
+def usage_by_user(account, since, compute_partitions, live):
+    """Compute used and core hours on the account since the start date, per user and partition.
 
-    Only the scarce partitions count (the billing partitions); jobs on the
-    group's own free partitions are left out entirely. SUs follow the RCC
-    formula for non GPU jobs, SUs = ElapsedRaw / 3600 x billing, with
-    billing read from each job's AllocTRES; core hours = elapsed hours x
-    allocated CPUs. GPU and bigmem jobs, other partitions and jobs without
+    Compute used follows the RCC formula for SUs on non GPU jobs,
+    ElapsedRaw / 3600 x billing, with billing read from each job's
+    AllocTRES, on every compute partition, charged or not. Which of them
+    RCC charges is decided later, from the manifest. Core hours = elapsed
+    hours x allocated CPUs. GPU and bigmem jobs, other partitions and jobs without
     a billing value are flagged, with their elapsed hours, instead of
     guessed. These are estimates; the official use comes from rcchelp.
 
@@ -613,8 +613,6 @@ def usage_by_user(account, since, billing_partitions, free_partitions, live):
             continue
         # A job that could run on several partitions lists them all; it ran on the first.
         partition = partition.split(",")[0] or "unknown"
-        if partition in free_partitions:
-            continue
         per = totals.setdefault(user, {"su": {}, "core_hours": {}, "flagged": {}})
         cpus = tres_value(tres, "cpu")
         billing = tres_value(tres, "billing")
@@ -622,7 +620,7 @@ def usage_by_user(account, since, billing_partitions, free_partitions, live):
             reason = "GPU job"
         elif "bigmem" in partition:
             reason = "bigmem partition"
-        elif partition not in billing_partitions:
+        elif partition not in compute_partitions:
             reason = "partition without a known formula"
         elif billing is None:
             reason = "no billing value"
@@ -637,14 +635,18 @@ def usage_by_user(account, since, billing_partitions, free_partitions, live):
     return totals, stale
 
 
-def usage_summary(entry):
-    """Rounded totals and per-partition values for one user, largest first."""
+def usage_summary(entry, charged_partitions):
+    """Rounded totals and per-partition values for one user, largest first.
+
+    su_charged is the part of compute used on the partitions RCC charges.
+    """
     def by_part(d):
         return {p: round(v, 2) for p, v in sorted(d.items(), key=lambda x: -x[1]) if v >= 0.005}
     flagged = {p: {**f, "hours": round(f["hours"], 2)} for p, f in entry["flagged"].items()}
     return {
-        "su_used": round(sum(entry["su"].values()), 2),
-        "su_by_partition": by_part(entry["su"]),
+        "compute_used": round(sum(entry["su"].values()), 2),
+        "compute_by_partition": by_part(entry["su"]),
+        "su_charged": round(sum(v for p, v in entry["su"].items() if p in charged_partitions), 2),
         "core_hours": round(sum(entry["core_hours"].values()), 2),
         "core_hours_by_partition": by_part(entry["core_hours"]),
         "su_flagged": flagged,
@@ -737,8 +739,8 @@ def main():
         manifest = yaml.safe_load(f)
     account = manifest["account"]["name"]
     since = manifest["account"]["su_since"]
-    billing_partitions = manifest["account"]["su_billing_partitions"]
-    free_partitions = manifest["account"].get("su_free_partitions", [])
+    compute_partitions = manifest["account"]["compute_partitions"]
+    charged_partitions = manifest["account"].get("su_charged_partitions", [])
     bad_days = manifest["account"].get("ended_badly_days", 3)
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -772,7 +774,7 @@ def main():
                "allocation_su": None, "used_su": None, "balance_su": None}
     if use_slurm:
         rows = live_tasks(account)
-        su, stale = usage_by_user(account, since, billing_partitions, free_partitions, rows)
+        su, stale = usage_by_user(account, since, compute_partitions, rows)
         jobs = active_jobs_by_user(account, rows) if rows is not None else None
         bad = ended_badly(account, bad_days)
         balance = account_balance(account)
@@ -787,28 +789,30 @@ def main():
         always = manifest["account"].get("always_show_users", [])
         for user in sorted(set(su or {}) | set(jobs or {}) | set(always)):
             entry = (su or {}).get(user, {"su": {}, "core_hours": {}, "flagged": {}})
-            row = {"user": user, **usage_summary(entry)} if su is not None else \
-                {"user": user, "su_used": None, "su_by_partition": None, "core_hours": None,
-                 "core_hours_by_partition": None, "su_flagged": None}
+            row = {"user": user, **usage_summary(entry, charged_partitions)} if su is not None else \
+                {"user": user, "compute_used": None, "compute_by_partition": None, "su_charged": None,
+                 "core_hours": None, "core_hours_by_partition": None, "su_flagged": None}
             row["active_jobs"] = jobs.get(user, []) if jobs is not None else None
             users.append(row)
-        users = [r for r in users if r["su_used"] or r["su_flagged"] or r["active_jobs"] or r["user"] in always]
-        users.sort(key=lambda r: (-(r["su_used"] or 0), -(r["core_hours"] or 0), r["user"]))
+        users = [r for r in users if r["compute_used"] or r["su_flagged"] or r["active_jobs"] or r["user"] in always]
+        users.sort(key=lambda r: (-(r["compute_used"] or 0), -(r["core_hours"] or 0), r["user"]))
         log(f"slurm shows {len(users)} user(s) on the account")
     # Estimated from sacct; RCC's own figure (rcchelp) is the official one.
-    su_total = None if su is None else round(sum(r["su_used"] for r in users), 2)
+    compute_total = None if su is None else round(sum(r["compute_used"] for r in users), 2)
+    charged_total = None if su is None else round(sum(r["su_charged"] for r in users), 2)
 
     status = {
-        "schema_version": 3,
+        "schema_version": 4,
         "source": "collector",
         "generated_at": now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 4,
         "account": {"name": account, **balance, "su_since": since, "storage": storage,
-                    "su_estimated_since": su_total,
+                    "compute_total": compute_total,
+                    "su_charged_total": charged_total,
                     "su_stale_records": stale,
                     "highlight_user": manifest["account"].get("highlight_user"),
-                    "su_billing_partitions": billing_partitions,
-                    "su_free_partitions": free_partitions},
+                    "compute_partitions": compute_partitions,
+                    "su_charged_partitions": charged_partitions},
         "users": users,
         "ended_badly": bad,
         "ended_badly_days": bad_days,
