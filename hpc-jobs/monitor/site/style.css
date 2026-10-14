@@ -469,7 +469,16 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 /* Phones and tablets. */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .grid-wrap { -webkit-overflow-scrolling: touch; max-width: 100%; }
-.rotate-note { display: none; font-size: 11px; color: var(--tx3); margin: 2px 0 10px; }
+.rotate-note { display: none; text-align: center; color: var(--tx2); margin: 14px 0 18px; padding: 44px 20px 40px;
+  border: 1px dashed var(--bd2); border-radius: 10px; background: var(--bg2); }
+.rotate-icon { display: block; width: 64px; height: 64px; margin: 0 auto 14px;
+  fill: none; stroke: var(--tx2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rotate-arrow { stroke: var(--tx3); }
+.rotate-phone { transform-origin: 32px 32px; transform-box: view-box; animation: rotate-hint 4.5s ease-in-out infinite; }
+@keyframes rotate-hint { 0%, 35% { transform: rotate(0deg); } 55%, 80% { transform: rotate(90deg); } 100% { transform: rotate(0deg); } }
+.rotate-text { font-size: 15px; font-weight: 500; color: var(--tx); }
+.rotate-sub { font-size: 11px; color: var(--tx3); margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .rotate-phone { animation: none; } }
 @media (max-width: 900px) {
   body { padding: 12px; }
   .res-sec { display: block; margin: 0 0 8px; }

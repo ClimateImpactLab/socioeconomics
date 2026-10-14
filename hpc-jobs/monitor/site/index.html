@@ -70,7 +70,15 @@
 <div class="info-bar" id="info-bar">Click or tap a cell to see its files</div>
 <div id="file-detail"></div>
 
-<div class="rotate-note" id="rotate-note">Turn your phone sideways to see the grid.</div>
+<div class="rotate-note" id="rotate-note" role="note">
+  <svg class="rotate-icon" viewBox="0 0 64 64" aria-hidden="true">
+    <path class="rotate-arrow" d="M47 12a24 24 0 0 1 8 20" />
+    <path class="rotate-arrow" d="M51.5 29.5l3.5 3.5 3.5-4" />
+    <g class="rotate-phone"><rect x="22" y="14" width="20" height="36" rx="3.5" /><line x1="29" y1="45" x2="35" y2="45" /></g>
+  </svg>
+  <div class="rotate-text">Turn your phone sideways to see the grid</div>
+  <div class="rotate-sub">The grid needs the full width of the screen.</div>
+</div>
 <div class="grid-wrap"><table class="grid-table" id="grid"></table></div>
 
 <div id="global-tip"></div>
