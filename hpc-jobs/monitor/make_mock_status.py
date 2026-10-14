@@ -14,6 +14,7 @@ import datetime
 import json
 import os
 import random
+import shutil
 
 import yaml
 
@@ -49,7 +50,7 @@ MOCK_JOB_NAMES = [
     ("mortality-median", "caslake", 120), ("labor-median", "caslake", 120),
     ("energy-median", "caslake", 120), ("agriculture-single", "caslake", 56),
     ("energy-quick-test", "cil", 2), ("sccs-pipeline", "caslake", 30),
-    ("interactive", "cil", 1), ("jupyter", "cil", 1),
+    ("interactive", "cil", 1), ("jupyter", "amd", 1), ("dscim-run", "amd", 40),
 ]
 
 
@@ -77,26 +78,19 @@ def mock_active_jobs(rng):
     return jobs
 
 
+GROUPS = ["projection", "costs", "levels", "aggregated"]
+
+
 def file_spec_for(files_cfg, sector_name):
-    """Per-model expected file lists: projection and aggregation combined.
-
-    Twin files (written to the -1pct_winsorization directory) get a
-    winsorized/ prefix so the site can show where they live.
-    """
-    spec = {}
-    for model, groups in files_cfg[sector_name].items():
-        agg = list(groups["aggregation"])
-        agg += [f"winsorized/{n}" for n in groups.get("aggregation_twin", [])]
-        spec[model] = {"projection": list(groups["projection"]), "aggregation": agg}
-    return spec
+    """Expected files per sub-model, by group, in a fixed order."""
+    return {model: {g: list(groups.get(g) or []) for g in GROUPS}
+            for model, groups in files_cfg[sector_name].items()}
 
 
-def files_for_unit(spec, unit_stages, stages, rng):
-    """File counts per group, consistent with the unit's stage states.
-
-    Files appear in list order while a stage runs, so the missing set is
-    always the tail of the expected list.
-    """
+def files_for_unit(spec, unit_stages, stages, rng, now):
+    """File counts, presence bits and per-file size and date, consistent
+    with the unit's stage states. Files appear in list order while a stage
+    runs, so the missing ones are always the tail of each list."""
     agg_stages = [s for s in stages if s != "generate"]
 
     def fraction(state):
@@ -110,17 +104,24 @@ def files_for_unit(spec, unit_stages, stages, rng):
 
     gen_frac = fraction(unit_stages["generate"]["state"])
     agg_frac = sum(fraction(unit_stages[s]["state"]) for s in agg_stages) / len(agg_stages)
+    agg_names = [n for g in GROUPS[1:] for n in spec[g]]
+    agg_on = set(agg_names[:round(agg_frac * len(agg_names))])
+    proj_on = set(spec["projection"][:round(gen_frac * len(spec["projection"]))])
 
-    out = {}
-    for group, frac in (("projection", gen_frac), ("aggregation", agg_frac)):
-        names = spec[group]
-        total = len(names)
-        found = round(frac * total)
-        rec = {"found": found, "total": total}
-        if 0 < found < total:
-            rec["missing"] = names[found:]
-        out[group] = rec
-    return out
+    files, bits, detail = {}, "", []
+    base_time = int(now.timestamp() - rng.uniform(3, 200) * 3600)
+    for g in GROUPS:
+        on = proj_on if g == "projection" else agg_on
+        files[g] = {"found": sum(1 for n in spec[g] if n in on), "total": len(spec[g])}
+        for i, n in enumerate(spec[g]):
+            if n in on:
+                bits += "1"
+                size = int(rng.uniform(40, 50) * 1e6) if g == "projection" else int(rng.uniform(3, 25) * 1e6)
+                detail.append([size, base_time + i * 600 + (0 if g == "projection" else 7200)])
+            else:
+                bits += "0"
+                detail.append(0)
+    return files, bits, detail
 
 
 def cells_for(run_type_cfg, scenarios):
@@ -230,7 +231,7 @@ def eta_for(counts, stages, rng):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--out", default=os.path.join(HERE, "site", "status.mock.json"))
+    parser.add_argument("--out-dir", default=os.path.join(HERE, "site", "mock"))
     args = parser.parse_args()
     rng = random.Random(args.seed)
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -238,6 +239,8 @@ def main():
     with open(os.path.join(HERE, "manifest.yml")) as f:
         manifest = yaml.safe_load(f)
 
+    os.makedirs(args.out_dir, exist_ok=True)
+    shutil.rmtree(os.path.join(args.out_dir, "details"), ignore_errors=True)
     sectors_out = {}
     for sector_name, sector in manifest["sectors"].items():
         files_spec = file_spec_for(manifest["files"], sector_name)
@@ -252,14 +255,18 @@ def main():
 
             counts = {s: 0 for s in ["not_started", "running", "partial", "done", "failed"]}
             listed = []
+            details = {}
             for i, unit in enumerate(all_units):
                 state = pick_state(i, len(all_units), fractions, rng)
                 counts[state] += 1
                 if state != "not_started":
                     made = make_unit(sector["stages"], unit, state, rng, now)
-                    made["files"] = files_for_unit(files_spec[made["model"]],
-                                                   made["stages"], sector["stages"], rng)
+                    made["files"], made["bits"], detail = files_for_unit(
+                        files_spec[made["model"]], made["stages"], sector["stages"], rng, now)
                     listed.append(made)
+                    if "1" in made["bits"]:
+                        key = "|".join([made["ssp"], made["rcp"], made["iam"], made["gcm"]])
+                        details.setdefault((made["model"], made["batch"]), {})[key] = detail
             counts["total"] = len(all_units)
 
             eta_hours, eta_basis = eta_for(counts, sector["stages"], rng)
@@ -270,11 +277,19 @@ def main():
                     "gcms": rcp_gcms,
                     "batches": batches,
                 },
+                "root": os.path.join(sector["output_root"], run_type),
+                "subdir": rt_cfg.get("subdir"),
                 "counts": counts,
                 "eta_hours": eta_hours,
                 "eta_basis": eta_basis,
                 "units": listed,
             }
+            for (model, batch), cells_ in details.items():
+                name = f"{model}.json" if batch is None else f"{model}/batch{batch}.json"
+                path = os.path.join(args.out_dir, "details", sector_name, run_type, name)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    json.dump(cells_, f, separators=(",", ":"))
         sectors_out[sector_name] = {
             "label": sector["label"],
             "stages": sector["stages"],
@@ -297,7 +312,7 @@ def main():
     total_su = sum(p["su_used"] for p in people)
     allocation = 1_000_000
     status = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": "mock",
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 4,
@@ -308,17 +323,25 @@ def main():
             "used_su": total_su,
             "balance_su": allocation - total_su,
             "su_since": manifest["account"]["su_since"],
+            "su_partition": manifest["account"]["su_partition"],
+            "storage": [
+                {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5},
+                {"label": "cil /cds3", "used": "61.2T", "quota": "125.0T", "used_pct": 49.0},
+            ],
         },
         "people": people,
+        "other_users": {"users": 3, "su_used": 18_250,
+                        "active_jobs": mock_active_jobs(rng) + mock_active_jobs(rng)},
         "sectors": sectors_out,
     }
 
-    with open(args.out, "w") as f:
+    out = os.path.join(args.out_dir, "status.json")
+    with open(out, "w") as f:
         json.dump(status, f, separators=(",", ":"))
-    size_kb = os.path.getsize(args.out) / 1024
+    size_kb = os.path.getsize(out) / 1024
     n_units = sum(rt["counts"]["total"] for s in sectors_out.values()
                   for rt in s["run_types"].values())
-    print(f"wrote {args.out} ({size_kb:.0f} KB, {n_units} units tracked)")
+    print(f"wrote {out} ({size_kb:.0f} KB, {n_units} units tracked)")
 
 
 if __name__ == "__main__":

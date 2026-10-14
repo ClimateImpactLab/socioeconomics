@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Collect real run status and write status.json for the dashboard.
+"""Collect real run status and write the dashboard data.
 
 The progress grid comes only from the output folders: expected files that
 exist and are not empty, the stage markers in status-global.txt, and the
-claim files workers leave while they run. Slurm is used only for the
-cluster strip: each listed person's running and queued jobs, service units
-since a start date, and the account balance. Sectors and run types with no
-outputs yet come out as not started.
+claim files workers leave while they run. Slurm and rcchelp are used only
+for the resources and jobs sections: storage, service units, and the jobs
+running or queued on the account. Sectors and run types with no outputs
+yet come out as not started.
+
+Writes, under --out-dir (default site/data):
+    status.json     everything the page needs at load time
+    details/...     file sizes and dates per cell, loaded when a cell is
+                    clicked (one file per sector, run type, sub-model and,
+                    for montecarlo, batch)
 
 Run it on the cluster from this directory:
 
@@ -16,7 +22,6 @@ Useful flags:
     --cil-root PATH   where /project/cil is mounted (default /project/cil);
                       use /Volumes/cil when testing from a Mac
     --no-slurm        skip squeue, sacct and rcchelp (also automatic when absent)
-    --out PATH        output file (default site/status.json)
 """
 
 import argparse
@@ -30,6 +35,8 @@ import subprocess
 import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+GROUPS = ["projection", "costs", "levels", "aggregated"]
 
 # How status-global.txt lines map to stages, and the word that means done.
 STATUS_MARKERS = {
@@ -78,18 +85,27 @@ def gcms_for(rt_cfg, gcms):
 
 
 def file_spec_for(files_cfg, sector_name):
-    """Per-model expected files; twin files get the winsorized/ prefix."""
-    spec = {}
-    for model, groups in files_cfg[sector_name].items():
-        agg = list(groups["aggregation"])
-        agg += [f"winsorized/{n}" for n in groups.get("aggregation_twin", [])]
-        spec[model] = {
-            "projection": list(groups["projection"]),
-            "aggregation": agg,
-            "twin": list(groups.get("aggregation_twin", [])),
-            "leaf_aggregation": list(groups["aggregation"]),
-        }
-    return spec
+    """Expected files per sub-model, by group, in a fixed order."""
+    return {model: {g: list(groups.get(g) or []) for g in GROUPS}
+            for model, groups in files_cfg[sector_name].items()}
+
+
+def flat_names(spec):
+    return [n for g in GROUPS for n in spec[g]]
+
+
+def stage_files(stage, spec, stages):
+    """Expected files a stage writes, so its folder state can be judged."""
+    in_leaf = lambda names: [n for n in names if not n.startswith("winsorized/")]
+    if stage == "generate":
+        return spec["projection"]
+    if stage == "post":
+        return [n for g in GROUPS[1:] for n in spec[g] if n.startswith("winsorized/")]
+    if stage == "costs":
+        return in_leaf(spec["costs"])
+    # aggregate also writes the costs when the sector has no costs stage
+    groups = ["levels", "aggregated"] if "costs" in stages else ["costs", "levels", "aggregated"]
+    return [n for g in groups for n in in_leaf(spec[g])]
 
 
 # ---------- output folders ----------
@@ -108,25 +124,25 @@ def parse_marker_time(line):
 
 
 def read_leaf(leaf_dir):
-    """File sizes, newest change, stage markers and claims for one leaf.
+    """File sizes and dates, newest change, stage markers and claims for one leaf.
 
     Returns None if the folder does not exist. markers maps stage to
     (last state word, time of that line).
     """
-    sizes, newest = {}, 0.0
+    files, newest = {}, 0.0
     try:
         with os.scandir(leaf_dir) as entries:
             for e in entries:
                 try:
                     st = e.stat()
-                    sizes[e.name] = st.st_size
+                    files[e.name] = (st.st_size, int(st.st_mtime))
                     newest = max(newest, st.st_mtime)
                 except OSError:
-                    sizes[e.name] = 0
+                    files[e.name] = (0, 0)
     except OSError:
         return None
     markers = {}
-    if "status-global.txt" in sizes:
+    if "status-global.txt" in files:
         try:
             with open(os.path.join(leaf_dir, "status-global.txt")) as f:
                 for line in f:
@@ -136,46 +152,31 @@ def read_leaf(leaf_dir):
                         markers[stage] = (m.group(2), parse_marker_time(line))
         except OSError:
             pass
-    claims = {s: f"status-{s}.txt" in sizes for s in ("generate", "aggregate")}
-    return {"sizes": sizes, "markers": markers, "claims": claims, "newest": newest}
+    claims = {s: f"status-{s}.txt" in files for s in ("generate", "aggregate")}
+    return {"files": files, "markers": markers, "claims": claims, "newest": newest}
 
 
-def count_group(names, rcp, sizes):
-    found, missing = 0, []
-    for name in names:
-        if sizes.get(name.replace("{rcp}", rcp), 0) > 0:
-            found += 1
-        else:
-            missing.append(name)
-    return found, missing
-
-
-def stage_file_done(stage, spec, rcp, sizes, twin_sizes):
-    """Whether a stage's own files are all present and non-empty."""
-    if stage == "generate":
-        return count_group(spec["projection"], rcp, sizes)[0] == len(spec["projection"])
-    if stage == "aggregate":
-        names = [n for n in spec["leaf_aggregation"] if n != "adaptation_costs.nc4"]
-        return bool(names) and count_group(names, rcp, sizes)[0] == len(names)
-    if stage == "costs":
-        return sizes.get("adaptation_costs.nc4", 0) > 0
-    if stage == "post":
-        return bool(spec["twin"]) and \
-            count_group(spec["twin"], rcp, twin_sizes)[0] == len(spec["twin"])
-    return False
+def lookup(name, rcp, leaf_files, twin_files):
+    """(size, mtime) of an expected file, or None if missing or empty."""
+    real = name.replace("{rcp}", rcp)
+    if real.startswith("winsorized/"):
+        hit = twin_files.get(real[len("winsorized/"):])
+    else:
+        hit = leaf_files.get(real)
+    return hit if hit and hit[0] > 0 else None
 
 
 def leaf_path(root, *parts):
     return os.path.join(root, *[p for p in parts if p])
 
 
-def stage_record(stage, info, spec, rcp, sizes, twin_sizes, now):
+def stage_record(stage, info, present, stage_names, now):
     """State of one stage from the folder alone, plus a reason when failed."""
     marker = info["markers"].get(stage) if info else None
     done_word = STATUS_MARKERS.get(f"generate.{stage}", (None, None))[1]
     rec = {"state": "not_started"}
-    if (marker and marker[0] == done_word) or \
-            (info and stage_file_done(stage, spec, rcp, sizes, twin_sizes)):
+    files_done = bool(stage_names) and all(present.get(n) for n in stage_names)
+    if (marker and marker[0] == done_word) or files_done:
         rec["state"] = "done"
         if marker and marker[1]:
             rec["finished"] = iso_utc(marker[1])
@@ -192,7 +193,9 @@ def stage_record(stage, info, spec, rcp, sizes, twin_sizes, now):
     return rec, None
 
 
-def scan_run_type(sector, rt_name, manifest, spec, cil_root, now):
+def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
+    """Scan one sector and run type. Fills details[(model, batch)] with
+    {cell key: [[size, mtime] or 0 per expected file]}."""
     rt_cfg = manifest["run_types"][rt_name]
     cells = cells_for(rt_cfg, manifest["scenarios"])
     rcp_gcms = gcms_for(rt_cfg, manifest["gcms"])
@@ -211,6 +214,9 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now):
     steps_left = 0
 
     for model in models:
+        names = flat_names(spec[model])
+        per_stage = {st: stage_files(st, spec[model], stages) for st in stages}
+        has_twin = any(n.startswith("winsorized/") for n in names)
         model_dir = rt_root if model == "main" else os.path.join(rt_root, model)
         twin_dir = None if model == "main" else os.path.join(rt_root, f"{model}-1pct_winsorization")
         for batch_name in batch_list:
@@ -221,17 +227,17 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now):
                 for gcm in rcp_gcms[cell["rcp"]]:
                     info = read_leaf(os.path.join(rcp_dir, gcm, cell["iam"], cell["ssp"])) \
                         if rcp_exists else None
-                    sizes = info["sizes"] if info else {}
-                    twin_sizes = {}
-                    if info and twin_dir and spec[model]["twin"]:
-                        twin_info = read_leaf(leaf_path(twin_dir, subdir, batch_name, cell["rcp"],
-                                                        gcm, cell["iam"], cell["ssp"]))
-                        twin_sizes = twin_info["sizes"] if twin_info else {}
+                    twin_files = {}
+                    if info and has_twin and twin_dir:
+                        twin = read_leaf(leaf_path(twin_dir, subdir, batch_name, cell["rcp"],
+                                                   gcm, cell["iam"], cell["ssp"]))
+                        twin_files = twin["files"] if twin else {}
+                    leaf_files = info["files"] if info else {}
+                    hits = {n: lookup(n, cell["rcp"], leaf_files, twin_files) for n in names}
 
                     stage_recs, fail_reason = {}, None
                     for stage in stages:
-                        rec, reason = stage_record(stage, info, spec[model], cell["rcp"],
-                                                   sizes, twin_sizes, now)
+                        rec, reason = stage_record(stage, info, hits, per_stage[stage], now)
                         stage_recs[stage] = rec
                         fail_reason = fail_reason or reason
                         if rec["state"] == "done":
@@ -254,32 +260,27 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now):
                         state = "not_started"
                     counts[state] += 1
 
-                    proj_found, proj_missing = count_group(spec[model]["projection"], cell["rcp"], sizes)
-                    leaf_found, leaf_missing = count_group(spec[model]["leaf_aggregation"], cell["rcp"], sizes)
-                    twin_found, twin_missing = count_group(spec[model]["twin"], cell["rcp"], twin_sizes)
-                    agg_found = leaf_found + twin_found
-                    agg_missing = leaf_missing + [f"winsorized/{n}" for n in twin_missing]
-                    agg_total = len(spec[model]["aggregation"])
-                    if not (proj_found or agg_found or state != "not_started"):
+                    any_file = any(hits.values())
+                    if not (any_file or state != "not_started"):
                         continue
 
-                    files = {
-                        "projection": {"found": proj_found, "total": len(spec[model]["projection"])},
-                        "aggregation": {"found": agg_found, "total": agg_total},
-                    }
-                    if 0 < proj_found < len(spec[model]["projection"]):
-                        files["projection"]["missing"] = proj_missing
-                    if 0 < agg_found < agg_total:
-                        files["aggregation"]["missing"] = agg_missing
-
+                    files = {}
+                    for g in GROUPS:
+                        group = spec[model][g]
+                        files[g] = {"found": sum(1 for n in group if hits[n]), "total": len(group)}
                     unit = {
                         "model": model, "ssp": cell["ssp"], "rcp": cell["rcp"],
                         "iam": cell["iam"], "gcm": gcm, "batch": batch_num,
                         "state": state, "stages": stage_recs, "files": files,
+                        "bits": "".join("1" if hits[n] else "0" for n in names),
                     }
                     if fail_reason:
                         unit["fail_reason"] = fail_reason
                     units.append(unit)
+                    if any_file:
+                        key = "|".join([cell["ssp"], cell["rcp"], cell["iam"], gcm])
+                        details.setdefault((model, batch_num), {})[key] = \
+                            [list(hits[n]) if hits[n] else 0 for n in names]
 
     counts["total"] = sum(len(rcp_gcms[c["rcp"]]) for c in cells) * len(batch_list) * len(models)
 
@@ -295,6 +296,8 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now):
 
     return {
         "dims": {"models": models, "cells": cells, "gcms": rcp_gcms, "batches": batches},
+        "root": os.path.join(sector["output_root"], rt_name),
+        "subdir": subdir,
         "counts": counts,
         "eta_hours": eta_hours,
         "eta_basis": eta_basis,
@@ -302,18 +305,39 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now):
     }
 
 
-# ---------- slurm (cluster strip only) ----------
+def write_details(out_dir, sector_name, rt_name, details):
+    for (model, batch), cells in details.items():
+        name = f"{model}.json" if batch is None else f"{model}/batch{batch}.json"
+        path = os.path.join(out_dir, "details", sector_name, rt_name, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(cells, f, separators=(",", ":"))
 
-def run_cmd(args):
+
+# ---------- slurm and rcchelp (resources and jobs only) ----------
+
+def run_cmd(args, login_shell=False):
+    """Run a command and return its output, or None on failure.
+
+    rcchelp is set up by the login profile, so it can run through bash -lc.
+    """
     try:
+        if login_shell:
+            args = ["bash", "-lc", " ".join(args)]
         res = subprocess.run(args, capture_output=True, text=True, timeout=120)
         if res.returncode != 0:
-            log(f"warning: {' '.join(args[:2])} failed: {res.stderr.strip()[:200]}")
+            log(f"warning: {' '.join(args[:3])} failed: {res.stderr.strip()[:200]}")
             return None
         return res.stdout
     except Exception as err:
-        log(f"warning: {' '.join(args[:2])} failed: {err}")
+        log(f"warning: {' '.join(args[:3])} failed: {err}")
         return None
+
+
+def run_rcchelp(args):
+    if shutil.which("rcchelp"):
+        return run_cmd(["rcchelp"] + args)
+    return run_cmd(["rcchelp"] + args, login_shell=True)
 
 
 def squeue_elapsed_s(text):
@@ -397,13 +421,13 @@ def active_jobs_by_user(account, rows):
     return by_user
 
 
-def su_by_user(account, since):
-    """Core hours of every job on the account since the start date, per user.
+def su_by_user(account, since, partition):
+    """Core hours on one partition of the account since the start date, per user.
 
     --truncate clips jobs that started earlier to the start date. Returns
     None if sacct failed.
     """
-    out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account,
+    out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account, "-r", partition,
                    "--starttime", since, "--endtime", "now", "--truncate",
                    "--format=User,ElapsedRaw,AllocCPUS"])
     if out is None:
@@ -429,7 +453,7 @@ def account_balance(account):
     """
     result = {"allocation_status": "unknown",
               "allocation_su": None, "used_su": None, "balance_su": None}
-    out = run_cmd(["rcchelp", "balance", "-a", account])
+    out = run_rcchelp(["balance", "-a", account])
     if out is None:
         return result
     result["allocation_status"] = "none"
@@ -449,8 +473,48 @@ def account_balance(account):
     return result
 
 
+SIZE_UNITS = {"K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4, "P": 1024 ** 5}
+
+
+def parse_size(text):
+    m = re.match(r"^([\d.]+)([KMGTP])?$", (text or "").strip())
+    return float(m.group(1)) * SIZE_UNITS.get(m.group(2) or "", 1) if m else None
+
+
+def storage_quotas(account):
+    """Group storage of the account from rcchelp quota, one row per filesystem.
+
+    Same parsing as the old monitor: a '>>> ... Filesystem: <fs>' marker
+    line, then rows of 'fileset blocks (group) used quota limit grace'.
+    """
+    out = run_rcchelp(["quota"])
+    if out is None:
+        return None
+    rows, fs = [], None
+    marker = re.compile(r">>>\s+\S.*?Filesystem:\s+(\S+)")
+    row = re.compile(r"^\s*(\S+)\s+(blocks|files)\s+\(\s*(\w+)\s*\)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$")
+    for line in out.splitlines():
+        m = marker.search(line)
+        if m:
+            fs = m.group(1)
+            continue
+        m = row.match(line)
+        if not m:
+            continue
+        fileset, kind, scope, used, quota, _limit, _grace = m.groups()
+        if kind != "blocks" or scope != "group" or fileset != account:
+            continue
+        used_b, quota_b = parse_size(used), parse_size(quota)
+        rows.append({
+            "label": f"{fileset} /{fs or 'home'}",
+            "used": used, "quota": quota,
+            "used_pct": round(100 * used_b / quota_b, 1) if used_b is not None and quota_b else None,
+        })
+    return rows
+
+
 def report_visible_users(manifest, rows, su):
-    """Log which users Slurm shows, and listed people with nothing visible."""
+    """Log how many users Slurm shows, and listed people with nothing visible."""
     seen = {r["user"] for r in rows or []} | set(su or {})
     log(f"slurm shows jobs from {len(seen)} user(s)")
     for person in manifest["people"]:
@@ -468,7 +532,7 @@ def main():
                         help="where /project/cil is mounted")
     parser.add_argument("--no-slurm", action="store_true",
                         help="skip squeue, sacct and rcchelp")
-    parser.add_argument("--out", default=os.path.join(HERE, "site", "status.json"))
+    parser.add_argument("--out-dir", default=os.path.join(HERE, "site", "data"))
     args = parser.parse_args()
     now_dt = datetime.datetime.now(datetime.timezone.utc)
     now = now_dt.timestamp()
@@ -477,13 +541,19 @@ def main():
         manifest = yaml.safe_load(f)
     account = manifest["account"]["name"]
     since = manifest["account"]["su_since"]
+    su_partition = manifest["account"]["su_partition"]
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    shutil.rmtree(os.path.join(args.out_dir, "details"), ignore_errors=True)
 
     sectors_out = {}
     for sector_name, sector in manifest["sectors"].items():
         spec = file_spec_for(manifest["files"], sector_name)
         run_types_out = {}
         for rt_name in sector["run_types"]:
-            out = scan_run_type(sector, rt_name, manifest, spec, args.cil_root, now)
+            details = {}
+            out = scan_run_type(sector, rt_name, manifest, spec, args.cil_root, now, details)
+            write_details(args.out_dir, sector_name, rt_name, details)
             run_types_out[rt_name] = out
             c = out["counts"]
             log(f"{sector_name}/{rt_name}: total {c['total']}, done {c['done']}, "
@@ -492,26 +562,26 @@ def main():
             "label": sector["label"],
             "stages": sector["stages"],
             "disabled_run_types": sector.get("disabled_run_types", []),
-            "files_spec": {m: {"projection": g["projection"], "aggregation": g["aggregation"]}
-                           for m, g in spec.items()},
+            "files_spec": spec,
             "run_types": run_types_out,
         }
 
     use_slurm = not args.no_slurm and shutil.which("sacct") and shutil.which("squeue")
-    rows, su, jobs = None, None, None
+    rows, su, jobs, storage = None, None, None, None
     balance = {"allocation_status": "unknown",
                "allocation_su": None, "used_su": None, "balance_su": None}
     if use_slurm:
         rows = live_tasks(account)
-        su = su_by_user(account, since)
+        su = su_by_user(account, since, su_partition)
         jobs = active_jobs_by_user(account, rows) if rows is not None else None
-        if shutil.which("rcchelp"):
-            balance = account_balance(account)
+        balance = account_balance(account)
+        storage = storage_quotas(account)
         report_visible_users(manifest, rows, su)
     else:
-        log("slurm tools not used; the cluster strip will show n/a")
+        log("slurm tools not used; resources and jobs will show n/a")
 
     # People are published by display name only, never the cluster username.
+    listed = {p.get("username") for p in manifest["people"] if p.get("username")}
     people = []
     for person in manifest["people"]:
         user = person.get("username")
@@ -522,19 +592,32 @@ def main():
             "active_jobs": None if jobs is None else jobs.get(user, []) if user else [],
         })
 
+    # Everyone on the account who is not in the manifest, as one group.
+    other_users = {"users": None, "su_used": None, "active_jobs": None}
+    if jobs is not None or su is not None:
+        others = {u: j for u, j in (jobs or {}).items() if u not in listed}
+        merged = [job for rows_ in others.values() for job in rows_]
+        merged.sort(key=lambda r: (r["state"] != "RUNNING", -r["elapsed_min"], r["job_name"]))
+        other_su = None if su is None else round(sum(h for u, h in su.items() if u not in listed))
+        other_users = {"users": len(others), "su_used": other_su,
+                       "active_jobs": merged if jobs is not None else None}
+
     status = {
-        "schema_version": 1,
+        "schema_version": 2,
         "source": "collector",
         "generated_at": now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 4,
-        "account": {"name": account, **balance, "su_since": since},
+        "account": {"name": account, **balance, "su_since": since,
+                    "su_partition": su_partition, "storage": storage},
         "people": people,
+        "other_users": other_users,
         "sectors": sectors_out,
     }
 
-    with open(args.out, "w") as f:
+    path = os.path.join(args.out_dir, "status.json")
+    with open(path, "w") as f:
         json.dump(status, f, separators=(",", ":"))
-    log(f"wrote {args.out} ({os.path.getsize(args.out) / 1024:.0f} KB)")
+    log(f"wrote {path} ({os.path.getsize(path) / 1024:.0f} KB)")
 
 
 if __name__ == "__main__":

@@ -1,252 +1,152 @@
-/* AMEL run-status dashboard. Reads status.json (written by the collector,
-   or by make_mock_status.py for the mock) and renders one view:
-   - the cluster strip: jobs each person has running or queued, and
-     service units on the cil account (from Slurm);
-   - the progress grid: each cell shows two bars, projection files on top
-     and aggregation files below, filling in as files appear on disk
-     (from the output folders only). */
+/* AMEL run-status dashboard, following the old mortality monitor.
+
+   Reads data/status.json (written by collect_status.py), or mock/status.json
+   with ?source=mock. File sizes and dates for the detail panel come from
+   the details/ folder next to it and are loaded when a cell is clicked.
+   The grid comes from the output folders only; Resources and SLURM jobs
+   come from Slurm and rcchelp. */
 
 "use strict";
 
-const STATE_LABELS = {
-  done: "Done",
-  running: "Running",
-  failed: "Failed",
-  partial: "Partial",
-  not_started: "Not started",
-};
-const STATE_COLORS = {
-  done: "var(--st-done)",
-  running: "var(--st-running)",
-  failed: "var(--st-failed)",
-  partial: "var(--st-done)",
-  not_started: "var(--st-none)",
-};
-const GROUPS = ["projection", "aggregation"];
+const GROUPS = ["projection", "costs", "levels", "aggregated"];
+const AGG_GROUPS = ["costs", "levels", "aggregated"];
+const SQ_CLASS = { projection: "base", costs: "cost", levels: "lvl", aggregated: "agr" };
+const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr" };
+const PART_COLORS = { cil: "#2d9e8f", amd: "#7c5cbf", caslake: "#4a8bc2", "amd-hm": "#e8913a" };
+const PERSON_COLORS = ["#378ADD", "#7F77DD", "#D85A30", "#1D9E75", "#C74D8F", "#8A9E1D", "#DD9F37", "#5A7FD8"];
+
+const params = new URLSearchParams(location.search);
+const BASE = params.get("source") === "mock" ? "mock/" : "data/";
 
 let DATA = null;
-let view = { sector: null, runType: null, model: null, failedOnly: false, focusGroup: null };
-let openPeople = new Set();
-let unitIndex = new Map();
+const view = { sector: null, runType: null, model: null, ssp: null, selected: null };
+const detailCache = new Map();
+let cellIndex = new Map();
 
 const $ = (id) => document.getElementById(id);
 
-/* ---------- formatting helpers ---------- */
+/* ---------- formatting ---------- */
 
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function fmtN(n) { return n == null ? "n/a" : Math.round(n).toLocaleString("en-US"); }
+function fmtPct2(p) {
+  if (p == null || isNaN(p)) return "n/a";
+  if (p < 100 && p >= 99.995) return "99.99%";
+  return `${p.toFixed(2)}%`;
+}
+function fmtPctShort(p) {
+  if (p > 0 && p < 0.1) return "<0.1%";
+  return p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`;
+}
 function fmtMin(min) {
   if (min == null) return "";
   if (min < 60) return `${Math.round(min)}m`;
   return `${Math.floor(min / 60)}h ${String(Math.round(min % 60)).padStart(2, "0")}m`;
 }
-
 function fmtEta(hours) {
   if (hours == null) return "n/a";
   if (hours < 48) return `~${Math.round(hours)} h`;
-  return `~${(hours / 24).toFixed(1)} d`;
+  if (hours > 24 * 365) return "over a year";
+  return `~${Math.round(hours / 24)} d`;
+}
+function fmtSize(bytes) {
+  if (!bytes) return "";
+  if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+function fmtStamp(sec) {
+  const d = new Date(sec * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtDate(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function fmtAgo(iso) {
-  const h = (Date.now() - new Date(iso).getTime()) / 3.6e6;
-  if (h < 1) return `${Math.round(h * 60)} min ago`;
-  if (h < 48) return `${h.toFixed(1)} h ago`;
-  return `${(h / 24).toFixed(1)} days ago`;
-}
+/* ---------- data helpers ---------- */
 
-function fmtN(n) {
-  return n == null ? "n/a" : Math.round(n).toLocaleString("en-US");
-}
+const sector = () => DATA.sectors[view.sector];
+const runType = () => sector().run_types[view.runType];
 
-function rcpShort(rcp) {
-  return rcp.replace("rcp", "").replace("45", "4.5").replace("85", "8.5");
-}
+function specOf(sec, model) { return sec.files_spec[model]; }
+function flatNames(spec) { return GROUPS.flatMap((g) => spec[g]); }
+function groupTotal(spec, groups) { return groups.reduce((n, g) => n + spec[g].length, 0); }
 
-function esc(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function unitKey(u) {
-  return [u.model, u.ssp, u.rcp, u.iam, u.gcm, u.batch ?? ""].join("|");
-}
-
-/* ---------- data access ---------- */
-
-function currentSector() {
-  return DATA.sectors[view.sector];
-}
-
-function currentRT() {
-  return currentSector().run_types[view.runType];
-}
-
-function sectorTotals(sector) {
-  let done = 0, total = 0;
-  for (const rt of Object.values(sector.run_types)) {
-    done += rt.counts.done;
-    total += rt.counts.total;
-  }
-  return { done, total };
-}
-
-function resolveName(name, rcp) {
-  return name.split("{rcp}").join(rcp);
-}
-
-// Expected file totals per unit for one model: {projection: n, aggregation: m}.
-function specTotals(model) {
-  const spec = currentSector().files_spec[model];
+// Presence per group for a unit (or all missing when the unit is not listed).
+function unitGroups(unit, spec) {
+  const bits = unit ? unit.bits : "";
   const out = {};
-  for (const g of GROUPS) out[g] = spec[g].length;
-  return out;
-}
-
-function unitFiles(unit, model) {
-  const totals = specTotals(model);
-  const out = {};
+  let i = 0;
   for (const g of GROUPS) {
-    const rec = unit && unit.files ? unit.files[g] : null;
-    out[g] = { found: rec ? rec.found : 0, total: rec ? rec.total : totals[g] };
+    out[g] = spec[g].map(() => bits[i++] === "1");
   }
   return out;
 }
 
-/* ---------- top-level render ---------- */
-
-function renderAll() {
-  renderSectorTabs();
-  renderRunTypeTabs();
-  renderSummary();
-  renderModelPills();
-  renderLegend();
-  renderGrid();
+function unitCounts(unit, spec) {
+  const pres = unitGroups(unit, spec);
+  const c = (gs) => gs.reduce((n, g) => n + pres[g].filter(Boolean).length, 0);
+  return {
+    proj: c(["projection"]), projTotal: spec.projection.length,
+    agg: c(AGG_GROUPS), aggTotal: groupTotal(spec, AGG_GROUPS), pres,
+  };
 }
 
-function defaultRunType(sector) {
-  const rts = Object.keys(sector.run_types);
-  if (rts.includes("montecarlo")) return "montecarlo";
-  if (rts.includes("median")) return "median";
-  return rts[0];
+// The old monitor's cell states.
+function cellState(unit, cnt) {
+  if (unit && unit.state === "running") return "bst-progress bst-active";
+  const projDone = cnt.proj >= cnt.projTotal;
+  const aggDone = cnt.aggTotal > 0 && cnt.agg >= cnt.aggTotal;
+  if (projDone && aggDone) return "bst-done";
+  if (projDone && cnt.agg > 0) return "bst-aggpart";
+  if (projDone) return "bst-complete";
+  if (cnt.proj > 0 || cnt.agg > 0) return "bst-progress";
+  return "bst-empty";
 }
+const STATE_NAMES = {
+  "bst-progress bst-active": "writing", "bst-done": "aggregation complete",
+  "bst-aggpart": "aggregation incomplete", "bst-complete": "projection complete",
+  "bst-progress": "in progress", "bst-empty": "not started",
+};
 
-function renderSectorTabs() {
-  const el = $("sector-tabs");
-  el.innerHTML = "";
-  for (const [name, sector] of Object.entries(DATA.sectors)) {
-    const t = sectorTotals(sector);
-    const pct = t.total ? Math.round((100 * t.done) / t.total) : 0;
-    const b = document.createElement("button");
-    b.className = name === view.sector ? "active" : "";
-    b.innerHTML = `${esc(sector.label)}<span class="tab-count">${pct}%</span>`;
-    b.onclick = () => {
-      view.sector = name;
-      view.runType = defaultRunType(sector);
-      view.model = null;
-      view.focusGroup = null;
-      renderAll();
-    };
-    el.appendChild(b);
-  }
-}
-
-function renderRunTypeTabs() {
-  const el = $("runtype-tabs");
-  el.innerHTML = "";
-  const sector = currentSector();
-  for (const [name, rt] of Object.entries(sector.run_types)) {
-    const b = document.createElement("button");
-    b.className = name === view.runType ? "active" : "";
-    b.innerHTML = `${esc(name)}<span class="tab-count">${rt.counts.done}/${rt.counts.total}</span>`;
-    b.onclick = () => {
-      view.runType = name;
-      view.model = null;
-      view.focusGroup = null;
-      renderAll();
-    };
-    el.appendChild(b);
-  }
-  for (const name of sector.disabled_run_types || []) {
-    const b = document.createElement("button");
-    b.className = "disabled";
-    b.disabled = true;
-    b.title = "Not part of this sector";
-    b.textContent = name;
-    el.appendChild(b);
-  }
-}
-
-// File totals across the whole run type (all models, all units).
-function fileTotals(rt) {
-  const perModel = {};
+// Files present and expected for a run type, from its units.
+function filesOf(sec, rt) {
+  const out = { proj: 0, projExp: 0, agg: 0, aggExp: 0, complete: 0, partial: 0, started: 0 };
+  const perModel = rt.counts.total / rt.dims.models.length;
   for (const m of rt.dims.models) {
-    const t = specTotals(m);
-    perModel[m] = t.projection + t.aggregation;
+    const s = specOf(sec, m);
+    out.projExp += perModel * s.projection.length;
+    out.aggExp += perModel * groupTotal(s, AGG_GROUPS);
   }
-  const unitsPerModel = rt.counts.total / rt.dims.models.length;
-  let expected = 0;
-  for (const m of rt.dims.models) expected += unitsPerModel * perModel[m];
-  let found = 0, complete = 0;
   for (const u of rt.units) {
-    const f = unitFiles(u, u.model);
-    const uf = f.projection.found + f.aggregation.found;
-    found += uf;
-    if (f.projection.found >= f.projection.total &&
-        f.aggregation.found >= f.aggregation.total) complete += 1;
+    const c = unitCounts(u, specOf(sec, u.model));
+    out.proj += c.proj;
+    out.agg += c.agg;
+    if (c.proj + c.agg === 0) continue;
+    out.started += 1;
+    if (c.proj >= c.projTotal && c.agg >= c.aggTotal) out.complete += 1;
+    else out.partial += 1;
   }
-  return { expected: Math.round(expected), found, complete };
+  return out;
 }
 
-function renderSummary() {
-  const rt = currentRT();
-  const c = rt.counts;
-  const ft = fileTotals(rt);
-  const pct = ft.expected ? (100 * ft.found) / ft.expected : 0;
-  let html = `<div class="card"><div class="num">${fmtN(ft.found)}</div>
-      <div class="lbl">files present of ${fmtN(ft.expected)}</div></div>
-    <div class="card"><div class="num">${fmtN(ft.complete)}</div>
-      <div class="lbl">units with all files, of ${fmtN(c.total)}</div></div>
-    <div class="card"><div class="num">${fmtN(c.running)}</div>
-      <div class="lbl"><span class="dot" style="background:${STATE_COLORS.running}"></span>units being written</div></div>
-    <div class="card"><div class="num">${fmtN(c.failed)}</div>
-      <div class="lbl"><span class="dot" style="background:${STATE_COLORS.failed}"></span>failed units</div></div>
-    <div class="card progress-card">
-      <div class="lbl">${pct.toFixed(1)}% of expected files</div>
-      <div class="progress-bar"><span style="width:${pct}%;background:${STATE_COLORS.done}"></span></div></div>`;
-  html += `<div class="card eta"><div class="num">${fmtEta(rt.eta_hours)}</div>
-    <div class="lbl">est. time to finish</div>
-    ${rt.eta_basis ? `<div class="sub">${esc(rt.eta_basis)}</div>` : ""}</div>`;
-  $("summary").innerHTML = html;
-}
-
-function renderModelPills() {
-  const rt = currentRT();
-  const el = $("model-pills");
-  el.innerHTML = "";
-  const models = rt.dims.models;
-  // In single-style grids the models are the rows, so no picker is needed.
-  if (models.length < 2 || gridKind(rt) === "models") { view.model = null; return; }
-  if (!view.model) view.model = models[0];
-  for (const m of models) {
-    const b = document.createElement("button");
-    b.className = m === view.model ? "active" : "";
-    b.textContent = m;
-    b.onclick = () => { view.model = m; renderGrid(); };
-    el.appendChild(b);
+function sectorFiles(sec) {
+  const t = { proj: 0, projExp: 0, agg: 0, aggExp: 0 };
+  for (const rt of Object.values(sec.run_types)) {
+    const f = filesOf(sec, rt);
+    for (const k of Object.keys(t)) t[k] += f[k];
   }
+  return t;
 }
 
-function renderLegend() {
-  $("legend").innerHTML = `<span class="chip"><span class="sw" style="background:var(--st-none)"></span>no files yet</span>
-    <span class="chip"><span class="sw half"></span>files appearing</span>
-    <span class="chip"><span class="sw" style="background:${STATE_COLORS.done}"></span>all files present</span>
-    <span class="chip"><span class="sw ring"></span>failed</span>
-    <span class="note">Each box has two bars: projection files on top, aggregation files below.
-    Click a scenario header to zoom into it, click a box for the file list.</span>`;
+function sectorRunning(sec) {
+  return Object.values(sec.run_types).some((rt) =>
+    rt.units.some((u) => u.stages.generate && u.stages.generate.state === "running"));
 }
 
-/* ---------- grid ---------- */
-
-// "models": rows are sub-models (single, quick_test).
-// "gcms": rows are GCMs (median, montecarlo).
 function gridKind(rt) {
   const anyRcp = Object.keys(rt.dims.gcms)[0];
   return rt.dims.gcms[anyRcp].length > 1 ? "gcms" : "models";
@@ -254,406 +154,655 @@ function gridKind(rt) {
 
 function gcmUnion(gcms) {
   const lists = Object.values(gcms).sort((a, b) => b.length - a.length);
-  const seen = new Set(lists[0]);
-  const union = [...lists[0]];
-  for (const list of lists.slice(1)) {
-    for (const g of list) if (!seen.has(g)) { seen.add(g); union.push(g); }
-  }
-  return union;
+  const out = [...lists[0]];
+  for (const l of lists.slice(1)) for (const g of l) if (!out.includes(g)) out.push(g);
+  return out;
 }
 
-function buildGroups(cells) {
-  const groups = [];
-  for (const cell of cells) {
-    const label = `${cell.ssp} ${rcpShort(cell.rcp)}`;
-    const last = groups[groups.length - 1];
-    if (last && last.label === label) last.cells.push(cell);
-    else groups.push({ label, cells: [cell] });
-  }
-  return groups;
+function defaultRunType(sec) {
+  const rts = Object.keys(sec.run_types);
+  if (rts.includes("montecarlo")) return "montecarlo";
+  if (rts.includes("median")) return "median";
+  return rts[0];
 }
 
-function cellInner(unit, model) {
-  const f = unitFiles(unit, model);
+function sspsOf(rt) {
+  return [...new Set(rt.dims.cells.map((c) => c.ssp))];
+}
+
+function defaultSsp(rt) {
+  const ssps = sspsOf(rt);
+  return ssps.includes("SSP3") ? "SSP3" : ssps[0];
+}
+
+/* ---------- render ---------- */
+
+function renderAll() {
+  renderTabs();
+  renderCards();
+  renderSspTabs();
+  renderLegend();
+  renderGrid();
+}
+
+function selector(el, items, active, onPick) {
+  el.innerHTML = "";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.className = "run-opt" + (it.key === active ? " active" : "");
+    b.innerHTML = esc(it.label) + (it.count != null ? `<span class="opt-count">${esc(it.count)}</span>` : "");
+    if (it.disabled) { b.disabled = true; b.title = it.title || ""; }
+    else b.onclick = () => onPick(it.key);
+    el.appendChild(b);
+  }
+}
+
+function renderTabs() {
+  selector($("sector-tabs"), Object.entries(DATA.sectors).map(([k, s]) => {
+    const f = sectorFiles(s);
+    return { key: k, label: s.label, count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) };
+  }), view.sector, (k) => {
+    view.sector = k;
+    view.runType = defaultRunType(sector());
+    view.model = null;
+    view.ssp = defaultSsp(runType());
+    closeDetail();
+    renderAll();
+  });
+
+  const sec = sector();
+  const items = Object.entries(sec.run_types).map(([k, rt]) => {
+    const f = filesOf(sec, rt);
+    return { key: k, label: k, count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) };
+  });
+  for (const k of sec.disabled_run_types || []) {
+    items.push({ key: k, label: k, disabled: true, title: "Not part of this sector" });
+  }
+  selector($("runtype-tabs"), items, view.runType, (k) => {
+    view.runType = k;
+    view.model = null;
+    view.ssp = defaultSsp(runType());
+    closeDetail();
+    renderAll();
+  });
+
+  const rt = runType();
+  const showModels = gridKind(rt) === "gcms" && rt.dims.models.length > 1;
+  $("model-sep").classList.toggle("hidden", !showModels);
+  if (!showModels) { $("model-tabs").innerHTML = ""; view.model = null; return; }
+  if (!view.model) view.model = rt.dims.models[0];
+  selector($("model-tabs"), rt.dims.models.map((m) => ({ key: m, label: m })), view.model, (k) => {
+    view.model = k;
+    closeDetail();
+    renderAll();
+  });
+}
+
+function pctOf(a, b) { return b ? (100 * a) / b : 0; }
+
+function card(label, val, sub, bar) {
+  return `<div class="card"><div class="card-label">${label}</div><div class="card-val">${val}</div>` +
+    (bar || "") + (sub ? `<div class="card-sub">${sub}</div>` : "") + `</div>`;
+}
+function pbar(pct, color) {
+  return `<div class="pbar"><div class="pbar-fill" style="width:${Math.min(pct, 100).toFixed(2)}%;background:${color}"></div></div>`;
+}
+
+function renderCards() {
+  const sec = sector(), rt = runType();
+  const f = filesOf(sec, rt);
+  const total = rt.counts.total;
+  const pp = pctOf(f.proj, f.projExp), ap = pctOf(f.agg, f.aggExp);
+  $("cards").innerHTML =
+    card("Expected", fmtN(total), "units of work") +
+    card("Complete", `<span style="color:var(--green)">${fmtN(f.complete)}</span>`, "all files present") +
+    card("Partial", `<span style="color:var(--amber)">${fmtN(f.partial)}</span>`, "some files present") +
+    card("Not started", `<span style="color:var(--red)">${fmtN(total - f.started)}</span>`, "no files yet") +
+    card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
+    card("Aggregation", fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
+    card("Writing", fmtN(rt.counts.running), rt.counts.failed ? `${fmtN(rt.counts.failed)} stopped` : "units being written") +
+    card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : (total && f.complete === total ? "All complete" : ""));
+}
+
+function renderSspTabs() {
+  const rt = runType();
+  const sec = sector();
+  const items = sspsOf(rt).map((ssp) => {
+    const cells = rt.dims.cells.filter((c) => c.ssp === ssp);
+    const models = gridKind(rt) === "gcms" ? [view.model || rt.dims.models[0]] : rt.dims.models;
+    let exp = 0;
+    for (const c of cells) exp += rt.dims.gcms[c.rcp].length * (rt.dims.batches || 1) * models.length;
+    const done = rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)).filter((u) => {
+      const c = unitCounts(u, specOf(sec, u.model));
+      return c.proj >= c.projTotal && c.agg >= c.aggTotal;
+    }).length;
+    return { key: ssp, label: ssp, count: `(${fmtN(done)}/${fmtN(exp)})` };
+  });
+  if (!view.ssp || !sspsOf(rt).includes(view.ssp)) view.ssp = defaultSsp(rt);
+  selector($("ssp-tabs"), items, view.ssp, (k) => { view.ssp = k; closeDetail(); renderSspTabs(); renderGrid(); });
+}
+
+function renderLegend() {
+  const box = (st) => `<div class="leg-box" style="${st}"></div>`;
+  $("legend").innerHTML =
+    `<div class="leg-item"><div class="leg-sq" style="background:var(--base)"></div> Present</div>
+     <div class="leg-item"><div class="leg-sq" style="background:var(--miss)"></div> Missing</div>
+     <span class="leg-sep">|</span>
+     <div class="leg-item" title="Some files present, not yet complete">${box("border:1.5px dashed var(--progress)")} In progress</div>
+     <div class="leg-item" title="Files changed in the last 6 hours">${box("border:1.5px solid var(--writing);background:rgba(255,99,71,0.06);animation:pulse-writing 2.5s ease-in-out infinite")} Writing</div>
+     <div class="leg-item" title="All projection files present, aggregation not started">${box("border:1.5px solid var(--complete)")} Projection complete</div>
+     <div class="leg-item" title="Projection complete, aggregation started but not finished">${box("border:2px solid var(--failed);background:var(--failed-bg)")} Aggregation incomplete</div>
+     <div class="leg-item" title="All projection and aggregation files present">${box("border:1.5px solid var(--done-bd)")} Aggregation complete</div>
+     <span class="leg-sep">|</span>
+     <span style="font-weight:500">Aggregation:</span>
+     <span style="color:var(--agg-cost)">Costs</span>
+     <span style="color:var(--agg-lvl)">Levels</span>
+     <span style="color:var(--agg-agg)">Aggregated</span>`;
+}
+
+function squares(pres, groups) {
   let html = "";
-  for (const g of GROUPS) {
-    const pct = f[g].total ? (100 * f[g].found) / f[g].total : 0;
-    const run = unit && unit.state === "running" ? "fill-run" : "";
-    html += `<div class="fbar"><span class="${run}" style="width:${pct}%"></span></div>`;
+  for (const g of groups) {
+    for (const on of pres[g]) html += `<div class="fsq${on ? " " + SQ_CLASS[g] : ""}"></div>`;
   }
   return html;
 }
 
-function unitHtml(key, unit, model, wide) {
-  const state = unit ? unit.state : "not_started";
-  const ring = state === "failed" ? " ring" : "";
-  const fx = unit && state === "failed" && wide ? `<span class="fx">x</span>` : "";
-  return `<div class="unit st-${state}${ring}" data-key="${esc(key)}">` +
-    cellInner(unit, model) + fx + `</div>`;
+function cellHtml(key, unit, spec) {
+  const cnt = unitCounts(unit, spec);
+  const cls = cellState(unit, cnt);
+  let html = `<div class="batch ${cls}" data-key="${esc(key)}">`;
+  html += `<div class="batch-row"><div class="sq-grid">${squares(cnt.pres, ["projection"])}</div>` +
+    (cnt.proj ? `<span class="row-count proj">${cnt.proj}/${cnt.projTotal}</span>` : "") + `</div>`;
+  if (cnt.aggTotal) {
+    html += `<div class="batch-sep"></div><div class="batch-row"><div class="sq-grid">${squares(cnt.pres, AGG_GROUPS)}</div>` +
+      (cnt.agg ? `<span class="row-count agg">${cnt.agg}/${cnt.aggTotal}</span>` : "") + `</div>`;
+  }
+  return html + `</div>`;
 }
 
 function renderGrid() {
-  const rt = currentRT();
-  const wrap = $("grid-wrap");
-  wrap.classList.toggle("failed-only", view.failedOnly);
-
-  unitIndex = new Map();
-  for (const u of rt.units) unitIndex.set(unitKey(u), u);
-
+  const sec = sector(), rt = runType();
   const kind = gridKind(rt);
-  const batches = rt.dims.batches;
-  const batchList = batches ? [...Array(batches).keys()] : [null];
+  const batches = rt.dims.batches ? [...Array(rt.dims.batches).keys()] : [null];
+  const cells = rt.dims.cells.filter((c) => c.ssp === view.ssp);
+  const byKey = new Map(rt.units.map((u) => [[u.model, u.ssp, u.rcp, u.iam, u.gcm, u.batch ?? ""].join("|"), u]));
+  cellIndex = new Map();
 
-  let groups = buildGroups(rt.dims.cells);
-  if (view.focusGroup && groups.some((g) => g.label === view.focusGroup)) {
-    groups = groups.filter((g) => g.label === view.focusGroup);
-  } else {
-    view.focusGroup = null;
-  }
-  $("focus-clear").classList.toggle("hidden", !view.focusGroup);
-
-  const rows = kind === "models" ? rt.dims.models : gcmUnion(rt.dims.gcms);
-  const model = kind === "models" ? null : (view.model || rt.dims.models[0]);
-  const nCols = groups.reduce((n, g) => n + g.cells.length, 0) * batchList.length;
-
-  // Size the cells so the whole grid fits without sideways scrolling.
-  const labelW = kind === "gcms" ? 150 : 92;
-  const availW = wrap.getBoundingClientRect().width - labelW - groups.length - 24;
-  const cw = Math.max(3, Math.min(46, Math.floor(availW / nCols) - 2));
-  const availH = Math.max(240, window.innerHeight * 0.62);
-  const ch = Math.max(7, Math.min(26, Math.floor(availH / rows.length) - 3));
-  wrap.style.setProperty("--cw", `${cw}px`);
-  wrap.style.setProperty("--ch", `${ch}px`);
-  wrap.style.setProperty("--labelw", `${labelW}px`);
-  wrap.classList.toggle("tiny", cw < 9);
-  const wide = cw >= 14;
-
-  let head1 = `<tr><th class="corner group"></th>`;
-  let head2 = `<tr><th class="corner group"></th>`;
-  for (const g of groups) {
-    const focused = view.focusGroup === g.label ? " focused" : "";
-    head1 += `<th class="group gclick${focused}" data-group="${esc(g.label)}"
-      colspan="${g.cells.length * batchList.length}" title="Click to zoom this scenario">${esc(g.label)}</th>`;
-    for (const cell of g.cells) {
-      head2 += `<th class="group" colspan="${batchList.length}">${esc(cell.iam)}</th>`;
-    }
-  }
-  head1 += "</tr>";
-  head2 += "</tr>";
-
-  let body = "";
-  for (const row of rows) {
-    body += `<tr><th title="${esc(row)}">${esc(row)}</th>`;
-    for (const g of groups) {
-      for (const cell of g.cells) {
-        let first = true;
-        for (const b of batchList) {
-          const m = kind === "models" ? row : model;
-          const gcm = kind === "models" ? rt.dims.gcms[cell.rcp][0] : row;
-          const valid = rt.dims.gcms[cell.rcp].includes(gcm);
-          const key = [m, cell.ssp, cell.rcp, cell.iam, gcm, b ?? ""].join("|");
-          const unit = unitIndex.get(key) || null;
-          const inner = valid ? unitHtml(key, unit, m, wide) :
-            `<div class="unit void"></div>`;
-          body += `<td class="${first ? "cellgroup-start" : ""}">${inner}</td>`;
-          first = false;
-        }
-      }
-    }
-    body += "</tr>";
-  }
-
-  wrap.innerHTML =
-    `<table class="grid"><thead>${head1}${head2}</thead><tbody>${body}</tbody></table>`;
-}
-
-/* ---------- tooltip and drawer ---------- */
-
-function unitFromEl(el) {
-  const key = el.dataset.key;
-  const parts = key.split("|");
-  const unit = unitIndex.get(key) || null;
-  return {
-    unit,
-    model: parts[0], ssp: parts[1], rcp: parts[2], iam: parts[3],
-    gcm: parts[4], batch: parts[5],
+  const rows = kind === "gcms" ? gcmUnion(rt.dims.gcms) : rt.dims.models;
+  const fixedModel = kind === "gcms" ? (view.model || rt.dims.models[0]) : null;
+  const edge = (rcp, i, n) => {
+    const t = rcp === "rcp45" ? "45" : "85";
+    return (i === 0 ? ` edge-l${t}` : "") + (i === n - 1 ? ` edge-r${t}` : "");
   };
+
+  let h1 = `<thead><tr><th class="model-th">${kind === "gcms" ? "Climate model" : "Sub-model"}</th>`;
+  let h2 = `<tr><th class="model-th sub">${batches[0] != null ? "batch" : ""}</th>`;
+  cells.forEach((c, i) => {
+    if (i) { h1 += `<th class="sep-col"></th>`; h2 += `<th class="sep-col"></th>`; }
+    const models = fixedModel ? [fixedModel] : rt.dims.models;
+    const exp = rt.dims.gcms[c.rcp].length * batches.length * models.length;
+    const done = rt.units.filter((u) => u.ssp === c.ssp && u.rcp === c.rcp && u.iam === c.iam && models.includes(u.model))
+      .filter((u) => { const n = unitCounts(u, specOf(sec, u.model)); return n.proj >= n.projTotal && n.agg >= n.aggTotal; }).length;
+    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}">${c.rcp}-${c.iam} <span class="sc-count">${done}/${exp}</span></th>`;
+    batches.forEach((b, bi) => {
+      h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
+    });
+  });
+  h1 += `</tr>`; h2 += `</tr></thead>`;
+
+  let body = "<tbody>";
+  for (const row of rows) {
+    const label = kind === "gcms" ? row.replace("surrogate_", "surr_") : row;
+    body += `<tr><td class="model-cell" title="${esc(row)}">${esc(label)}</td>`;
+    cells.forEach((c, i) => {
+      if (i) body += `<td class="sep-col"></td>`;
+      batches.forEach((b, bi) => {
+        const model = fixedModel || row;
+        const gcm = kind === "gcms" ? row : rt.dims.gcms[c.rcp][0];
+        const cls = `sc-cell${edge(c.rcp, bi, batches.length)}`;
+        if (!rt.dims.gcms[c.rcp].includes(gcm)) { body += `<td class="${cls}"></td>`; return; }
+        const key = [model, c.ssp, c.rcp, c.iam, gcm, b ?? ""].join("|");
+        const unit = byKey.get(key) || null;
+        cellIndex.set(key, { unit, model, ssp: c.ssp, rcp: c.rcp, iam: c.iam, gcm, batch: b });
+        body += `<td class="${cls}">${cellHtml(key, unit, specOf(sec, model))}</td>`;
+      });
+    });
+    body += `</tr>`;
+  }
+  $("grid").innerHTML = h1 + h2 + body + "</tbody>";
+  if (view.selected) {
+    const el = document.querySelector(`.batch[data-key="${CSS.escape(view.selected)}"]`);
+    if (el) el.classList.add("selected");
+  }
 }
 
-function unitTitle(info) {
+/* ---------- detail panel ---------- */
+
+function cellPath(info) {
+  const rt = runType();
+  const parts = [rt.root];
+  if (info.model !== "main") parts.push(info.model);
+  if (rt.subdir) parts.push(rt.subdir);
+  if (info.batch != null) parts.push(`batch${info.batch}`);
+  parts.push(info.rcp, info.gcm, info.iam, info.ssp);
+  return parts.join("/");
+}
+
+function cellTitle(info) {
   const bits = [];
   if (info.model !== "main") bits.push(info.model);
-  bits.push(info.ssp, info.rcp, info.iam, info.gcm);
-  if (info.batch !== "") bits.push(`batch${info.batch}`);
-  return bits.join(" ");
+  bits.push(info.gcm);
+  if (info.batch != null) bits.push(`batch${info.batch}`);
+  bits.push(info.ssp, info.rcp, info.iam);
+  return bits.join(" / ");
 }
 
-function tooltipHtml(info) {
-  const state = info.unit ? info.unit.state : "not_started";
-  let html = `<div class="tt-title"><span class="tt-dot" style="background:${STATE_COLORS[state]}"></span>${esc(unitTitle(info))}</div>`;
-  html += `<div class="tt-row">${STATE_LABELS[state]}${info.unit && info.unit.fail_reason ? ": " + esc(info.unit.fail_reason) : ""}</div>`;
-  const f = unitFiles(info.unit, info.model);
-  html += `<div class="tt-row">projection files ${f.projection.found} of ${f.projection.total}, ` +
-    `aggregation ${f.aggregation.found} of ${f.aggregation.total}</div>`;
-  if (info.unit) {
-    for (const [name, rec] of Object.entries(info.unit.stages)) {
-      if (rec.state === "not_started") continue;
-      let line = `${name}: ${STATE_LABELS[rec.state].toLowerCase()}`;
-      if (rec.finished) line += `, ${fmtAgo(rec.finished)}`;
-      html += `<div class="tt-row">${esc(line)}</div>`;
-    }
+async function loadDetails(model, batch) {
+  const path = `${BASE}details/${view.sector}/${view.runType}/${model}${batch != null ? "/batch" + batch : ""}.json`;
+  if (detailCache.has(path)) return detailCache.get(path);
+  let data = {};
+  try {
+    const r = await fetch(path, { cache: "no-store" });
+    if (r.ok) data = await r.json();
+  } catch (e) { /* no detail file means no files on disk yet */ }
+  detailCache.set(path, data);
+  return data;
+}
+
+function fileRow(group, name, rec) {
+  const shown = name.replace("winsorized/", "winsorized / ");
+  if (!rec) {
+    return `<div class="fd-row miss"><span class="dot miss"></span><span class="fname">${esc(shown)}</span></div>`;
   }
-  html += `<div class="tt-row tt-hint">Click for the full file list</div>`;
-  return html;
+  const cls = DOT_CLASS[group];
+  return `<div class="fd-row ${cls}"><span class="dot ${cls}"></span><span class="fname">${esc(shown)}</span>` +
+    `<span class="meta">${fmtSize(rec[0])}</span><span class="meta">${fmtStamp(rec[1])}</span></div>`;
 }
 
-function fileListHtml(info) {
-  const spec = currentSector().files_spec[info.model];
-  const f = unitFiles(info.unit, info.model);
-  let html = "";
-  for (const g of GROUPS) {
-    const names = spec[g].map((n) => resolveName(n, info.rcp));
-    const rec = info.unit && info.unit.files ? info.unit.files[g] : null;
-    let missing;
-    if (!rec || rec.found === 0) missing = new Set(names);
-    else if (rec.found >= rec.total) missing = new Set();
-    else missing = new Set((rec.missing || []).map((n) => resolveName(n, info.rcp)));
-    html += `<h3>${g} files (${f[g].found} of ${f[g].total})</h3><div class="filelist">`;
-    for (const n of names) {
-      const miss = missing.has(n);
-      html += `<div class="fitem ${miss ? "miss" : "ok"}">
-        <span class="mark">${miss ? "x" : "+"}</span><span class="fname">${esc(n)}</span></div>`;
-    }
-    html += `</div>`;
+function section(id, title, count, bodyHtml, open) {
+  return `<div class="fd-sec" data-sec="${id}"><span class="arrow">${open ? "v" : "&gt;"}</span>` +
+    `<span class="name">${title}</span><span class="cnt">${count}</span></div>` +
+    `<div class="fd-body${open ? "" : " closed"}" id="${id}">${bodyHtml}</div>`;
+}
+
+async function showDetail(key) {
+  const info = cellIndex.get(key);
+  if (!info) return;
+  view.selected = key;
+  document.querySelectorAll(".batch.selected").forEach((e) => e.classList.remove("selected"));
+  const el = document.querySelector(`.batch[data-key="${CSS.escape(key)}"]`);
+  if (el) el.classList.add("selected");
+
+  const sec = sector();
+  const spec = specOf(sec, info.model);
+  const cnt = unitCounts(info.unit, spec);
+  const path = cellPath(info);
+  $("info-bar").textContent = `${cellTitle(info)}  ${cnt.proj}/${cnt.projTotal} projection, ${cnt.agg}/${cnt.aggTotal} aggregation`;
+  $("info-bar").title = path;
+
+  const box = $("file-detail");
+  box.className = "file-detail";
+  box.innerHTML = `<div class="fd-note">Loading file sizes and dates</div>`;
+  const details = cnt.proj + cnt.agg ? await loadDetails(info.model, info.batch) : {};
+  if (view.selected !== key) return;
+  const recs = details[[info.ssp, info.rcp, info.iam, info.gcm].join("|")] || [];
+  let i = 0;
+  const byGroup = {};
+  for (const g of GROUPS) byGroup[g] = spec[g].map((n) => ({ name: n, rec: recs[i++] || null }));
+  const rows = (g) => byGroup[g].map((f) => fileRow(g, f.name, f.rec)).join("");
+  const found = (g) => byGroup[g].filter((f) => f.rec).length;
+
+  const state = STATE_NAMES[cellState(info.unit, cnt)];
+  const reason = info.unit && info.unit.fail_reason ? `, ${esc(info.unit.fail_reason)}` : "";
+  let html = `<div class="fd-root">${esc(path)}</div>
+    <div class="fd-head">${esc(cellTitle(info))}: ${cnt.proj}/${cnt.projTotal} projection
+      | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>
+      <span class="state">${esc(state)}${reason}</span>
+      <button class="fd-close" id="fd-close">[close]</button></div>`;
+  html += section("fd-proj", "Projections", `${found("projection")}/${spec.projection.length}`, rows("projection"), true);
+  const aggParts = ["levels", "aggregated"].filter((g) => spec[g].length);
+  if (aggParts.length) {
+    const sub = aggParts.map((g) => `<div class="fd-sub" style="color:var(--agg-${g === "levels" ? "lvl" : "agg"})">` +
+      `${g === "levels" ? "Levels" : "Aggregated"} (${found(g)}/${spec[g].length})</div>${rows(g)}`).join("");
+    const n = aggParts.reduce((s, g) => s + found(g), 0), t = aggParts.reduce((s, g) => s + spec[g].length, 0);
+    html += section("fd-agg", "Aggregation", `${n}/${t}`, sub, false);
   }
-  return html;
-}
-
-function showDrawer(info) {
-  const state = info.unit ? info.unit.state : "not_started";
-  $("drawer-title").textContent = unitTitle(info);
-  let html = `<div class="state-line"><span class="tt-dot" style="background:${STATE_COLORS[state]}"></span>` +
-    `${STATE_LABELS[state]}` +
-    (info.unit && info.unit.fail_reason ? `: <span class="fail-reason">${esc(info.unit.fail_reason)}</span>` : "") +
-    `</div>`;
-  const stages = currentSector().stages;
-  html += `<table class="stages"><tr><th>stage</th><th>state</th><th>finished</th></tr>`;
-  for (const name of stages) {
-    const rec = (info.unit && info.unit.stages[name]) || { state: "not_started" };
-    const fin = rec.finished ? `${fmtStamp(rec.finished)} (${fmtAgo(rec.finished)})` : "";
-    html += `<tr><td>${esc(name)}</td><td>${esc(STATE_LABELS[rec.state] || rec.state)}</td>` +
-      `<td>${fin}</td></tr>`;
+  if (spec.costs.length) {
+    html += section("fd-costs", "Costs", `${found("costs")}/${spec.costs.length}`, rows("costs"), false);
   }
-  html += `</table>`;
-  html += fileListHtml(info);
-  $("drawer-body").innerHTML = html;
-  $("drawer").classList.remove("hidden");
+  box.innerHTML = html;
+  $("fd-close").onclick = closeDetail;
 }
 
-/* ---------- interactions ---------- */
-
-function setupInteractions() {
-  const tooltip = $("tooltip");
-  const wrap = $("grid-wrap");
-
-  wrap.addEventListener("mousemove", (e) => {
-    const el = e.target.closest(".unit");
-    if (!el || el.classList.contains("void")) { tooltip.classList.add("hidden"); return; }
-    tooltip.innerHTML = tooltipHtml(unitFromEl(el));
-    tooltip.classList.remove("hidden");
-    const pad = 14;
-    let x = e.clientX + pad, y = e.clientY + pad;
-    const r = tooltip.getBoundingClientRect();
-    if (x + r.width > window.innerWidth - 8) x = e.clientX - r.width - pad;
-    if (y + r.height > window.innerHeight - 8) y = e.clientY - r.height - pad;
-    tooltip.style.left = `${x}px`;
-    tooltip.style.top = `${y}px`;
-  });
-  wrap.addEventListener("mouseleave", () => tooltip.classList.add("hidden"));
-  wrap.addEventListener("click", (e) => {
-    const gh = e.target.closest("th.gclick");
-    if (gh) {
-      view.focusGroup = view.focusGroup === gh.dataset.group ? null : gh.dataset.group;
-      renderGrid();
-      return;
-    }
-    const el = e.target.closest(".unit");
-    if (el && !el.classList.contains("void")) showDrawer(unitFromEl(el));
-  });
-
-  $("focus-clear").onclick = () => { view.focusGroup = null; renderGrid(); };
-
-  $("jobs-content").addEventListener("click", (e) => {
-    const head = e.target.closest(".person-row.has-jobs");
-    if (!head) return;
-    const name = head.dataset.name;
-    if (openPeople.has(name)) openPeople.delete(name);
-    else openPeople.add(name);
-    renderJobs();
-  });
-
-  $("drawer-close").onclick = () => $("drawer").classList.add("hidden");
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") $("drawer").classList.add("hidden");
-  });
-
-  $("failed-toggle").onclick = () => {
-    view.failedOnly = !view.failedOnly;
-    $("failed-toggle").classList.toggle("active", view.failedOnly);
-    $("grid-wrap").classList.toggle("failed-only", view.failedOnly);
-  };
-
-  $("theme-toggle").onclick = () => {
-    const root = document.documentElement;
-    const dark = getComputedStyle(root).colorScheme.includes("dark");
-    const next = dark ? "light" : "dark";
-    root.dataset.theme = next;
-    localStorage.setItem("amel-theme", next);
-  };
-
-  let resizeTimer = null;
-  window.addEventListener("resize", () => {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(renderGrid, 150);
-  });
+function closeDetail() {
+  view.selected = null;
+  const box = $("file-detail");
+  box.className = "";
+  box.innerHTML = "";
+  $("info-bar").textContent = "Click any cell to see its files";
+  $("info-bar").title = "";
+  document.querySelectorAll(".batch.selected").forEach((e) => e.classList.remove("selected"));
 }
 
-/* ---------- cluster strip ---------- */
+/* ---------- resources ---------- */
 
-function fmtDate(iso) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US",
-    { month: "short", day: "numeric", year: "numeric" });
+function barColor(pct) {
+  if (pct == null) return "var(--bd2)";
+  return pct >= 90 ? "var(--red)" : pct >= 70 ? "var(--amber)" : "var(--green)";
 }
 
-function fmtStamp(iso) {
-  return new Date(iso).toLocaleString("en-US",
-    { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+function resRow(label, pct, counts, tip) {
+  const col = barColor(pct);
+  const p = Math.min(pct == null ? 0 : pct, 100);
+  return `<div class="res-row"${tip ? ` title="${esc(tip)}"` : ""}><span class="res-label">${esc(label)}</span>` +
+    `<span class="res-bar"><span class="fill" style="width:${p.toFixed(1)}%;background:${col}"></span><span class="ticks"></span></span>` +
+    `<span class="res-pct" style="color:${col}">${fmtPct2(pct)}</span><span class="res-counts">${esc(counts)}</span></div>`;
 }
 
-function taskTotals(jobs) {
-  let running = 0, queued = 0;
-  for (const j of jobs || []) { running += j.tasks.running; queued += j.tasks.queued; }
-  return { running, queued };
-}
-
-function renderCluster() {
-  const people = DATA.people;
-  const known = people.some((p) => p.active_jobs != null);
-  const t = taskTotals(people.flatMap((p) => p.active_jobs || []));
+function renderResources() {
   const a = DATA.account;
-  const su = a.allocation_status === "ok" ? `${fmtN(a.balance_su)} SU left` :
-    a.allocation_status === "none" ? "no allocation yet" : "balance n/a";
-  $("cluster-badges").innerHTML = known ?
-    `<span class="cbadge run">${fmtN(t.running)} running</span>
-     <span class="cbadge queue">${fmtN(t.queued)} queued</span>
-     <span class="cbadge">${esc(su)}</span>` :
-    `<span class="cbadge">no Slurm data in this scan</span>`;
-  renderJobs();
-  renderSU();
+  let storage;
+  if (a.storage == null) storage = `<div class="res-note muted">Not read in this scan</div>`;
+  else if (!a.storage.length) storage = `<div class="res-note muted">No group storage found</div>`;
+  else storage = a.storage.map((s) => resRow(s.label, s.used_pct, `${s.used}/${s.quota}`,
+    `Used ${s.used} of ${s.quota}`)).join("");
+
+  let su;
+  if (a.allocation_status === "ok") {
+    const pct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : null;
+    su = resRow(a.name, pct, `${fmtN(a.used_su)}/${fmtN(a.allocation_su)}`,
+      `Used ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`);
+  } else if (a.allocation_status === "none") {
+    su = `<div class="res-row"><span class="res-label">${esc(a.name)}</span><span class="res-note">No allocation yet</span></div>`;
+  } else {
+    su = `<div class="res-row"><span class="res-label">${esc(a.name)}</span><span class="res-note muted">Balance not read in this scan</span></div>`;
+  }
+
+  $("resources-content").innerHTML =
+    `<div class="res-sec"><div class="res-title">Storage</div>${storage}</div>` +
+    `<div class="res-sec"><div class="res-title">Service units</div>${su}</div>` +
+    `<div class="res-foot">${new Date(DATA.generated_at).toLocaleString()}</div>`;
+}
+
+/* ---------- SLURM jobs ---------- */
+
+function partPill(name, n) {
+  const c = PART_COLORS[name] || "var(--tx3)";
+  return `<span class="part-pill"><span class="part-dot" style="background:${c}"></span>${esc(name)}${n != null ? ": " + n : ""}</span>`;
+}
+
+function stateCounts(running, queued) {
+  const p = [];
+  if (running) p.push(`<span class="state-run">${fmtN(running)} running</span>`);
+  if (queued) p.push(`<span class="state-pend">${fmtN(queued)} pending</span>`);
+  return p.join(", ") || `<span class="lbl">none</span>`;
 }
 
 function renderJobs() {
-  let html = "";
-  for (const p of DATA.people) {
-    const jobs = p.active_jobs;
-    const t = taskTotals(jobs);
-    let status;
-    if (!p.linked) status = `<span class="muted">no cluster user set</span>`;
-    else if (jobs == null) status = `<span class="muted">n/a</span>`;
-    else if (!jobs.length) status = `<span class="muted">no jobs</span>`;
-    else {
-      const parts = [];
-      if (t.running) parts.push(`<span class="jstate run">${fmtN(t.running)} running</span>`);
-      if (t.queued) parts.push(`<span class="jstate queue">${fmtN(t.queued)} queued</span>`);
-      status = parts.join(", ") +
-        ` <span class="muted">in ${jobs.length} ${jobs.length === 1 ? "job" : "jobs"}</span>`;
-    }
-    const has = jobs && jobs.length;
-    const open = has && openPeople.has(p.name);
-    html += `<div class="person-row${has ? " has-jobs" : ""}" data-name="${esc(p.name)}">
-      <span class="caret">${has ? (open ? "v" : ">") : ""}</span>
-      <span class="person-name">${esc(p.name)}</span><span class="person-status">${status}</span></div>`;
-    if (open) {
-      html += `<table class="su jobs"><tr><th>job name</th><th>partition</th><th>state</th>
-        <th class="r">running</th><th class="r">queued</th><th class="r">done</th><th class="r">elapsed</th></tr>` +
-        jobs.map((j) => `<tr><td>${esc(j.job_name)}</td><td>${esc(j.partition)}</td>
-          <td><span class="jstate ${j.state === "RUNNING" ? "run" : "queue"}">${j.state === "RUNNING" ? "Running" : "Queued"}</span></td>
-          <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td>
-          <td class="r">${fmtN(j.tasks.done)}</td><td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`
-        ).join("") + `</table>`;
-    }
+  const groups = DATA.people.map((p) => ({ name: p.name, jobs: p.active_jobs, su: p.su_used, linked: p.linked }));
+  const o = DATA.other_users || {};
+  groups.push({ name: o.users ? `Other users (${o.users})` : "Other users", jobs: o.active_jobs, su: o.su_used, linked: true, other: true });
+
+  const known = DATA.people.some((p) => p.active_jobs != null);
+  const jobs = groups.flatMap((g) => (g.jobs || []).map((j) => ({ ...j, person: g.name })));
+  const run = jobs.reduce((n, j) => n + j.tasks.running, 0);
+  const pend = jobs.reduce((n, j) => n + j.tasks.queued, 0);
+  $("badge-run").textContent = `${fmtN(run)} running`;
+  $("badge-pend").textContent = `${fmtN(pend)} pending`;
+
+  if (!known) {
+    $("jobs-content").innerHTML = `<div class="jobs-empty">No Slurm data in this scan</div>`;
+    return;
   }
-  html += `<div class="su-note">All jobs on the ${esc(DATA.account.name)} account, whatever the job name.
-    Click a name for the job list. Done means tasks that finished successfully.</div>`;
+
+  const parts = {};
+  for (const j of jobs) for (const p of j.partition.split(",")) parts[p] = (parts[p] || 0) + 1;
+  let html = `<div class="jobs-line">${fmtN(jobs.length)} ${jobs.length === 1 ? "job" : "jobs"}
+    (${fmtN(run + pend)} tasks): ${stateCounts(run, pend)}
+    ${Object.keys(parts).length ? `<span class="lbl" style="margin-left:10px">Partitions</span> ` +
+      Object.keys(parts).sort().map((p) => partPill(p, parts[p])).join(" ") : ""}</div>`;
+
+  const active = groups.filter((g) => g.jobs && g.jobs.length);
+  if (active.length) {
+    html += `<div class="jobs-line"><span class="lbl">People</span> ` + active.map((g) => {
+      const r = g.jobs.reduce((n, j) => n + j.tasks.running, 0), q = g.jobs.reduce((n, j) => n + j.tasks.queued, 0);
+      return `<b>${esc(g.name)}</b>: ${stateCounts(r, q)}`;
+    }).join(" | ") + `</div>`;
+  }
+
+  // One bar splitting core hours by person.
+  const a = DATA.account;
+  const withSu = groups.filter((g) => g.su != null && g.su > 0);
+  const totalSu = withSu.reduce((n, g) => n + g.su, 0);
+  if (withSu.length) {
+    html += `<div class="treemap-wrap"><div class="treemap-label">Core hours on the ${esc(a.su_partition)} partition since
+      ${esc(fmtDate(a.su_since))}: <b>${fmtN(totalSu)} h</b> total</div><div class="treemap">` +
+      withSu.map((g, i) => {
+        const c = g.other ? "#99998f" : PERSON_COLORS[i % PERSON_COLORS.length];
+        const p = Math.max((100 * g.su) / totalSu, 1);
+        return `<div class="treemap-cell" style="flex-basis:${p.toFixed(1)}%;background:${c}22;color:${c}"
+          title="${esc(g.name)}: ${fmtN(g.su)} h">${esc(g.name)}<span>${fmtN(g.su)} h</span></div>`;
+      }).join("") + `</div></div>`;
+  } else if (groups.some((g) => g.su != null)) {
+    html += `<div class="jobs-line"><span class="lbl">No core hours on the ${esc(a.su_partition)} partition since ${esc(fmtDate(a.su_since))}</span></div>`;
+  }
+
+  // Groups by job name, with one row per person.
+  const byName = {};
+  for (const j of jobs) (byName[j.job_name] = byName[j.job_name] || []).push(j);
+  const names = Object.keys(byName).sort();
+  if (!names.length) {
+    html += `<div class="jobs-empty">No jobs on the ${esc(a.name)} account right now</div>`;
+  }
+  for (const name of names) {
+    const js = byName[name];
+    const r = js.reduce((n, j) => n + j.tasks.running, 0), q = js.reduce((n, j) => n + j.tasks.queued, 0);
+    const gp = {};
+    for (const j of js) for (const p of j.partition.split(",")) gp[p] = (gp[p] || 0) + 1;
+    html += `<div class="grp"><div class="grp-header"><div><b>${esc(name)}</b>
+      <span class="grp-counts">${stateCounts(r, q)}</span>
+      <span class="grp-parts">${Object.keys(gp).sort().map((p) => `<span style="color:${PART_COLORS[p] || "var(--tx3)"}">${esc(p)}: ${gp[p]}</span>`).join(" | ")}</span></div>
+      <span class="grp-arrow">&gt;</span></div><div class="grp-body"><table class="jobs-table">
+      <tr><th>Person</th><th>Partition</th><th>State</th><th class="r">Running</th><th class="r">Pending</th><th class="r">Done</th><th class="r">Elapsed</th></tr>` +
+      js.map((j) => `<tr><td>${esc(j.person)}</td><td>${j.partition.split(",").map((p) => partPill(p)).join("")}</td>
+        <td class="${j.state === "RUNNING" ? "state-run" : "state-pend"}">${j.state === "RUNNING" ? "Running" : "Pending"}</td>
+        <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td><td class="r">${fmtN(j.tasks.done)}</td>
+        <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`).join("") +
+      `</table></div></div>`;
+  }
+  const unlinked = groups.filter((g) => !g.linked).map((g) => g.name);
+  if (unlinked.length) html += `<div class="jobs-line" style="margin-top:6px"><span class="lbl">No cluster user set: ${unlinked.map(esc).join(", ")}</span></div>`;
   $("jobs-content").innerHTML = html;
 }
 
-function renderSU() {
-  const a = DATA.account;
-  $("su-title").textContent = `Service units, ${a.name} account`;
-  let html;
-  if (a.allocation_status === "ok") {
-    const usedPct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : 0;
-    html = `<table class="su">
-      <tr><td>Allocation</td><td class="r">${fmtN(a.allocation_su)}</td></tr>
-      <tr><td>Used</td><td class="r">${fmtN(a.used_su)}</td></tr>
-      <tr><td>Remaining balance</td><td class="r">${fmtN(a.balance_su)}</td></tr>
-    </table>
-    <div class="su-bar acct-bar"><span style="width:${usedPct.toFixed(1)}%"></span></div>
-    <div class="su-note">${usedPct.toFixed(1)}% of allocation used</div>`;
-  } else if (a.allocation_status === "none") {
-    html = `<div class="no-alloc">No allocation yet</div>
-      <div class="su-note">The ${esc(a.name)} account has no allocation, so there is no balance to show.</div>`;
-  } else {
-    html = `<div class="no-alloc muted">Balance not read in this scan</div>`;
-  }
+/* ---------- camel ---------- */
 
-  const maxP = Math.max(...DATA.people.map((p) => p.su_used || 0), 1);
-  html += `<h4>Use per person since ${esc(fmtDate(a.su_since))}</h4><table class="su">` +
-    DATA.people.map((p) => {
-      const val = !p.linked ? `<span class="muted">no cluster user set</span>` :
-        p.su_used == null ? "n/a" : fmtN(p.su_used);
-      return `<tr><td>${esc(p.name)}</td><td class="r">${val}</td>
-        <td><div class="su-bar"><span style="width:${(100 * (p.su_used || 0)) / maxP}%"></span></div></td></tr>`;
-    }).join("") + `</table>
-    <div class="su-note">Core hours of all jobs on the account, not only projection runs.</div>`;
-  $("su-content").innerHTML = html;
+// Two-humped camel, facing left, in a 175 by 160 box.
+const CAMEL_PATH = "M 12 24 C 12 18 18 13 26 12 C 30 11 33 11 35 12 L 38 6 L 41 13 " +
+  "C 46 20 50 38 54 54 C 56 59 59 62 62 62 C 66 44 74 32 82 32 C 90 32 95 44 99 52 " +
+  "C 104 42 112 33 120 33 C 130 33 138 46 144 58 C 150 62 154 68 154 76 L 160 86 L 162 100 " +
+  "L 158 100 L 154 88 C 153 90 152 92 151 94 L 153 152 L 147 152 L 144 104 L 141 104 " +
+  "L 141 152 L 135 152 L 134 96 C 118 99 96 99 78 96 L 78 152 L 72 152 L 70 104 L 67 104 " +
+  "L 64 152 L 58 152 L 57 92 C 54 86 52 80 50 74 C 46 60 40 42 34 32 C 30 30 24 30 18 30 " +
+  "C 14 30 12 28 12 24 Z";
+
+// One body part per sector, as in the original design.
+const CAMEL_SECTIONS = [
+  { key: "mortality", label: "Mortality", part: "front legs", poly: "62,64 84,64 84,160 0,160 0,94 56,94" },
+  { key: "coastal", label: "Coastal", part: "humps", poly: "62,0 200,0 200,64 62,64" },
+  { key: "agriculture", label: "Agriculture", part: "back legs", poly: "130,64 200,64 200,160 130,160" },
+  { key: "energy", label: "Energy", part: "neck and head", poly: "0,0 62,0 62,64 56,94 0,94" },
+  { key: "labor", label: "Labor", part: "body", poly: "84,64 130,64 130,160 84,160" },
+];
+const CAMEL_VIEW = "8 2 158 154";
+
+// Area below each height per region, so p percent fills p percent of the area.
+let camelAreas = null;
+function regionAreas() {
+  if (camelAreas) return camelAreas;
+  const ctx = document.createElement("canvas").getContext("2d");
+  const sil = new Path2D(CAMEL_PATH);
+  camelAreas = {};
+  for (const sec of CAMEL_SECTIONS) {
+    const poly = new Path2D();
+    sec.poly.split(" ").map((p) => p.split(",").map(Number))
+      .forEach(([x, y], i) => (i ? poly.lineTo(x, y) : poly.moveTo(x, y)));
+    poly.closePath();
+    const rows = [];
+    for (let y = 0; y < 160; y++) {
+      let n = 0;
+      for (let x = 0; x < 200; x++) {
+        if (ctx.isPointInPath(sil, x + 0.5, y + 0.5) && ctx.isPointInPath(poly, x + 0.5, y + 0.5)) n++;
+      }
+      rows.push(n);
+    }
+    camelAreas[sec.key] = rows;
+  }
+  return camelAreas;
 }
 
-/* ---------- boot ---------- */
+function fillLine(key, frac) {
+  const rows = regionAreas()[key];
+  const total = rows.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  for (let y = rows.length - 1; y >= 0; y--) {
+    acc += rows[y];
+    if (acc >= frac * total) return y;
+  }
+  return 0;
+}
+
+function camelDefs(prefix) {
+  return `<clipPath id="${prefix}-sil"><path d="${CAMEL_PATH}"/></clipPath>` +
+    CAMEL_SECTIONS.map((s) => `<clipPath id="${prefix}-${s.key}"><polygon points="${s.poly}"/></clipPath>`).join("") +
+    `<pattern id="${prefix}-tex" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+    `<line x1="0" y1="0" x2="0" y2="4" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.3"/></pattern>`;
+}
+
+function renderCamel() {
+  const prog = CAMEL_SECTIONS.map((s) => {
+    const sec = DATA.sectors[s.key];
+    if (!sec) return { ...s, tracked: false };
+    const f = sectorFiles(sec);
+    const proj = pctOf(f.proj, f.projExp), agg = pctOf(f.agg, f.aggExp);
+    return { ...s, tracked: true, proj, agg, projDone: proj >= 100, allDone: proj >= 100 && agg >= 100,
+      running: sectorRunning(sec) };
+  });
+  let body = "";
+  for (const s of prog) {
+    let fill = "", tip;
+    if (!s.tracked) {
+      tip = `${s.label} (${s.part}): not tracked yet`;
+    } else {
+      const frac = Math.min(s.proj, 100) / 100;
+      const y = frac > 0 ? fillLine(s.key, frac) : 160;
+      fill = s.projDone ? `<rect class="fill" x="0" y="0" width="200" height="160"/>` :
+        (frac > 0 ? `<rect class="fill" x="0" y="${y}" width="200" height="${160 - y}"/>` : "");
+      if (s.allDone) fill += `<rect x="0" y="0" width="200" height="160" fill="url(#cm-tex)"/>`;
+      tip = `${s.label} (${s.part}): projection files ${fmtPctShort(s.proj)}, aggregation files ${fmtPctShort(s.agg)}` +
+        (s.running ? ", projections running" : "");
+    }
+    const st = !s.tracked ? "" : s.allDone ? "all-done" : s.projDone ? "proj-done" : s.running ? "pulse" : "";
+    body += `<g clip-path="url(#cm-${s.key})" class="sec sec-${s.key} ${st}"><title>${esc(tip)}</title>` +
+      `<rect class="base" x="0" y="0" width="200" height="160"/>${fill}</g>`;
+  }
+  const dividers = CAMEL_SECTIONS.map((s) => `<polygon class="divider" points="${s.poly}"/>`).join("");
+  $("camel").innerHTML = `<svg viewBox="${CAMEL_VIEW}" xmlns="http://www.w3.org/2000/svg"><defs>${camelDefs("cm")}</defs>` +
+    `<g clip-path="url(#cm-sil)">${body}${dividers}</g></svg>`;
+
+  $("camel-key").innerHTML = prog.map((s) => {
+    const note = !s.tracked ? "not tracked" : s.allDone ? "all done" : s.projDone ? "projections done" :
+      `${fmtPctShort(s.proj)} projection`;
+    return `<span class="ckey" title="${esc(s.part)}"><span class="cdot sec-${s.key}"></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
+  }).join("");
+
+  const css = getComputedStyle(document.documentElement);
+  const parts = CAMEL_SECTIONS.map((s) => `<g clip-path="url(#fi-${s.key})"><rect width="200" height="160" ` +
+    `fill="${css.getPropertyValue(`--sec-${s.key}`).trim()}"/></g>`).join("");
+  const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${CAMEL_VIEW}"><defs>${camelDefs("fi")}</defs>` +
+    `<g clip-path="url(#fi-sil)">${parts}<g fill="none" stroke="#ffffff" stroke-width="2.5">` +
+    CAMEL_SECTIONS.map((s) => `<polygon points="${s.poly}"/>`).join("") + `</g></g></svg>`;
+  $("favicon").setAttribute("href", "data:image/svg+xml," + encodeURIComponent(icon));
+}
+
+/* ---------- interactions and boot ---------- */
+
+function setup() {
+  document.querySelectorAll(".panel-header").forEach((h) => {
+    h.onclick = () => $(h.dataset.panel).classList.toggle("open");
+  });
+  $("jobs-content").addEventListener("click", (e) => {
+    const h = e.target.closest(".grp-header");
+    if (h) h.parentElement.classList.toggle("open");
+  });
+  $("file-detail").addEventListener("click", (e) => {
+    const s = e.target.closest(".fd-sec");
+    if (!s) return;
+    const body = $(s.dataset.sec);
+    body.classList.toggle("closed");
+    s.querySelector(".arrow").textContent = body.classList.contains("closed") ? ">" : "v";
+  });
+  const grid = $("grid"), tip = $("global-tip");
+  grid.addEventListener("click", (e) => {
+    const b = e.target.closest(".batch");
+    if (b) showDetail(b.dataset.key);
+  });
+  grid.addEventListener("mousemove", (e) => {
+    const b = e.target.closest(".batch");
+    if (!b) { tip.style.display = "none"; return; }
+    const info = cellIndex.get(b.dataset.key);
+    const cnt = unitCounts(info.unit, specOf(sector(), info.model));
+    tip.innerHTML = `${esc(cellTitle(info))}<br>${cnt.proj}/${cnt.projTotal} projection` +
+      (cnt.aggTotal ? `<br>${cnt.agg}/${cnt.aggTotal} aggregation` : "") +
+      `<br><span class="muted">${esc(STATE_NAMES[cellState(info.unit, cnt)])}</span>`;
+    tip.style.display = "block";
+    const r = tip.getBoundingClientRect();
+    let x = e.clientX + 12, y = e.clientY + 12;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 12;
+    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 12;
+    tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+  });
+  grid.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  $("theme-toggle").onclick = () => {
+    const root = document.documentElement;
+    const next = getComputedStyle(root).colorScheme.includes("dark") ? "light" : "dark";
+    root.dataset.theme = next;
+    try { localStorage.setItem("amel-theme", next); } catch (e) { /* storage may be blocked */ }
+  };
+}
 
 async function boot() {
-  const saved = localStorage.getItem("amel-theme");
-  if (saved) document.documentElement.dataset.theme = saved;
-
-  let status;
   try {
-    const resp = await fetch("status.json", { cache: "no-store" });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    status = await resp.json();
+    const saved = localStorage.getItem("amel-theme");
+    if (saved) document.documentElement.dataset.theme = saved;
+  } catch (e) { /* storage may be blocked */ }
+
+  try {
+    const r = await fetch(`${BASE}status.json`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    DATA = await r.json();
   } catch (err) {
-    $("error").textContent = `Could not load status.json (${err.message}).`;
-    $("error").classList.remove("hidden");
+    document.body.insertAdjacentHTML("afterbegin",
+      `<div class="error">Could not load ${esc(BASE)}status.json (${esc(err.message)}).</div>`);
     return;
   }
-  DATA = status;
 
-  $("last-scan").textContent =
-    `last scan ${fmtAgo(status.generated_at)}, every ${status.scan_interval_hours} h`;
-  if (status.source === "mock") $("mock-badge").classList.remove("hidden");
-
-  const ageH = (Date.now() - new Date(status.generated_at).getTime()) / 3.6e6;
-  if (ageH > 2 * status.scan_interval_hours) {
-    const b = $("stale-banner");
-    b.textContent = `The last scan is ${ageH.toFixed(1)} hours old (scans run every ` +
-      `${status.scan_interval_hours} h). The cluster job may have stopped.`;
-    b.classList.remove("hidden");
+  const ageH = (Date.now() - new Date(DATA.generated_at).getTime()) / 3.6e6;
+  $("subtitle").textContent = `Last scan: ${new Date(DATA.generated_at).toLocaleString()}, every ${DATA.scan_interval_hours} h`;
+  if (DATA.source === "mock") $("mock-badge").classList.remove("hidden");
+  if (ageH > 2 * DATA.scan_interval_hours) {
+    $("stale-banner").textContent = `The last scan is ${ageH.toFixed(1)} hours old. The scheduled job may have stopped.`;
+    $("stale-banner").classList.remove("hidden");
   }
 
-  view.sector = Object.keys(status.sectors)[0];
-  view.runType = defaultRunType(status.sectors[view.sector]);
-  setupInteractions();
-  renderCluster();
+  view.sector = Object.keys(DATA.sectors)[0];
+  view.runType = defaultRunType(sector());
+  view.ssp = defaultSsp(runType());
+  setup();
+  renderCamel();
+  renderResources();
+  renderJobs();
   renderAll();
 }
 

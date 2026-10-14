@@ -2,89 +2,84 @@
 
 A status dashboard for the new socioeconomics projection runs of the four
 AMEL sectors (agriculture, mortality, energy, labor). It shows run status
-only, never projection results. Everything is on one page:
+only, never projection results. The page follows the design of the old
+mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monitor):
 
-- Summary cards for the selected sector and run type: files present,
-  units with all files, units being written, failed units, and an
-  estimated time to finish.
-- The cluster strip (open by default, can be collapsed): the jobs each
-  person has running or queued on the cil account right now, and the
-  account's service units (allocation, used, remaining balance, and use
-  per person since a start date).
-- The progress grid: one cell per unit of work (scenario, IAM, GCM, and
-  batch for montecarlo). Each cell has two bars, projection files on top
-  and aggregation files below, filling in as files appear on disk. The
-  whole grid fits the screen; click a scenario header to zoom into it,
-  and click a cell for the list of expected files (present or missing)
-  and the state of each stage.
+- The camel logo at the top: a lean two-humped camel split into five body
+  parts, one per sector: front legs mortality (red), humps coastal (blue),
+  back legs agriculture (green), neck and head energy (yellow), body labor
+  (grey). Each part fills from the ground up with the sector's share of
+  projection files present and pulses softly while projections are
+  running; it is solid when all projection files are there, and gets a
+  fine striped texture when all aggregation files are there too. Coastal
+  is not tracked yet. The tab icon is the same camel in the five colors.
+- A row of small cards for the selected sector and run type: expected
+  units, complete, partial, not started, projection and aggregation
+  progress, units being written, and an estimated time to finish.
+- Sector and run type tabs (montecarlo by default, median for energy,
+  which has no montecarlo; its montecarlo tab is greyed out), and a
+  sub-model tab for crops and fuels.
+- An info bar with the path of the clicked cell, and a detail panel that
+  lists the cell's files grouped into Projections, Aggregation (levels and
+  aggregated) and Costs, each with a small dot, the file size and the date
+  it was written.
+- Resources: storage and service units of the cil account, as thin bars.
+  When the account has no allocation, it says "No allocation yet".
+- SLURM jobs: running and pending counts, partitions, one bar splitting
+  core hours by person (display names; everyone not in the manifest is
+  "Other users"), and the jobs grouped by job name.
+- SSP tabs, the legend, and the grid. Each cell has one small square per
+  expected file with the counts next to them: projection squares on top,
+  then a thin line, then the aggregation squares colored by type (costs
+  orange, levels purple, aggregated blue). The border gives the state:
+  in progress, writing, projection complete, aggregation incomplete,
+  aggregation complete.
 
-The grid comes only from the output folders. Slurm is used only for the
-cluster strip.
+The grid comes only from the output folders. Slurm and rcchelp are used
+only for Resources and SLURM jobs.
 
-Opening a sector selects its montecarlo tab, or median when the sector has
-no montecarlo. Run types a sector does not have (energy montecarlo) are
-shown as greyed-out tabs.
+## Expected files per unit
 
-The expected files per sector, stage and adaptation variant live in the
-manifest (`files:` section). They were derived from finished leaves under
-/project/cil/gcp/outputs/cil2 and verified to match them exactly. For
-agriculture, the aggregation side includes the files written to the
-sub-model's -1pct_winsorization twin directory; those names carry a
-winsorized/ prefix in the dashboard.
+Taken from the official production outputs under /project/cil/gcp/outputs,
+not from the cil2 or cil2-wpp test runs, and checked against finished
+production leaves (every expected file present and not empty). They live
+in the `files:` section of `manifest.yml`.
+
+| Sector | Production folder used | Projection | Aggregation |
+|---|---|---|---|
+| Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 36: 4 costs (`<age>-costs`), 16 levels, 16 aggregated |
+| Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder) |
+| Energy | `energy_pixel_interaction/impacts-blueghost/median` | 4: the four variants per fuel | 4: levels and aggregated at the price014 price scenario, for full adaptation and histclim |
+| Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 5: full adaptation, histclim, incadapt, noadapt, histclim-noadapt | 30: 15 levels and 15 aggregated (each variant weighted by gdp, pop and wage) |
+
+Not counted: mortality's polymins .csv files, its `-costs-levels` and
+`-costs-aggregated` files (the old monitor did not count them either),
+and the winsorized copies of the agriculture projection files.
+
+Agriculture crop ids: cassava 110221; corn, rice, sorghum, soy 160221;
+wheat 280823. If the new aggregation configs use another price scenario
+for energy (the cil2 tests used MERGEETL60_<rcp>), only those four names
+in the manifest need to change.
 
 ## Layout
 
 ```
 monitor/
-  manifest.yml          what the dashboard tracks (sectors, scenarios, GCMs, people)
-  collect_status.py     scans the output folders and Slurm, writes status.json
-  make_mock_status.py   writes a realistic mock to site/status.mock.json
+  manifest.yml          what the dashboard tracks (sectors, scenarios, GCMs, files, people)
+  collect_status.py     scans the output folders, Slurm and rcchelp, writes site/data/
+  make_mock_status.py   writes a realistic mock to site/mock/
   site/                 the static site (deployable as-is)
     index.html
     style.css
     app.js
-    status.json         the data the site reads
-    status.mock.json    the mock, kept separate
+    data/status.json    the real data the page reads
+    data/details/...    file sizes and dates per cell, loaded on click
+    mock/               the same files for the mock
 ```
 
-## How it fits together
+## Running
 
-1. `manifest.yml` describes the run universe: sectors and their sub-models
-   (crops, fuels), pipeline stages, run types, the valid SSP-RCP pairs, both
-   IAMs, the GCM lists per RCP (surrogates included), the Monte Carlo batch
-   count, the expected files per unit, and the people to show in the
-   cluster strip. `username` links a display name to a cluster user and is
-   never published. Nothing about the universe is hardcoded in code.
-2. `collect_status.py` reads the manifest and writes `site/status.json`.
-
-   For the grid, from the output folders only:
-   - walks `<output_root>/<run type>/[<sub-model>/][<subdir>/][batch<N>/]<rcp>/<GCM>/<iam>/<SSP>/`.
-     `subdir` is the folder the engine adds itself: median mode writes
-     under an extra `median/` level, so the manifest sets `subdir: median`
-     for that run type;
-   - counts the expected files per unit (existing and not empty);
-   - reads `status-global.txt` for finished stages and their times;
-   - reads the `status-<stage>.txt` claim files that workers leave while
-     they run: a claimed stage is running while files keep changing, and
-     counts as stopped (failed) after 6 hours with no file changes and no
-     finish marker;
-   - estimates the time to finish from how many stage steps finished in
-     the last 24 hours.
-
-   For the cluster strip, from Slurm:
-   - `squeue -r -A cil`: every running or queued task on the account,
-     grouped into one row per job or array for each listed person, with
-     job name, partition, state, task counts and elapsed time;
-   - `sacct -a -A cil`: tasks that finished successfully (the "done"
-     count), and core hours (elapsed time times allocated CPUs) of every
-     job on the account since `account.su_since`, per person;
-   - `rcchelp balance -a cil`: allocation, used and remaining balance.
-     When the account has no allocation, rcchelp lists no line for it and
-     the site shows "No allocation yet"; the use per person still shows.
-3. The site is static. It fetches `status.json` at load time and renders it.
-   Updating the data never requires a redeploy.
-
-Run the collector on the cluster, from this directory:
+On the cluster, from this directory:
 
 ```
 module load python
@@ -92,104 +87,89 @@ source activate /project/cil/home_dirs/rcc/envs/impact-env/
 python3 collect_status.py
 ```
 
-impact-env is the same environment the projection jobs use and has
-everything the collector needs (Python 3 and PyYAML). To test from a Mac
-with the volume mounted (no Slurm there, so the cluster strip shows n/a):
+From a Mac with the volume mounted (no Slurm there, so Resources and
+SLURM jobs show n/a):
 
 ```
 python3 collect_status.py --cil-root /Volumes/cil
 ```
 
-The mock is kept separate so the site can always be demoed:
-
-```
-python3 make_mock_status.py              # writes site/status.mock.json
-cp site/status.mock.json site/status.json   # only if you want the mock shown
-```
+The mock: `python3 make_mock_status.py`, then open the page with
+`?source=mock`.
 
 Preview locally:
 
 ```
 cd site
-python3 -m http.server 8000          # then open http://localhost:8000
+python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
 ```
 
-## status.json format
+## How the collector reads the folders
 
-This format is the contract between the collector and the site. The mock
-follows it exactly.
+- It walks
+  `<output_root>/<run type>/[<sub-model>/][<subdir>/][batch<N>/]<rcp>/<GCM>/<iam>/<SSP>/`.
+  `subdir` is the folder the engine adds itself: median mode writes under
+  an extra `median/` level, so the manifest sets `subdir: median` there.
+- A file counts as present only if it exists and is not empty.
+- `status-global.txt` gives finished stages and their times. A stage that
+  a worker claimed (`status-<stage>.txt`) is running while files keep
+  changing, and counts as stopped after 6 hours with no file changes.
+- The time to finish comes from how many stage steps finished in the last
+  24 hours.
+- Service units are core hours (elapsed time times allocated CPUs) on the
+  cil partition since `account.su_since`, per person, from sacct. The
+  allocation and balance come from `rcchelp balance -a cil`, and storage
+  from `rcchelp quota` (group filesets of the cil account).
+
+## status.json format (schema 2)
+
+The contract between the collector and the page; the mock follows it.
 
 ```jsonc
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source": "collector",             // "mock" or "collector"
   "generated_at": "2026-10-13T18:00:00Z",
   "scan_interval_hours": 4,
   "account": {
     "name": "cil",
-    "allocation_status": "none",     // "ok", "none" (no allocation yet) or "unknown" (rcchelp failed)
-    "allocation_su": null,           // from rcchelp balance, only when status is "ok"
-    "used_su": null,
-    "balance_su": null,
-    "su_since": "2026-10-01"         // start date of the use per person (manifest)
+    "allocation_status": "none",     // "ok", "none" (no allocation yet) or "unknown"
+    "allocation_su": null, "used_su": null, "balance_su": null,
+    "su_since": "2026-10-01",        // start of the cycle for core hours per person
+    "su_partition": "cil",           // core hours count only this partition
+    "storage": [                     // null when rcchelp could not be read
+      {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5}
+    ]
   },
-  "people": [                        // only people listed in the manifest, in that order
-    {
-      "name": "Sebastian",           // display name; cluster usernames are never written
-      "linked": true,                // false when the manifest has no username yet
-      "su_used": 32399,              // core hours of all their jobs on the account since su_since
-      "active_jobs": [               // running or queued right now, whatever the job name
-        {
-          "job_name": "energy-median", "partition": "caslake",
-          "state": "RUNNING",        // RUNNING, or PENDING when no task has started
-          "tasks": {"running": 11, "queued": 32, "done": 53},
-          "elapsed_min": 1882.0      // longest elapsed among running tasks
-        }
-      ]
-    }
+  "people": [                        // only people in the manifest, by display name
+    {"name": "Sebastian", "linked": true, "su_used": 219,
+     "active_jobs": [{"job_name": "energy-median", "partition": "amd", "state": "RUNNING",
+                      "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0}]}
   ],
+  "other_users": {"users": 2, "su_used": 1850, "active_jobs": []},
   "sectors": {
-    "energy": {
-      "label": "Energy",
+    "mortality": {
+      "label": "Mortality",
       "stages": ["generate", "aggregate"],
-      "disabled_run_types": ["montecarlo"],   // shown as greyed-out tabs
-      "files_spec": {                // expected files per unit, by sub-model
-        "electricity": {
-          "projection": ["FD_FGLS_inter_OTHERIND_electricity_TINV_clim.nc4", "..."],
-          "aggregation": ["FD_FGLS_inter_OTHERIND_electricity_TINV_clim-MERGEETL60_{rcp}-levels.nc4", "..."]
-          // {rcp} in a name is replaced by the unit's RCP.
-          // winsorized/ prefix marks files in the -1pct_winsorization twin
-          // directory (agriculture).
-        }
-      },
+      "disabled_run_types": [],
+      "files_spec": {"main": {"projection": ["..."], "costs": ["..."], "levels": ["..."], "aggregated": ["..."]}},
       "run_types": {
         "median": {
-          "dims": {                  // the full expected universe for the grid
-            "models": ["electricity", "other_energy"],   // "main" = no sub-model
-            "cells": [{"ssp": "SSP3", "rcp": "rcp45", "iam": "low"}],
-            "gcms": {"rcp45": ["ACCESS1-0", "..."], "rcp85": ["ACCESS1-0", "..."]},
-            "batches": null          // 15 for montecarlo (batch0..batch14)
-          },
-          "counts": {"not_started": 874, "running": 32, "partial": 134,
-                     "done": 0, "failed": 0, "total": 1040},
-          "eta_hours": 348.5,        // null when nothing is left or nothing moved lately
-          "eta_basis": "1946 stage steps left, 134 finished in the last 24 h",
-          "units": [                 // sparse: units with nothing on disk are omitted
-            {
-              "model": "electricity", "ssp": "SSP3", "rcp": "rcp45", "iam": "low",
-              "gcm": "surrogate_CanESM2_89", "batch": null,
-              "state": "partial",    // not_started|running|partial|done|failed
-              "fail_reason": null,   // set when failed, e.g. "aggregate ended as Incomplete"
-              "stages": {
-                "generate": {"state": "done", "finished": "2026-10-13T17:32:54Z"},
-                "aggregate": {"state": "not_started"}
-              },
-              "files": {             // counts of non-empty expected files
-                "projection": {"found": 4, "total": 4},
-                "aggregation": {"found": 0, "total": 4,
-                                "missing": ["names, only when 0 < found < total"]}
-              }
-            }
+          "dims": {"models": ["main"], "cells": [{"ssp": "SSP3", "rcp": "rcp45", "iam": "low"}],
+                   "gcms": {"rcp45": ["..."], "rcp85": ["..."]}, "batches": null},
+          "root": "/project/cil/gcp/outputs_newsocioeconomics/mortality/median",
+          "subdir": "median",
+          "counts": {"not_started": 0, "running": 0, "partial": 0, "done": 0, "failed": 0, "total": 520},
+          "eta_hours": null, "eta_basis": null,
+          "units": [                 // only units with something on disk
+            {"model": "main", "ssp": "SSP3", "rcp": "rcp45", "iam": "low", "gcm": "CCSM4", "batch": null,
+             "state": "partial",     // not_started|running|partial|done|failed, from the folder
+             "fail_reason": null,
+             "stages": {"generate": {"state": "done", "finished": "2026-10-13T17:32:54Z"},
+                        "aggregate": {"state": "not_started"}},
+             "files": {"projection": {"found": 16, "total": 16}, "costs": {"found": 0, "total": 4},
+                       "levels": {"found": 0, "total": 16}, "aggregated": {"found": 0, "total": 16}},
+             "bits": "1111111111111111000..."}   // one character per expected file, in files_spec order
           ]
         }
       }
@@ -198,46 +178,18 @@ follows it exactly.
 }
 ```
 
-Unit states, all from the folder:
-- `done`: every required stage is done (finish marker in
-  `status-global.txt`, or all of the stage's files present);
-- `running`: a stage is claimed and files changed in the last 6 hours;
-- `failed`: the last marker for a stage is not the done word (for example
-  `Incomplete`), or a claimed stage had no file changes for 6 hours;
-- `partial`: some stages are done and nothing is running;
-- `not_started`: nothing on disk.
+`details/<sector>/<run type>/<sub-model>.json` (and
+`<sub-model>/batch<N>.json` for montecarlo) maps
+`"<SSP>|<rcp>|<iam>|<GCM>"` to one entry per expected file, in files_spec
+order: `[size in bytes, written time in Unix seconds]`, or `0` if missing.
 
-Queued work cannot be seen in the folders, so the grid has no queued
-state; queued jobs show in the cluster strip.
+## Deploying to Vercel
 
-File rules: a file counts as present only if it exists and has size above
-zero. The `missing` list is included only when a group is partly
-complete; the site derives the full missing list from `files_spec` when
-`found` is 0, and an empty one when `found` equals `total`.
-
-Cluster strip rules: it uses Slurm only, for the cil account, and shows
-only people listed in the manifest. `su_used` and `active_jobs` are null
-when Slurm could not be read (for example when the collector runs on a
-Mac), and the site shows "n/a". The use per person is plain core hours,
-so it can differ from the official "Used" figure in `rcchelp balance`.
-
-## Deploying the site to Vercel
-
-From a Mac, in this directory:
+From a Mac, in `site/`:
 
 ```
-cd site
-npx vercel login          # once; use the account that owns the project
-npx vercel                # creates the project; accept the defaults
-npx vercel --prod         # publish to the production URL
+npx vercel --prod
 ```
 
-There is no build step; answer "no" if asked about build settings (it is a
-plain static site). To refresh the deployed data by hand: run the
-collector on the cluster, then `npx vercel --prod` from the Mac (the repo
-is on the shared volume, so the Mac sees the new `status.json` at once).
-
-Later, when the collector writes `status.json` somewhere public (for
-example a data branch on GitHub), change the fetch path at the top of
-`boot()` in `app.js` to that URL. The site itself will not need to change
-otherwise.
+Run the collector on the cluster first; the repo is on the shared volume,
+so the Mac sees the new `data/` at once.

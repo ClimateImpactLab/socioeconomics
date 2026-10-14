@@ -5,72 +5,67 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>AMEL run status</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128202;</text></svg>">
+<link rel="icon" id="favicon" type="image/svg+xml" href="">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header class="topbar">
-  <div class="topbar-left">
+<header class="head">
+  <div id="camel" class="camel" role="img" aria-label="Progress by sector"></div>
+  <div class="head-text">
     <h1>AMEL run status</h1>
-    <p class="subtitle">New socioeconomics projections. Run progress only, no results.</p>
+    <div class="subtitle" id="subtitle">Loading...</div>
+    <div id="camel-key" class="camel-key"></div>
   </div>
-  <div class="topbar-right">
+  <div class="head-right">
     <span id="mock-badge" class="badge hidden">mock data</span>
-    <span id="last-scan" class="last-scan"></span>
-    <button id="theme-toggle" class="icon-btn" title="Switch light/dark">&#9681;</button>
+    <button id="theme-toggle" class="icon-btn" title="Switch light and dark">&#9681;</button>
   </div>
 </header>
 
-<div id="stale-banner" class="stale-banner hidden"></div>
+<div id="stale-banner" class="stale hidden"></div>
 
-<nav id="sector-tabs" class="tabs tabs-sector" aria-label="Sector"></nav>
-<nav id="runtype-tabs" class="tabs tabs-runtype" aria-label="Run type"></nav>
+<div class="cards" id="cards"></div>
 
-<section id="summary" class="summary"></section>
+<div class="top-bar">
+  <div id="sector-tabs" class="run-selector"></div>
+  <div class="top-bar-sep"></div>
+  <div id="runtype-tabs" class="run-selector"></div>
+  <div class="top-bar-sep hidden" id="model-sep"></div>
+  <div id="model-tabs" class="run-selector"></div>
+</div>
 
-<section class="cluster-section">
-  <details id="cluster-panel" open>
-    <summary><span class="cluster-title">Cluster</span><span id="cluster-badges" class="cluster-badges"></span></summary>
-    <div class="cluster-body">
-      <div class="cluster-box">
-        <h3>Jobs running or queued now</h3>
-        <div id="jobs-content"></div>
-      </div>
-      <div class="cluster-box">
-        <h3 id="su-title">Service units</h3>
-        <div id="su-content"></div>
-      </div>
-    </div>
-  </details>
+<div class="info-bar" id="info-bar">Click any cell to see its files</div>
+<div id="file-detail"></div>
+
+<section class="panel open" id="resources-panel">
+  <button class="panel-header" data-panel="resources-panel">
+    <span class="left"><span class="panel-title">Resources</span></span>
+    <span class="panel-arrow">&gt;</span>
+  </button>
+  <div class="panel-body" id="resources-content"></div>
 </section>
 
-<section class="controls">
-  <div id="model-pills" class="pills"></div>
-  <div class="spacer"></div>
-  <button id="focus-clear" class="toggle-btn hidden">Show all scenarios</button>
-  <button id="failed-toggle" class="toggle-btn">Show failed only</button>
+<section class="panel open" id="jobs-panel">
+  <button class="panel-header" data-panel="jobs-panel">
+    <span class="left"><span class="panel-title">SLURM jobs</span>
+      <span class="panel-badge badge-run" id="badge-run">0 running</span>
+      <span class="panel-badge badge-pend" id="badge-pend">0 pending</span></span>
+    <span class="panel-arrow">&gt;</span>
+  </button>
+  <div class="panel-body" id="jobs-content"></div>
 </section>
 
-<section class="legend" id="legend"></section>
+<div class="top-bar">
+  <div id="ssp-tabs" class="run-selector"></div>
+  <div class="legend" id="legend"></div>
+</div>
 
-<main id="grid-wrap" class="grid-wrap"></main>
+<div class="grid-wrap"><table class="grid-table" id="grid"></table></div>
 
-<footer class="footer">
-  <p>Shows run status only. Data refreshes on a schedule; reload the page to pick up the latest scan.</p>
-</footer>
+<div id="global-tip"></div>
 
-<div id="tooltip" class="tooltip hidden" role="tooltip"></div>
-
-<aside id="drawer" class="drawer hidden" aria-label="Unit detail">
-  <div class="drawer-head">
-    <h2 id="drawer-title"></h2>
-    <button id="drawer-close" class="icon-btn" title="Close">&#10005;</button>
-  </div>
-  <div id="drawer-body"></div>
-</aside>
-
-<div id="error" class="error hidden"></div>
+<div class="footer">Run status only, no projection results. Reload the page to pick up the latest scan.</div>
 
 <script src="app.js"></script>
 </body>

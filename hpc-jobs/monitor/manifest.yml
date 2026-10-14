@@ -5,7 +5,8 @@
 
 account:
   name: cil
-  su_since: "2026-10-01"   # sacct window start for service-unit sums
+  su_since: "2026-10-01"   # start of the current cycle; service units count from here
+  su_partition: cil        # service units count only time on this partition
 
 # People shown in the cluster strip (jobs and service units). The username
 # links a display name to a cluster user; it is never published.
@@ -179,15 +180,16 @@ sectors:
     run_types: [quick_test, single, median, montecarlo]
     output_root: /project/cil/gcp/outputs_newsocioeconomics/labor
 
-# Expected output files per unit, split into the projection files (written by
-# the generate stage) and the aggregation files (aggregate, and for
-# agriculture also costs and post). Lists are keyed by sector then sub-model
-# and were verified to match finished leaves under
-# /project/cil/gcp/outputs/cil2 exactly. {rcp} is replaced by the unit's RCP.
-# aggregation_twin files live in the sub-model's -1pct_winsorization twin
-# directory, written by the post stage.
-# A file counts as present only if it exists and is not empty.
+# Expected output files per unit of work, taken from the official
+# production outputs under /project/cil/gcp/outputs (not the cil2 test runs).
+# Four groups, as in the old mortality monitor: projection files (written by
+# generate), and the aggregation files split by type: costs, levels and
+# aggregated. A file counts only if it exists and is not empty.
+# Names starting with winsorized/ live in the sub-model's
+# -1pct_winsorization twin folder (agriculture post stage).
 files:
+  # mortality/impacts-darwin, counted as in the old monitor: 16 projection,
+  # 36 aggregation (4 costs, 16 levels, 16 aggregated). polymins .csv not counted.
   mortality:
     main:
       projection:
@@ -207,112 +209,47 @@ files:
         - "Agespec_interaction_response-young-histclim.nc4"
         - "Agespec_interaction_response-young-incadapt.nc4"
         - "Agespec_interaction_response-young-noadapt.nc4"
-        - "Agespec_interaction_response-older-polymins.csv"
-        - "Agespec_interaction_response-older-polymins-histclim.csv"
-        - "Agespec_interaction_response-oldest-polymins.csv"
-        - "Agespec_interaction_response-oldest-polymins-histclim.csv"
-        - "Agespec_interaction_response-young-polymins.csv"
-        - "Agespec_interaction_response-young-polymins-histclim.csv"
-      aggregation:
-        - "Agespec_interaction_response-combined-levels.nc4"
-        - "Agespec_interaction_response-combined-aggregated.nc4"
-        - "Agespec_interaction_response-combined-histclim-levels.nc4"
-        - "Agespec_interaction_response-combined-histclim-aggregated.nc4"
-        - "Agespec_interaction_response-combined-incadapt-levels.nc4"
-        - "Agespec_interaction_response-combined-incadapt-aggregated.nc4"
-        - "Agespec_interaction_response-combined-noadapt-levels.nc4"
-        - "Agespec_interaction_response-combined-noadapt-aggregated.nc4"
-        - "Agespec_interaction_response-older-levels.nc4"
-        - "Agespec_interaction_response-older-aggregated.nc4"
-        - "Agespec_interaction_response-older-histclim-levels.nc4"
-        - "Agespec_interaction_response-older-histclim-aggregated.nc4"
-        - "Agespec_interaction_response-older-incadapt-levels.nc4"
-        - "Agespec_interaction_response-older-incadapt-aggregated.nc4"
-        - "Agespec_interaction_response-older-noadapt-levels.nc4"
-        - "Agespec_interaction_response-older-noadapt-aggregated.nc4"
-        - "Agespec_interaction_response-oldest-levels.nc4"
-        - "Agespec_interaction_response-oldest-aggregated.nc4"
-        - "Agespec_interaction_response-oldest-histclim-levels.nc4"
-        - "Agespec_interaction_response-oldest-histclim-aggregated.nc4"
-        - "Agespec_interaction_response-oldest-incadapt-levels.nc4"
-        - "Agespec_interaction_response-oldest-incadapt-aggregated.nc4"
-        - "Agespec_interaction_response-oldest-noadapt-levels.nc4"
-        - "Agespec_interaction_response-oldest-noadapt-aggregated.nc4"
-        - "Agespec_interaction_response-young-levels.nc4"
-        - "Agespec_interaction_response-young-aggregated.nc4"
-        - "Agespec_interaction_response-young-histclim-levels.nc4"
-        - "Agespec_interaction_response-young-histclim-aggregated.nc4"
-        - "Agespec_interaction_response-young-incadapt-levels.nc4"
-        - "Agespec_interaction_response-young-incadapt-aggregated.nc4"
-        - "Agespec_interaction_response-young-noadapt-levels.nc4"
-        - "Agespec_interaction_response-young-noadapt-aggregated.nc4"
+      costs:
         - "Agespec_interaction_response-combined-costs.nc4"
-        - "Agespec_interaction_response-combined-costs-levels.nc4"
-        - "Agespec_interaction_response-combined-costs-aggregated.nc4"
         - "Agespec_interaction_response-older-costs.nc4"
-        - "Agespec_interaction_response-older-costs-levels.nc4"
-        - "Agespec_interaction_response-older-costs-aggregated.nc4"
         - "Agespec_interaction_response-oldest-costs.nc4"
-        - "Agespec_interaction_response-oldest-costs-levels.nc4"
-        - "Agespec_interaction_response-oldest-costs-aggregated.nc4"
         - "Agespec_interaction_response-young-costs.nc4"
-        - "Agespec_interaction_response-young-costs-levels.nc4"
-        - "Agespec_interaction_response-young-costs-aggregated.nc4"
-  labor:
-    main:
-      projection:
-        - "uninteracted_main_model_agnonag_27_28_41.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt.nc4"
-      aggregation:
-        - "uninteracted_main_model_agnonag_27_28_41-gdp-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-gdp-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-gdppc-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-gdppc-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-pop-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-pop-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-gdp-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-gdp-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-gdppc-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-gdppc-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-pop-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-pop-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt-gdp-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt-gdp-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt-gdppc-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt-gdppc-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt-pop-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-incadapt-pop-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt-gdp-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt-gdp-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt-gdppc-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt-gdppc-aggregated.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt-pop-levels.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-noadapt-pop-aggregated.nc4"
-  energy:
-    electricity:
-      projection:
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim.nc4"
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim.nc4"
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-incadapt.nc4"
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-noadapt.nc4"
-      aggregation:
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-MERGEETL60_{rcp}-levels.nc4"
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-MERGEETL60_{rcp}-aggregated.nc4"
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim-MERGEETL60_{rcp}-levels.nc4"
-        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim-MERGEETL60_{rcp}-aggregated.nc4"
-    other_energy:
-      projection:
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim.nc4"
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim.nc4"
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-incadapt.nc4"
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-noadapt.nc4"
-      aggregation:
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-MERGEETL60_{rcp}-levels.nc4"
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-MERGEETL60_{rcp}-aggregated.nc4"
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-MERGEETL60_{rcp}-levels.nc4"
-        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-MERGEETL60_{rcp}-aggregated.nc4"
+      levels:
+        - "Agespec_interaction_response-combined-levels.nc4"
+        - "Agespec_interaction_response-combined-histclim-levels.nc4"
+        - "Agespec_interaction_response-combined-incadapt-levels.nc4"
+        - "Agespec_interaction_response-combined-noadapt-levels.nc4"
+        - "Agespec_interaction_response-older-levels.nc4"
+        - "Agespec_interaction_response-older-histclim-levels.nc4"
+        - "Agespec_interaction_response-older-incadapt-levels.nc4"
+        - "Agespec_interaction_response-older-noadapt-levels.nc4"
+        - "Agespec_interaction_response-oldest-levels.nc4"
+        - "Agespec_interaction_response-oldest-histclim-levels.nc4"
+        - "Agespec_interaction_response-oldest-incadapt-levels.nc4"
+        - "Agespec_interaction_response-oldest-noadapt-levels.nc4"
+        - "Agespec_interaction_response-young-levels.nc4"
+        - "Agespec_interaction_response-young-histclim-levels.nc4"
+        - "Agespec_interaction_response-young-incadapt-levels.nc4"
+        - "Agespec_interaction_response-young-noadapt-levels.nc4"
+      aggregated:
+        - "Agespec_interaction_response-combined-aggregated.nc4"
+        - "Agespec_interaction_response-combined-histclim-aggregated.nc4"
+        - "Agespec_interaction_response-combined-incadapt-aggregated.nc4"
+        - "Agespec_interaction_response-combined-noadapt-aggregated.nc4"
+        - "Agespec_interaction_response-older-aggregated.nc4"
+        - "Agespec_interaction_response-older-histclim-aggregated.nc4"
+        - "Agespec_interaction_response-older-incadapt-aggregated.nc4"
+        - "Agespec_interaction_response-older-noadapt-aggregated.nc4"
+        - "Agespec_interaction_response-oldest-aggregated.nc4"
+        - "Agespec_interaction_response-oldest-histclim-aggregated.nc4"
+        - "Agespec_interaction_response-oldest-incadapt-aggregated.nc4"
+        - "Agespec_interaction_response-oldest-noadapt-aggregated.nc4"
+        - "Agespec_interaction_response-young-aggregated.nc4"
+        - "Agespec_interaction_response-young-histclim-aggregated.nc4"
+        - "Agespec_interaction_response-young-incadapt-aggregated.nc4"
+        - "Agespec_interaction_response-young-noadapt-aggregated.nc4"
+  # agriculture/impacts-mealy/montecarlo/<crop>-2025 and <crop>-2025_1pct_winsorization:
+  # 4 projection, 12 aggregation (4 costs, 8 aggregated).
   agriculture:
     cassava:
       projection:
@@ -320,116 +257,216 @@ files:
         - "cassava-110221-histclim.nc4"
         - "cassava-110221-incadapt.nc4"
         - "cassava-110221-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "cassava-110221.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/cassava-110221-fulladaptcosts.nc4"
+        - "winsorized/cassava-110221-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "cassava-110221-aggregated.nc4"
-        - "cassava-110221-noadapt.nc4"
-        - "cassava-110221-noadapt-aggregated.nc4"
-        - "cassava-110221-incadapt.nc4"
+        - "cassava-110221-histclim-aggregated.nc4"
         - "cassava-110221-incadapt-aggregated.nc4"
-        - "cassava-110221-fulladaptcosts.nc4"
-        - "cassava-110221-fulladaptcosts-aggregated.nc4"
+        - "cassava-110221-noadapt-aggregated.nc4"
+        - "winsorized/cassava-110221-aggregated.nc4"
+        - "winsorized/cassava-110221-histclim-aggregated.nc4"
+        - "winsorized/cassava-110221-incadapt-aggregated.nc4"
+        - "winsorized/cassava-110221-noadapt-aggregated.nc4"
     corn:
       projection:
         - "corn-160221.nc4"
         - "corn-160221-histclim.nc4"
         - "corn-160221-incadapt.nc4"
         - "corn-160221-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "corn-160221.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/corn-160221-fulladaptcosts.nc4"
+        - "winsorized/corn-160221-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "corn-160221-aggregated.nc4"
-        - "corn-160221-noadapt.nc4"
-        - "corn-160221-noadapt-aggregated.nc4"
-        - "corn-160221-incadapt.nc4"
+        - "corn-160221-histclim-aggregated.nc4"
         - "corn-160221-incadapt-aggregated.nc4"
-        - "corn-160221-fulladaptcosts.nc4"
-        - "corn-160221-fulladaptcosts-aggregated.nc4"
+        - "corn-160221-noadapt-aggregated.nc4"
+        - "winsorized/corn-160221-aggregated.nc4"
+        - "winsorized/corn-160221-histclim-aggregated.nc4"
+        - "winsorized/corn-160221-incadapt-aggregated.nc4"
+        - "winsorized/corn-160221-noadapt-aggregated.nc4"
     rice:
       projection:
         - "rice-160221.nc4"
         - "rice-160221-histclim.nc4"
         - "rice-160221-incadapt.nc4"
         - "rice-160221-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "rice-160221.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/rice-160221-fulladaptcosts.nc4"
+        - "winsorized/rice-160221-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "rice-160221-aggregated.nc4"
-        - "rice-160221-noadapt.nc4"
-        - "rice-160221-noadapt-aggregated.nc4"
-        - "rice-160221-incadapt.nc4"
+        - "rice-160221-histclim-aggregated.nc4"
         - "rice-160221-incadapt-aggregated.nc4"
-        - "rice-160221-fulladaptcosts.nc4"
-        - "rice-160221-fulladaptcosts-aggregated.nc4"
+        - "rice-160221-noadapt-aggregated.nc4"
+        - "winsorized/rice-160221-aggregated.nc4"
+        - "winsorized/rice-160221-histclim-aggregated.nc4"
+        - "winsorized/rice-160221-incadapt-aggregated.nc4"
+        - "winsorized/rice-160221-noadapt-aggregated.nc4"
     sorghum:
       projection:
         - "sorghum-160221.nc4"
         - "sorghum-160221-histclim.nc4"
         - "sorghum-160221-incadapt.nc4"
         - "sorghum-160221-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "sorghum-160221.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/sorghum-160221-fulladaptcosts.nc4"
+        - "winsorized/sorghum-160221-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "sorghum-160221-aggregated.nc4"
-        - "sorghum-160221-noadapt.nc4"
-        - "sorghum-160221-noadapt-aggregated.nc4"
-        - "sorghum-160221-incadapt.nc4"
+        - "sorghum-160221-histclim-aggregated.nc4"
         - "sorghum-160221-incadapt-aggregated.nc4"
-        - "sorghum-160221-fulladaptcosts.nc4"
-        - "sorghum-160221-fulladaptcosts-aggregated.nc4"
+        - "sorghum-160221-noadapt-aggregated.nc4"
+        - "winsorized/sorghum-160221-aggregated.nc4"
+        - "winsorized/sorghum-160221-histclim-aggregated.nc4"
+        - "winsorized/sorghum-160221-incadapt-aggregated.nc4"
+        - "winsorized/sorghum-160221-noadapt-aggregated.nc4"
     soy:
       projection:
         - "soy-160221.nc4"
         - "soy-160221-histclim.nc4"
         - "soy-160221-incadapt.nc4"
         - "soy-160221-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "soy-160221.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/soy-160221-fulladaptcosts.nc4"
+        - "winsorized/soy-160221-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "soy-160221-aggregated.nc4"
-        - "soy-160221-noadapt.nc4"
-        - "soy-160221-noadapt-aggregated.nc4"
-        - "soy-160221-incadapt.nc4"
+        - "soy-160221-histclim-aggregated.nc4"
         - "soy-160221-incadapt-aggregated.nc4"
-        - "soy-160221-fulladaptcosts.nc4"
-        - "soy-160221-fulladaptcosts-aggregated.nc4"
+        - "soy-160221-noadapt-aggregated.nc4"
+        - "winsorized/soy-160221-aggregated.nc4"
+        - "winsorized/soy-160221-histclim-aggregated.nc4"
+        - "winsorized/soy-160221-incadapt-aggregated.nc4"
+        - "winsorized/soy-160221-noadapt-aggregated.nc4"
     wheat_spring:
       projection:
         - "wheat_spring-280823.nc4"
         - "wheat_spring-280823-histclim.nc4"
         - "wheat_spring-280823-incadapt.nc4"
         - "wheat_spring-280823-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "wheat_spring-280823.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/wheat_spring-280823-fulladaptcosts.nc4"
+        - "winsorized/wheat_spring-280823-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "wheat_spring-280823-aggregated.nc4"
-        - "wheat_spring-280823-noadapt.nc4"
-        - "wheat_spring-280823-noadapt-aggregated.nc4"
-        - "wheat_spring-280823-incadapt.nc4"
+        - "wheat_spring-280823-histclim-aggregated.nc4"
         - "wheat_spring-280823-incadapt-aggregated.nc4"
-        - "wheat_spring-280823-fulladaptcosts.nc4"
-        - "wheat_spring-280823-fulladaptcosts-aggregated.nc4"
+        - "wheat_spring-280823-noadapt-aggregated.nc4"
+        - "winsorized/wheat_spring-280823-aggregated.nc4"
+        - "winsorized/wheat_spring-280823-histclim-aggregated.nc4"
+        - "winsorized/wheat_spring-280823-incadapt-aggregated.nc4"
+        - "winsorized/wheat_spring-280823-noadapt-aggregated.nc4"
     wheat_winter:
       projection:
         - "wheat_winter-280823.nc4"
         - "wheat_winter-280823-histclim.nc4"
         - "wheat_winter-280823-incadapt.nc4"
         - "wheat_winter-280823-noadapt.nc4"
-      aggregation:
+      costs:
         - "adaptation_costs.nc4"
-      aggregation_twin:
-        - "wheat_winter-280823.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/wheat_winter-280823-fulladaptcosts.nc4"
+        - "winsorized/wheat_winter-280823-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated:
         - "wheat_winter-280823-aggregated.nc4"
-        - "wheat_winter-280823-noadapt.nc4"
-        - "wheat_winter-280823-noadapt-aggregated.nc4"
-        - "wheat_winter-280823-incadapt.nc4"
+        - "wheat_winter-280823-histclim-aggregated.nc4"
         - "wheat_winter-280823-incadapt-aggregated.nc4"
-        - "wheat_winter-280823-fulladaptcosts.nc4"
-        - "wheat_winter-280823-fulladaptcosts-aggregated.nc4"
+        - "wheat_winter-280823-noadapt-aggregated.nc4"
+        - "winsorized/wheat_winter-280823-aggregated.nc4"
+        - "winsorized/wheat_winter-280823-histclim-aggregated.nc4"
+        - "winsorized/wheat_winter-280823-incadapt-aggregated.nc4"
+        - "winsorized/wheat_winter-280823-noadapt-aggregated.nc4"
+  # energy_pixel_interaction/impacts-blueghost/median: 4 projection,
+  # 4 aggregation (2 levels, 2 aggregated) at the price014 price scenario.
+  energy:
+    electricity:
+      projection:
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-incadapt.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-noadapt.nc4"
+      costs: []
+      levels:
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-price014-levels.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim-price014-levels.nc4"
+      aggregated:
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-price014-aggregated.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim-price014-aggregated.nc4"
+    other_energy:
+      projection:
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-incadapt.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-noadapt.nc4"
+      costs: []
+      levels:
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-price014-levels.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-price014-levels.nc4"
+      aggregated:
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-price014-aggregated.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-price014-aggregated.nc4"
+  # labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41:
+  # 5 projection, 30 aggregation (15 levels, 15 aggregated; gdp, pop and wage weights).
+  labor:
+    main:
+      projection:
+        - "uninteracted_main_model_agnonag_27_28_41.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt.nc4"
+      costs: []
+      levels:
+        - "uninteracted_main_model_agnonag_27_28_41-gdp-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-pop-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-wage-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-gdp-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-pop-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-wage-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt-gdp-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt-pop-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt-wage-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt-gdp-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt-pop-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt-wage-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-gdp-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-pop-levels.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-wage-levels.nc4"
+      aggregated:
+        - "uninteracted_main_model_agnonag_27_28_41-gdp-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-pop-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-wage-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-gdp-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-pop-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-wage-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt-gdp-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt-pop-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-incadapt-wage-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt-gdp-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt-pop-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-noadapt-wage-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-gdp-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-pop-aggregated.nc4"
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-wage-aggregated.nc4"
