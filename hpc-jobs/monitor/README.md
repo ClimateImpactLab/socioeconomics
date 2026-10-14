@@ -43,6 +43,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     user, and inside each user's segment one textured part per partition
     (amd stripes, caslake dots, amd-hm solid). A key gives each user's
     SUs, core hours and share, and a texture key the totals per partition.
+    The texture key always lists the partitions that use SUs, even with no
+    use yet. Hovering a segment marks its user and partition in the keys;
+    a click keeps it marked, and a second click clears it.
     It counts only the scarce partitions (amd, caslake, amd-hm); the cil
     partition is the group's own nodes and is not shown at all. Users in
     `account.always_show_users` are always listed, and
@@ -55,7 +58,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Resources and SLURM jobs start collapsed.
 - SLURM jobs: running and pending counts, partitions, users, and a table
   of every running or queued job: job id, name, user, partition, state,
-  running, pending and done tasks, and elapsed time.
+  running, pending and done tasks, and elapsed time. Below it, a collapsed
+  list of jobs on the account that ended badly (timeout, out of memory,
+  failed, cancelled) in the last `account.ended_badly_days` days: job id,
+  name, user, partition, how it ended and how long it ran. Array tasks
+  that ended the same way are grouped under their job id.
 - A row of small cards for the selected sector and run type, right above
   the tabs and the grid: expected units, complete, partial, not started,
   projection and aggregation progress, units being written, time to
@@ -242,6 +249,12 @@ The contract between the collector and the page; the mock follows it.
      "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
                       "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0}]}
   ],
+  "ended_badly": [                   // newest first, at most 25; null without Slurm
+    {"job_id": "59939384", "job_name": "labor-median", "user": "someuser", "partition": "caslake",
+     "ended": "timeout",              // timeout, out of memory, failed, cancelled or node failure
+     "tasks": 11, "elapsed_min": 2160.0, "end": "2026-10-13T08:12:40"}
+  ],
+  "ended_badly_days": 3,
   "sectors": {
     "mortality": {
       "label": "Mortality",

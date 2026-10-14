@@ -507,6 +507,49 @@ def active_jobs_by_user(account, rows):
     return by_user
 
 
+# sacct state names for jobs that did not finish well, and how the page names them.
+BAD_ENDS = {"TIMEOUT": "timeout", "OUT_OF_MEMORY": "out of memory", "FAILED": "failed",
+            "CANCELLED": "cancelled", "NODE_FAIL": "node failure"}
+
+
+def ended_badly(account, days, limit=25):
+    """Jobs on the account that ended badly in the last few days, newest first.
+
+    Array tasks that ended the same way are grouped under their job id, with
+    the number of tasks and the longest run time. Returns a list of rows, or
+    None if sacct failed.
+    """
+    out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account,
+                   "--starttime", f"now-{int(days)}days", "--endtime", "now",
+                   "--state", "TO,OOM,F,CA,NF",
+                   "--format=JobID,User,Partition,State,ElapsedRaw,End,JobName"])
+    if out is None:
+        return None
+    groups = {}
+    for line in out.splitlines():
+        parts = line.strip().split("|", 6)
+        if len(parts) != 7 or not parts[1]:
+            continue
+        job, user, partition, state, elapsed, end, name = parts
+        state = state.split()[0] if state else ""
+        if state not in BAD_ENDS or end in ("", "Unknown", "None"):
+            continue
+        base = job.split("_")[0]
+        try:
+            elapsed_s = int(elapsed)
+        except ValueError:
+            elapsed_s = 0
+        g = groups.setdefault((base, state), {
+            "job_id": base, "job_name": name, "user": user,
+            "partition": partition.split(",")[0], "ended": BAD_ENDS[state],
+            "tasks": 0, "elapsed_min": 0.0, "end": end})
+        g["tasks"] += 1
+        g["elapsed_min"] = max(g["elapsed_min"], round(elapsed_s / 60.0, 1))
+        g["end"] = max(g["end"], end)
+    rows = sorted(groups.values(), key=lambda g: g["end"], reverse=True)
+    return rows[:limit]
+
+
 def tres_value(tres, key):
     """A number from an AllocTRES string such as 'billing=1,cpu=1,mem=45G'."""
     m = re.search(rf"(?:^|,){re.escape(key)}=([\d.]+)", tres or "")
@@ -696,6 +739,7 @@ def main():
     since = manifest["account"]["su_since"]
     billing_partitions = manifest["account"]["su_billing_partitions"]
     free_partitions = manifest["account"].get("su_free_partitions", [])
+    bad_days = manifest["account"].get("ended_badly_days", 3)
 
     os.makedirs(args.out_dir, exist_ok=True)
     shutil.rmtree(os.path.join(args.out_dir, "details"), ignore_errors=True)
@@ -721,13 +765,14 @@ def main():
         }
 
     use_slurm = not args.no_slurm and shutil.which("sacct") and shutil.which("squeue")
-    rows, su, jobs, storage, stale = None, None, None, None, None
+    rows, su, jobs, storage, stale, bad = None, None, None, None, None, None
     balance = {"allocation_status": "unknown",
                "allocation_su": None, "used_su": None, "balance_su": None}
     if use_slurm:
         rows = live_tasks(account)
         su, stale = usage_by_user(account, since, billing_partitions, free_partitions, rows)
         jobs = active_jobs_by_user(account, rows) if rows is not None else None
+        bad = ended_badly(account, bad_days)
         balance = account_balance(account)
         storage = storage_quotas(account)
     else:
@@ -763,6 +808,8 @@ def main():
                     "su_billing_partitions": billing_partitions,
                     "su_free_partitions": free_partitions},
         "users": users,
+        "ended_badly": bad,
+        "ended_badly_days": bad_days,
         "sectors": sectors_out,
     }
 

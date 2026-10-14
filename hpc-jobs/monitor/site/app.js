@@ -707,7 +707,8 @@ function serviceUnitsHtml() {
       .sort((x, y) => y[1] - x[1]);
     for (const [p, v] of segs) {
       parts[p] = (parts[p] || 0) + v;
-      bar += `<span class="seg ${partTexture(p)}" style="width:${((100 * v) / (total || 1)).toFixed(2)}%;background-color:${userColor(u.user)}"
+      bar += `<span class="seg ${partTexture(p)}" data-user="${esc(u.user)}" data-part="${esc(p)}"
+        style="width:${((100 * v) / (total || 1)).toFixed(2)}%;background-color:${userColor(u.user)}"
         title="${esc(u.user)}, ${esc(p)}: ${fmtN(v)} SU"></span>`;
     }
   }
@@ -716,12 +717,14 @@ function serviceUnitsHtml() {
       <button class="info-btn" id="su-info-btn" aria-expanded="false" aria-controls="su-info" title="About these numbers">i</button></div>
     <div class="su-bar-all">${bar}</div>`;
   html += `<div class="ukey">` + users.map((u) =>
-    `<span class="ukey-item"><span class="udot" style="background:${userColor(u.user)}"></span>${userName(u.user)}
+    `<span class="ukey-item" data-user="${esc(u.user)}"><span class="udot" style="background:${userColor(u.user)}"></span>${userName(u.user)}
       <span class="mono">${u.su ? `${fmtN(u.su)} SU, ${fmtN(u.core)} core h, ${((100 * u.su) / (total || 1)).toFixed(1)}%` : "no jobs yet"}</span></span>`).join("") + `</div>`;
-  const order = Object.keys(parts).sort((x, y) => parts[y] - parts[x]);
+  // Partitions that use SUs are always listed, like users with no jobs yet.
+  const used = Object.keys(parts).sort((x, y) => parts[y] - parts[x]);
+  const order = [...used, ...(a.su_billing_partitions || []).filter((p) => !used.includes(p))];
   if (order.length) {
     html += `<div class="ukey pkey">` + order.map((p) =>
-      `<span class="ukey-item">${partSwatch(p)}${esc(p)} <span class="mono">${fmtN(parts[p])} SU</span></span>`).join("") + `</div>`;
+      `<span class="ukey-item" data-part="${esc(p)}">${partSwatch(p)}${esc(p)} <span class="mono">${parts[p] ? `${fmtN(parts[p])} SU` : "no use yet"}</span></span>`).join("") + `</div>`;
   }
 
   html += `</div>`;
@@ -735,7 +738,50 @@ function serviceUnitsHtml() {
   return html;
 }
 
+// Hovering a segment of the SU bar highlights its user and partition in the
+// keys; a click keeps it selected until it is clicked again.
+let suPicked = null;
+function suHighlight(seg) {
+  const box = document.querySelector(".su-est");
+  if (!box) return;
+  const user = seg ? seg.dataset.user : null, part = seg ? seg.dataset.part : null;
+  box.classList.toggle("has-hl", !!seg);
+  box.querySelectorAll(".seg").forEach((el) => el.classList.toggle("hl", el === seg));
+  box.querySelectorAll(".ukey-item[data-user]").forEach((el) => el.classList.toggle("hl", el.dataset.user === user));
+  box.querySelectorAll(".ukey-item[data-part]").forEach((el) => el.classList.toggle("hl", el.dataset.part === part));
+}
+function pickedSeg() {
+  if (!suPicked) return null;
+  return [...document.querySelectorAll(".su-bar-all .seg")]
+    .find((el) => el.dataset.user === suPicked.user && el.dataset.part === suPicked.part) || null;
+}
+
 /* ---------- SLURM jobs ---------- */
+
+const END_CLASS = { timeout: "end-timeout", "out of memory": "end-oom", failed: "end-failed",
+  "node failure": "end-failed", cancelled: "end-cancelled" };
+
+// Recent jobs that ended badly, in a group that starts collapsed.
+function endedBadlyHtml() {
+  const rows = DATA.ended_badly;
+  if (rows == null) return "";
+  const days = DATA.ended_badly_days || 3;
+  const kinds = {};
+  for (const r of rows) kinds[r.ended] = (kinds[r.ended] || 0) + 1;
+  const summary = Object.keys(kinds).map((k) => `<span class="${END_CLASS[k] || ""}">${fmtN(kinds[k])} ${esc(k)}</span>`).join(", ");
+  const head = `<div class="grp-header"><span><span class="grp-arrow">&gt;</span> Ended badly, last ${days} days
+    <span class="grp-counts">${rows.length ? `${fmtN(rows.length)} ${rows.length === 1 ? "job" : "jobs"}: ${summary}` : "none"}</span></span></div>`;
+  if (!rows.length) return `<div class="grp bad-jobs">${head}<div class="grp-body"><div class="jobs-empty">No jobs ended badly</div></div></div>`;
+  const table = `<table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>How it ended</th>
+      <th class="r">Ran</th></tr>` + rows.map((r) => `<tr title="Ended ${esc(r.end.replace("T", " "))}">
+      <td class="mono">${esc(r.job_id)}${r.tasks > 1 ? ` <span class="lbl">(${fmtN(r.tasks)} tasks)</span>` : ""}</td>
+      <td>${esc(r.job_name)}</td>
+      <td><span class="ukey-item"><span class="udot" style="background:${userColor(r.user)}"></span>${userName(r.user)}</span></td>
+      <td>${partPill(r.partition)}</td>
+      <td class="${END_CLASS[r.ended] || ""}">${esc(r.ended[0].toUpperCase() + r.ended.slice(1))}</td>
+      <td class="r">${r.elapsed_min ? fmtMin(r.elapsed_min) : "did not start"}</td></tr>`).join("") + `</table>`;
+  return `<div class="grp bad-jobs">${head}<div class="grp-body">${table}</div></div>`;
+}
 
 function partPill(name, n) {
   return `<span class="part-pill">${partSwatch(name)}${esc(name)}${n != null ? ": " + n : ""}</span>`;
@@ -758,7 +804,7 @@ function renderJobs() {
   $("badge-pend").textContent = `${fmtN(pend)} pending`;
 
   if (!known) {
-    $("jobs-content").innerHTML = `<div class="jobs-empty">No Slurm data in this scan</div>`;
+    $("jobs-content").innerHTML = `<div class="jobs-empty">No Slurm data in this scan</div>` + endedBadlyHtml();
     return;
   }
 
@@ -796,6 +842,7 @@ function renderJobs() {
         <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td><td class="r">${fmtN(j.tasks.done)}</td>
         <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`).join("") + `</table>`;
   }
+  html += endedBadlyHtml();
   $("jobs-content").innerHTML = html;
 }
 
@@ -870,8 +917,9 @@ function renderCamel() {
     const note = !s.tracked ? "not tracked (yet)" : s.allDone ? "all done" : s.projDone ? "projections done" :
       `${fmtPctShort(s.proj)} projection`;
     const on = s.tracked && sectorActive(DATA.sectors[s.key]);
-    return `<span class="ckey" title="${esc(s.part)}${on ? ", active" : ""}"><span class="cring${on ? " on" : ""}" style="color:var(--sec-${s.key})">` +
-      `<span class="cdot sec-${s.key}"></span></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
+    return `<span class="ckey${on ? " on" : ""}"${on ? ` style="--ant:var(--sec-${s.key})"` : ""}` +
+      ` title="${esc(s.part)}${on ? ", active: jobs running or files written in the last day" : ""}">` +
+      `<span class="cdot sec-${s.key}"></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
   }).join("");
 }
 
@@ -886,7 +934,23 @@ function setup() {
     $("pa-info-btn").setAttribute("aria-expanded", String(open));
     $("pa-info-btn").classList.toggle("on", open);
   });
-  $("resources-content").addEventListener("click", (e) => {
+  const rc = $("resources-content");
+  rc.addEventListener("mouseover", (e) => {
+    const seg = e.target.closest(".su-bar-all .seg");
+    if (seg) suHighlight(seg);
+  });
+  rc.addEventListener("mouseout", (e) => {
+    const seg = e.target.closest(".su-bar-all .seg");
+    if (seg && !seg.contains(e.relatedTarget)) suHighlight(pickedSeg());
+  });
+  rc.addEventListener("click", (e) => {
+    const seg = e.target.closest(".su-bar-all .seg");
+    if (seg) {
+      const same = suPicked && suPicked.user === seg.dataset.user && suPicked.part === seg.dataset.part;
+      suPicked = same ? null : { user: seg.dataset.user, part: seg.dataset.part };
+      suHighlight(same ? null : seg);
+      return;
+    }
     const b = e.target.closest("#su-info-btn");
     if (!b) return;
     const box = $("su-info");

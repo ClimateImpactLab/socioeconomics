@@ -17,6 +17,9 @@ account:
   always_show_users: [silacetiner, dtadeo]
   # Shown in black instead of a palette color.
   highlight_user: cadavidsanchez
+  # Jobs that ended badly (timeout, out of memory, failed, cancelled) are
+  # listed under SLURM jobs for this many days.
+  ended_badly_days: 3
 
 # Scenario space. valid_pairs lists the SSP-RCP combinations the projection
 # engine accepts (it drops SSP1 with rcp85, and SSP5 with anything but rcp85).

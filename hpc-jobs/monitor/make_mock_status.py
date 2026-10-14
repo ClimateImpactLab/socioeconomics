@@ -73,6 +73,21 @@ def mock_usage(rng, scale):
             "su_flagged": flagged}
 
 
+def mock_ended_badly(rng, users, now):
+    """A few jobs that ended badly in the last days, newest first."""
+    ends = ["timeout", "out of memory", "failed", "cancelled"]
+    rows = []
+    for _ in range(rng.randint(3, 7)):
+        name, partition, size = rng.choice(MOCK_JOB_NAMES)
+        end = now - datetime.timedelta(minutes=rng.randint(30, 3 * 24 * 60))
+        rows.append({"job_id": str(rng.randint(59_900_000, 60_100_000)), "job_name": name,
+                     "user": rng.choice(users), "partition": partition, "ended": rng.choice(ends),
+                     "tasks": rng.randint(1, min(size, 12)), "elapsed_min": round(rng.uniform(1, 2160), 1),
+                     "end": end.strftime("%Y-%m-%dT%H:%M:%S")})
+    rows.sort(key=lambda r: r["end"], reverse=True)
+    return rows
+
+
 def mock_su_estimate(counts, stages, sector, rt_name):
     """Same rules as the collector: reference time and job limit, since the
     mock has no file dates."""
@@ -385,6 +400,8 @@ def main():
             ],
         },
         "users": users,
+        "ended_badly": mock_ended_badly(rng, [u["user"] for u in users if u["su_used"]], now),
+        "ended_badly_days": manifest["account"].get("ended_badly_days", 3),
         "sectors": sectors_out,
     }
 

@@ -128,7 +128,7 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .camel svg.solid-labor .cell[data-sector="labor"][data-filled="true"] { stroke: var(--sector-color); }
 .camel svg.tex-labor .cell[data-sector="labor"][data-filled="true"] { fill: url(#camel-tex-labor); stroke: var(--sector-color); }
 @keyframes camelpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-.camel-key { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-top: 4px; font-size: 10px; color: var(--tx2); }
+.camel-key { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; font-size: 10px; color: var(--tx2); }
 .ckey { display: inline-flex; align-items: center; gap: 4px; }
 .ckey .muted { color: var(--tx3); }
 .cdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
@@ -340,17 +340,24 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .sec-spin.on i:nth-child(9) { animation-delay: 0.8s; }
 @keyframes sec-spin { 0%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
 
-/* Sector key dots: a thin dotted ring, slowly turning for active sectors,
-   still and dim for the others. */
-.cring { position: relative; display: inline-flex; align-items: center; justify-content: center;
-  width: 12px; height: 12px; flex-shrink: 0; }
-.cring::before { content: ""; position: absolute; inset: 0; border-radius: 50%;
-  border: 1px dotted var(--tx3); opacity: 0.45; }
-.cring.on::before { border-color: currentColor; opacity: 0.9; animation: cring-turn 6s linear infinite; }
-@keyframes cring-turn { to { transform: rotate(360deg); } }
+/* Sector key badges: a dotted border drawn with dashes on each edge. For
+   active sectors it is in the sector color and the dots travel slowly
+   around the badge; otherwise it is still and dim grey. */
+.camel-key .ckey { --ant: color-mix(in srgb, var(--tx3) 55%, transparent);
+  padding: 1px 7px 1px 6px; border-radius: 2px;
+  background-image:
+    linear-gradient(90deg, var(--ant) 50%, transparent 50%),
+    linear-gradient(90deg, var(--ant) 50%, transparent 50%),
+    linear-gradient(0deg, var(--ant) 50%, transparent 50%),
+    linear-gradient(0deg, var(--ant) 50%, transparent 50%);
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
+  background-size: 4px 1px, 4px 1px, 1px 4px, 1px 4px;
+  background-position: 0 0, 0 100%, 0 0, 100% 0; }
+.camel-key .ckey.on { animation: ckey-ants 2.4s linear infinite; }
+@keyframes ckey-ants { to { background-position: 4px 0, -4px 100%, 0 -4px, 100% 4px; } }
 @media (prefers-reduced-motion: reduce) {
   .sec-spin.on i { animation: none; opacity: 0.8; }
-  .cring.on::before { animation: none; }
+  .camel-key .ckey.on { animation: none; }
 }
 .pa-info { margin: -4px 0 8px; }
 #pa-info-btn { margin-left: 0; }
@@ -446,3 +453,15 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 
 .footer { font-size: 10px; color: var(--tx3); margin-top: 6px; }
 .error { color: var(--red); padding: 20px; }
+/* SU bar: the hovered or picked segment stands out, and its user and
+   partition are marked in the keys below. */
+.su-bar-all .seg { cursor: pointer; transition: opacity 0.12s; }
+.su-est.has-hl .seg:not(.hl) { opacity: 0.35; }
+.su-est .ukey-item { padding: 1px 4px; margin: -1px -4px; border-radius: 3px; border: 0.5px solid transparent; }
+.su-est .ukey-item.hl { background: var(--bg3); border-color: var(--bd2); color: var(--tx); }
+.su-est .ukey-item.hl .mono { color: var(--tx2); }
+/* Jobs that ended badly. */
+.bad-jobs { margin-top: 10px; }
+.end-timeout { color: var(--st-pend); }
+.end-oom, .end-failed { color: var(--red); }
+.end-cancelled { color: var(--tx3); }
