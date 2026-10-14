@@ -56,6 +56,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   records (jobs sacct still shows as running but squeue does not have)
   are left out of the numbers.
 - Resources and SLURM jobs start collapsed.
+- Phones and tablets: the grid shrinks to fit the screen width, down to
+  60%; wider grids (montecarlo) scroll sideways inside their own box, with
+  the climate model names pinned on the left. On a phone held upright the
+  grid is hidden and a short note asks to turn the phone. Taps do what
+  hover does: a tap on a cell shows its summary and files, and a tap on
+  the SU bar marks its user and partition.
 - SLURM jobs: running and pending counts, partitions, users, and a table
   of every running or queued job: job id, name, user, partition, state,
   running, pending and done tasks, and elapsed time. Below it, a collapsed

@@ -80,6 +80,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body { font-family: var(--font); font-size: 13px; color: var(--tx); background: var(--bg); padding: 16px; }
 h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .subtitle { font-size: 10px; color: var(--tx3); }
@@ -465,3 +466,55 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .end-timeout { color: var(--st-pend); }
 .end-oom, .end-failed { color: var(--red); }
 .end-cancelled { color: var(--tx3); }
+/* Phones and tablets. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.grid-wrap { -webkit-overflow-scrolling: touch; max-width: 100%; }
+.rotate-note { display: none; font-size: 11px; color: var(--tx3); margin: 2px 0 10px; }
+@media (max-width: 900px) {
+  body { padding: 12px; }
+  .res-sec { display: block; margin: 0 0 8px; }
+  .su-est { display: flex; }
+}
+@media (max-width: 1100px) {
+  .run-selector { flex-wrap: wrap; gap: 4px; }
+  .run-opt { border-radius: 4px !important; }
+  .run-opt:not(:first-child) { border-left-style: solid; border-left-width: 1.5px; }
+  .top-bar-sep { display: none; }
+}
+.grp-header > span { min-width: 0; }
+/* Row labels stay in view when a wide grid scrolls sideways. */
+.grid-table th.model-th, .grid-table td.model-cell { position: sticky; left: 0; z-index: 1; background: var(--bg); }
+.ckey { white-space: nowrap; }
+@media (max-width: 600px) {
+  body { padding: 10px; }
+  .head { gap: 6px 10px; align-items: flex-start; flex-wrap: wrap; }
+  .head-text { order: 3; flex-basis: 100%; }
+  .head-right { margin-left: auto; }
+  .camel { width: 92px; }
+  h1 { font-size: 14px; }
+  .cil-logo { height: 20px; }
+  .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .panel-header { padding: 8px 10px; }
+  .panel-body { padding: 8px 10px 10px; }
+  .file-detail { padding: 8px 10px; }
+}
+/* Phone held upright: the grid needs the width, so it waits for landscape. */
+@media (max-width: 600px) and (orientation: portrait) {
+  .grid-wrap, #legend, #info-bar, #file-detail { display: none !important; }
+  .rotate-note { display: block; }
+}
+body.no-sector .rotate-note, body.no-model .rotate-note { display: none !important; }
+/* Short landscape screens: keep the grid in view below the file list. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .file-detail { max-height: 50vh; }
+  body { padding: 10px; }
+}
+/* Fingers: bigger targets for tabs, buttons and the SU bar. */
+@media (pointer: coarse) {
+  .run-opt { padding: 7px 12px; }
+  #model-tabs .run-opt { padding: 6px 10px; }
+  .info-btn { width: 22px; height: 22px; font-size: 11px; }
+  .su-bar-all { height: 16px; }
+  .grp-header, .fd-sec { padding-top: 8px; padding-bottom: 8px; }
+  .batch:hover { opacity: 1; }
+}

@@ -524,9 +524,27 @@ function renderGrid() {
     body += `</tr>`;
   }
   $("grid").innerHTML = h1 + h2 + body + "</tbody>";
+  fitGrid();
   if (view.selected) {
     const el = document.querySelector(`.batch[data-key="${CSS.escape(view.selected)}"]`);
     if (el) el.classList.add("selected");
+  }
+}
+
+// The grid shrinks to fit the screen width, down to GRID_MIN_ZOOM; wider
+// grids (montecarlo) scroll sideways inside their own box.
+const GRID_MIN_ZOOM = 0.6;
+function fitGrid() {
+  const wrap = document.querySelector(".grid-wrap"), table = $("grid");
+  table.style.zoom = "";
+  const avail = wrap.clientWidth, natural = table.offsetWidth;
+  if (!avail || !natural || natural <= avail) return;
+  let z = Math.max(GRID_MIN_ZOOM, Math.floor((avail / natural) * 1000) / 1000);
+  table.style.zoom = String(z);
+  // Thin borders do not shrink with the zoom, so step down until it fits.
+  while (z > GRID_MIN_ZOOM && wrap.scrollWidth > wrap.clientWidth) {
+    z = Math.max(GRID_MIN_ZOOM, z - 0.01);
+    table.style.zoom = z.toFixed(3);
   }
 }
 
@@ -633,7 +651,7 @@ function closeDetail() {
   const box = $("file-detail");
   box.className = "";
   box.innerHTML = "";
-  $("info-bar").textContent = "Click any cell to see its files";
+  $("info-bar").textContent = "Click or tap a cell to see its files";
   $("info-bar").title = "";
   document.querySelectorAll(".batch.selected").forEach((e) => e.classList.remove("selected"));
 }
@@ -772,14 +790,14 @@ function endedBadlyHtml() {
   const head = `<div class="grp-header"><span><span class="grp-arrow">&gt;</span> Ended badly, last ${days} days
     <span class="grp-counts">${rows.length ? `${fmtN(rows.length)} ${rows.length === 1 ? "job" : "jobs"}: ${summary}` : "none"}</span></span></div>`;
   if (!rows.length) return `<div class="grp bad-jobs">${head}<div class="grp-body"><div class="jobs-empty">No jobs ended badly</div></div></div>`;
-  const table = `<table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>How it ended</th>
+  const table = `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>How it ended</th>
       <th class="r">Ran</th></tr>` + rows.map((r) => `<tr title="Ended ${esc(r.end.replace("T", " "))}">
       <td class="mono">${esc(r.job_id)}${r.tasks > 1 ? ` <span class="lbl">(${fmtN(r.tasks)} tasks)</span>` : ""}</td>
       <td>${esc(r.job_name)}</td>
       <td><span class="ukey-item"><span class="udot" style="background:${userColor(r.user)}"></span>${userName(r.user)}</span></td>
       <td>${partPill(r.partition)}</td>
       <td class="${END_CLASS[r.ended] || ""}">${esc(r.ended[0].toUpperCase() + r.ended.slice(1))}</td>
-      <td class="r">${r.elapsed_min ? fmtMin(r.elapsed_min) : "did not start"}</td></tr>`).join("") + `</table>`;
+      <td class="r">${r.elapsed_min ? fmtMin(r.elapsed_min) : "did not start"}</td></tr>`).join("") + `</table></div>`;
   return `<div class="grp bad-jobs">${head}<div class="grp-body">${table}</div></div>`;
 }
 
@@ -833,14 +851,14 @@ function renderJobs() {
     html += `<div class="jobs-empty">No jobs on the ${esc(a.name)} account right now</div>`;
   } else {
     const order = [...jobs].sort((x, y) => (x.state !== "RUNNING") - (y.state !== "RUNNING") || y.elapsed_min - x.elapsed_min);
-    html += `<table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>State</th>
+    html += `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>State</th>
       <th class="r">Running</th><th class="r">Pending</th><th class="r">Done</th><th class="r">Elapsed</th></tr>` +
       order.map((j) => `<tr><td class="mono">${esc(j.job_id || "")}</td><td>${esc(j.job_name)}</td>
         <td><span class="ukey-item"><span class="udot" style="background:${userColor(j.person)}"></span>${userName(j.person)}</span></td>
         <td>${j.partition.split(",").map((p) => partPill(p)).join("")}</td>
         <td class="${j.state === "RUNNING" ? "state-run" : "state-pend"}">${j.state === "RUNNING" ? "Running" : "Pending"}</td>
         <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td><td class="r">${fmtN(j.tasks.done)}</td>
-        <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`).join("") + `</table>`;
+        <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`).join("") + `</table></div>`;
   }
   html += endedBadlyHtml();
   $("jobs-content").innerHTML = html;
@@ -970,26 +988,56 @@ function setup() {
     s.querySelector(".arrow").textContent = body.classList.contains("closed") ? ">" : "v";
   });
   const grid = $("grid"), tip = $("global-tip");
-  grid.addEventListener("click", (e) => {
-    const b = e.target.closest(".batch");
-    if (b) showDetail(b.dataset.key);
-  });
-  grid.addEventListener("mousemove", (e) => {
-    const b = e.target.closest(".batch");
-    if (!b) { tip.style.display = "none"; return; }
+  let touch = false;
+  document.addEventListener("pointerdown", (e) => {
+    touch = e.pointerType !== "mouse";
+    if (touch && !e.target.closest(".batch")) tip.style.display = "none";
+  }, true);
+  const fillTip = (b) => {
     const info = cellIndex.get(b.dataset.key);
     const cnt = unitCounts(info.unit, specOf(sector(), info.model));
     tip.innerHTML = `${esc(cellTitle(info))}<br>${cnt.proj}/${cnt.projTotal} projection` +
       (cnt.aggTotal ? `<br>${cnt.agg}/${cnt.aggTotal} aggregation` : "") +
       `<br><span class="muted">${esc(STATE_NAMES[cellState(info.unit, cnt)])}</span>`;
     tip.style.display = "block";
-    const r = tip.getBoundingClientRect();
+    return tip.getBoundingClientRect();
+  };
+  const placeTip = (x, y) => { tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`; };
+  let quietUntil = 0;
+  grid.addEventListener("click", async (e) => {
+    const b = e.target.closest(".batch");
+    if (!b) return;
+    const before = b.getBoundingClientRect().top;
+    await showDetail(b.dataset.key);
+    if (!touch) return;
+    // The file list opens above the grid; keep the tapped cell under the finger.
+    const shift = b.getBoundingClientRect().top - before;
+    if (Math.abs(shift) > 1) { quietUntil = Date.now() + 400; scrollBy(0, shift); }
+    const c = b.getBoundingClientRect(), r = fillTip(b);
+    let x = c.left + c.width / 2 - r.width / 2, y = c.bottom + 6;
+    if (x + r.width > innerWidth - 8) x = innerWidth - 8 - r.width;
+    if (y + r.height > innerHeight - 8) y = c.top - r.height - 6;
+    placeTip(x, y);
+  });
+  grid.addEventListener("mousemove", (e) => {
+    if (touch) return;
+    const b = e.target.closest(".batch");
+    if (!b) { tip.style.display = "none"; return; }
+    const r = fillTip(b);
     let x = e.clientX + 12, y = e.clientY + 12;
     if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 12;
     if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 12;
-    tip.style.left = `${x}px`; tip.style.top = `${y}px`;
+    placeTip(x, y);
   });
-  grid.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  grid.addEventListener("mouseleave", () => { if (!touch) tip.style.display = "none"; });
+  const hideTip = () => { if (Date.now() > quietUntil) tip.style.display = "none"; };
+  addEventListener("scroll", hideTip, { passive: true });
+  document.querySelector(".grid-wrap").addEventListener("scroll", hideTip, { passive: true });
+  let fitTimer = null;
+  addEventListener("resize", () => {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(() => { hideTip(); if (view.sector && !document.body.classList.contains("no-model")) fitGrid(); }, 120);
+  });
   $("theme-toggle").onclick = () => {
     const root = document.documentElement;
     const next = getComputedStyle(root).colorScheme.includes("dark") ? "light" : "dark";
