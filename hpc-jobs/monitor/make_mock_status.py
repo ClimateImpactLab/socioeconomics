@@ -54,6 +54,41 @@ MOCK_JOB_NAMES = [
 ]
 
 
+
+
+def mock_su(rng, scale):
+    """SUs for one person on the billing partitions, plus flagged jobs."""
+    parts = {}
+    for p, share in zip(["cil", "amd", "caslake", "amd-hm"], [0.5, 0.3, 0.15, 0.05]):
+        if rng.random() < 0.8 or p == "cil":
+            parts[p] = round(scale * share * rng.uniform(0.4, 1.6), 2)
+    parts = {p: v for p, v in sorted(parts.items(), key=lambda x: -x[1]) if v > 0}
+    flagged = {}
+    if rng.random() < 0.3:
+        flagged["bigmem"] = {"jobs": rng.randint(1, 6), "hours": round(rng.uniform(5, 300), 2),
+                             "reason": "bigmem partition"}
+    if rng.random() < 0.15:
+        flagged["gpu"] = {"jobs": rng.randint(1, 3), "hours": round(rng.uniform(1, 40), 2), "reason": "GPU job"}
+    return round(sum(parts.values()), 2), parts, flagged
+
+
+def mock_su_estimate(counts, stages, sector, rt_name):
+    """Same rules as the collector: reference time and job limit, since the
+    mock has no file dates."""
+    ref = sector.get("reference") or {}
+    limit = ref.get("time_limit_hours")
+    if isinstance(limit, dict):
+        limit = limit.get(rt_name)
+    remaining = counts["total"] - counts["done"] - counts["partial"]
+    if remaining <= 0:
+        return {"remaining": 0, "su_low": 0, "su_high": 0, "basis": "nothing left to run"}
+    low, high, billing = ref["hours_per_unit"], max(limit or 0, ref["hours_per_unit"]), ref.get("billing", 1)
+    return {"remaining": remaining, "hours_low": low, "hours_high": high,
+            "su_low": round(remaining * low * billing), "su_high": round(remaining * high * billing),
+            "source": "reference",
+            "basis": f"{remaining} units left x {low:g} h (reference) to {high:g} h (job limit), {billing:g} SU per hour"}
+
+
 def mock_active_jobs(rng):
     """Zero to three running or queued jobs for one person."""
     jobs = []
@@ -282,6 +317,7 @@ def main():
                 "counts": counts,
                 "eta_hours": eta_hours,
                 "eta_basis": eta_basis,
+                "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type),
                 "units": listed,
             }
             for (model, batch), cells_ in details.items():
@@ -305,7 +341,7 @@ def main():
         people.append({
             "name": person["name"],
             "linked": True,
-            "su_used": round(40_000 * w),
+            **dict(zip(("su_used", "su_by_partition", "su_flagged"), mock_su(rng, 40_000 * w))),
             "active_jobs": mock_active_jobs(rng),
         })
 
@@ -323,14 +359,13 @@ def main():
             "used_su": total_su,
             "balance_su": allocation - total_su,
             "su_since": manifest["account"]["su_since"],
-            "su_partition": manifest["account"]["su_partition"],
             "storage": [
                 {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5},
                 {"label": "cil /cds3", "used": "61.2T", "quota": "125.0T", "used_pct": 49.0},
             ],
         },
         "people": people,
-        "other_users": {"users": 3, "su_used": 18_250,
+        "other_users": {"users": 3, **dict(zip(("su_used", "su_by_partition", "su_flagged"), mock_su(rng, 18_000))),
                         "active_jobs": mock_active_jobs(rng) + mock_active_jobs(rng)},
         "sectors": sectors_out,
     }

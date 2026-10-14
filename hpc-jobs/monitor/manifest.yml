@@ -6,7 +6,13 @@
 account:
   name: cil
   su_since: "2026-10-01"   # start of the current cycle; service units count from here
-  su_partition: cil        # service units count only time on this partition
+  # RCC formula for non GPU jobs: SUs = ElapsedRaw / 3600 x billing, with
+  # billing read from each job's AllocTRES. It applies on these partitions.
+  # cil is the account's own partition; it is counted with the same formula
+  # until RCC says otherwise.
+  su_billing_partitions: [amd, caslake, amd-hm, cil]
+  # bigmem and GPU jobs (and any partition not listed above) use other
+  # formulas: they are listed as flagged, with their hours, not counted.
 
 # People shown in the cluster strip (jobs and service units). The username
 # links a display name to a cluster user; it is never published.
@@ -155,6 +161,13 @@ sectors:
     models: [main]
     stages: [generate, aggregate]
     run_types: [quick_test, single, median, montecarlo]
+    # Reference for the SU estimate when no unit has finished yet. 20.5 h per
+    # unit from earlier production runs; the cil2 single runs logged 23.1 h
+    # (median of 8 tasks). Job limit from the cil2 generate sbatch (caslake, 45G).
+    reference:
+      hours_per_unit: 20.5
+      billing: 1
+      time_limit_hours: 36
     output_root: /project/cil/gcp/outputs_newsocioeconomics/mortality
 
   agriculture:
@@ -163,6 +176,12 @@ sectors:
     derived_models: [wheat_combined]
     stages: [generate, aggregate, costs, post]
     run_types: [quick_test, single, median, montecarlo]
+    # Reference: cil2 single runs logged 2.1 h per unit (median of 56 tasks,
+    # longest 6.2 h). Job limit from the cil2 generate sbatch (caslake, 50G).
+    reference:
+      hours_per_unit: 2.1
+      billing: 1
+      time_limit_hours: 12
     output_root: /project/cil/gcp/outputs_newsocioeconomics/agriculture
 
   energy:
@@ -171,6 +190,13 @@ sectors:
     stages: [generate, aggregate]
     run_types: [quick_test, single, median]
     disabled_run_types: [montecarlo]   # shown as a greyed-out tab, not tracked
+    # Reference: about 6.5 h per unit on 1 CPU from earlier production runs;
+    # the cil2 single runs logged 3.5 h (median of 16 tasks). Job limits from
+    # hpc-jobs/energy/jobs (partition cil, 50G).
+    reference:
+      hours_per_unit: 6.5
+      billing: 1
+      time_limit_hours: {quick_test: 12, single: 12, median: 36}
     output_root: /project/cil/gcp/outputs_newsocioeconomics/energy
 
   labor:
@@ -178,6 +204,13 @@ sectors:
     models: [main]
     stages: [generate, aggregate]
     run_types: [quick_test, single, median, montecarlo]
+    # Reference: cil2 single runs logged 1.4 h per unit (median of 8 tasks).
+    # Job limit from the earlier labor sbatch: account cil, partition caslake,
+    # 1 task, 64G, 36 h, array 0-47.
+    reference:
+      hours_per_unit: 1.4
+      billing: 1
+      time_limit_hours: 36
     output_root: /project/cil/gcp/outputs_newsocioeconomics/labor
 
 # Expected output files per unit of work, taken from the official

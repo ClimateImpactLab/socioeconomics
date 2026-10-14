@@ -13,7 +13,8 @@ const AGG_GROUPS = ["costs", "levels", "aggregated"];
 const SQ_CLASS = { projection: "base", costs: "cost", levels: "lvl", aggregated: "agr" };
 const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr" };
 const PART_COLORS = { cil: "#2d9e8f", amd: "#7c5cbf", caslake: "#4a8bc2", "amd-hm": "#e8913a" };
-const PERSON_COLORS = ["#378ADD", "#7F77DD", "#D85A30", "#1D9E75", "#C74D8F", "#8A9E1D", "#DD9F37", "#5A7FD8"];
+// Partition looks inside the core-hour bars, in order of total use.
+const SU_STYLES = 5;
 
 const params = new URLSearchParams(location.search);
 const BASE = params.get("source") === "mock" ? "mock/" : "data/";
@@ -200,7 +201,10 @@ function selector(el, items, active, onPick) {
 function renderTabs() {
   selector($("sector-tabs"), Object.entries(DATA.sectors).map(([k, s]) => {
     const f = sectorFiles(s);
-    return { key: k, label: s.label, count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) };
+    const est = sectorSuEstimate(s);
+    return { key: k, label: s.label,
+      count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) +
+        (est ? `, ${suRange(est.low, est.high)} to finish` : "") };
   }), view.sector, (k) => {
     view.sector = k;
     view.runType = defaultRunType(sector());
@@ -240,6 +244,33 @@ function renderTabs() {
 
 function pctOf(a, b) { return b ? (100 * a) / b : 0; }
 
+function fmtSU(n) {
+  if (n == null) return "n/a";
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e4) return `${Math.round(n / 1e3)}k`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  return fmtN(n);
+}
+
+function suRange(low, high) {
+  if (low == null) return "n/a";
+  if (!high) return "0 SU";
+  return low === high ? `${fmtSU(low)} SU` : `${fmtSU(low)} to ${fmtSU(high)} SU`;
+}
+
+// Lower and upper SUs to finish a sector, summed over its run types.
+function sectorSuEstimate(sec) {
+  let low = 0, high = 0, known = false;
+  for (const rt of Object.values(sec.run_types)) {
+    const e = rt.su_estimate;
+    if (!e || e.su_low == null) continue;
+    known = true;
+    low += e.su_low;
+    high += e.su_high;
+  }
+  return known ? { low, high } : null;
+}
+
 function card(label, val, sub, bar) {
   return `<div class="card"><div class="card-label">${label}</div><div class="card-val">${val}</div>` +
     (bar || "") + (sub ? `<div class="card-sub">${sub}</div>` : "") + `</div>`;
@@ -261,7 +292,14 @@ function renderCards() {
     card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card("Aggregation", fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
     card("Writing", fmtN(rt.counts.running), rt.counts.failed ? `${fmtN(rt.counts.failed)} stopped` : "units being written") +
-    card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : (total && f.complete === total ? "All complete" : ""));
+    card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : (total && f.complete === total ? "All complete" : "")) +
+    suCard(rt.su_estimate);
+}
+
+function suCard(e) {
+  if (!e) return card("SUs to finish", "n/a", "");
+  const sub = e.basis ? `<span title="${esc(e.basis)}">${esc(e.basis)}</span>` : "";
+  return card("SUs to finish", suRange(e.su_low, e.su_high), sub);
 }
 
 function renderSspTabs() {
@@ -521,8 +559,70 @@ function renderResources() {
 
   $("resources-content").innerHTML =
     `<div class="res-sec"><div class="res-title">Storage</div>${storage}</div>` +
-    `<div class="res-sec"><div class="res-title">Service units</div>${su}</div>` +
+    `<div class="res-sec"><div class="res-title">Service units</div>${su}${serviceUnitsHtml()}</div>` +
     `<div class="res-foot">${new Date(DATA.generated_at).toLocaleString()}</div>`;
+}
+
+// Service units per person on the account since the start date, every
+// partition, one bar per person split by partition. Jobs whose formula is
+// not the billing one (bigmem, GPU) are listed apart, not counted.
+function serviceUnitsHtml() {
+  const a = DATA.account;
+  const o = DATA.other_users || {};
+  const rows = DATA.people.map((p) => ({ name: p.name, linked: p.linked, total: p.su_used,
+    parts: p.su_by_partition, flagged: p.su_flagged }));
+  rows.push({ name: o.users ? `Other users (${o.users})` : "Other users", linked: true,
+    total: o.su_used, parts: o.su_by_partition, flagged: o.su_flagged });
+  const head = `<div class="res-title" style="margin-top:8px">Service units since ${esc(fmtDate(a.su_since))}, all partitions</div>`;
+  if (rows.every((r) => r.total == null)) return head + `<div class="res-note muted">Not read in this scan</div>`;
+
+  const totals = {};
+  for (const r of rows) for (const [p, v] of Object.entries(r.parts || {})) totals[p] = (totals[p] || 0) + v;
+  const order = Object.keys(totals).sort((x, y) => totals[y] - totals[x]);
+  const styleOf = (p) => `su-p${Math.min(order.indexOf(p), SU_STYLES - 1)}`;
+  const max = Math.max(1, ...rows.map((r) => r.total || 0));
+
+  let html = head;
+  for (const r of rows) {
+    let bar = "", value;
+    if (!r.linked) value = `<span class="res-note muted">no cluster user set</span>`;
+    else if (r.total == null) value = `<span class="res-note muted">n/a</span>`;
+    else {
+      value = `<span class="su-total">${fmtN(r.total)} SU</span>`;
+      for (const p of order) {
+        const v = (r.parts || {})[p];
+        if (!v) continue;
+        bar += `<span class="su-seg ${styleOf(p)}" style="width:${((100 * v) / max).toFixed(2)}%"
+          title="${esc(r.name)}, ${esc(p)}: ${v.toLocaleString("en-US", { maximumFractionDigits: 2 })} SU"></span>`;
+      }
+    }
+    html += `<div class="res-row su-row"><span class="res-label">${esc(r.name)}</span>` +
+      `<span class="su-track">${bar}</span>${value}</div>`;
+  }
+  if (order.length) {
+    html += `<div class="su-key">` + order.map((p) =>
+      `<span class="su-key-item"><span class="su-swatch ${styleOf(p)}"></span>${esc(p)} <span class="muted">${fmtN(totals[p])} SU</span></span>`).join("") +
+      `</div>`;
+  }
+
+  const flagged = {};
+  for (const r of rows) {
+    for (const [p, f] of Object.entries(r.flagged || {})) {
+      const g = flagged[p] || (flagged[p] = { jobs: 0, hours: 0, reason: f.reason, people: [] });
+      g.jobs += f.jobs;
+      g.hours += f.hours;
+      g.people.push(r.name);
+    }
+  }
+  const fp = Object.keys(flagged);
+  if (fp.length) {
+    html += `<div class="su-flag">Not counted, other formula: ` + fp.map((p) => {
+      const g = flagged[p];
+      return `<span title="${esc(g.people.join(", "))}">${esc(p)} (${esc(g.reason)}): ${g.jobs} ${g.jobs === 1 ? "job" : "jobs"}, ${fmtN(g.hours)} h</span>`;
+    }).join("; ") + `</div>`;
+  }
+  html += `<div class="su-flag">SUs = elapsed hours x billing, read from each job's AllocTRES.</div>`;
+  return html;
 }
 
 /* ---------- SLURM jobs ---------- */
@@ -571,22 +671,7 @@ function renderJobs() {
     }).join(" | ") + `</div>`;
   }
 
-  // One bar splitting core hours by person.
   const a = DATA.account;
-  const withSu = groups.filter((g) => g.su != null && g.su > 0);
-  const totalSu = withSu.reduce((n, g) => n + g.su, 0);
-  if (withSu.length) {
-    html += `<div class="treemap-wrap"><div class="treemap-label">Core hours on the ${esc(a.su_partition)} partition since
-      ${esc(fmtDate(a.su_since))}: <b>${fmtN(totalSu)} h</b> total</div><div class="treemap">` +
-      withSu.map((g, i) => {
-        const c = g.other ? "#99998f" : PERSON_COLORS[i % PERSON_COLORS.length];
-        const p = Math.max((100 * g.su) / totalSu, 1);
-        return `<div class="treemap-cell" style="flex-basis:${p.toFixed(1)}%;background:${c}22;color:${c}"
-          title="${esc(g.name)}: ${fmtN(g.su)} h">${esc(g.name)}<span>${fmtN(g.su)} h</span></div>`;
-      }).join("") + `</div></div>`;
-  } else if (groups.some((g) => g.su != null)) {
-    html += `<div class="jobs-line"><span class="lbl">No core hours on the ${esc(a.su_partition)} partition since ${esc(fmtDate(a.su_since))}</span></div>`;
-  }
 
   // Groups by job name, with one row per person.
   const byName = {};
@@ -618,112 +703,73 @@ function renderJobs() {
 
 /* ---------- camel ---------- */
 
-// Two-humped camel, facing left, in a 175 by 160 box.
-const CAMEL_PATH = "M 12 24 C 12 18 18 13 26 12 C 30 11 33 11 35 12 L 38 6 L 41 13 " +
-  "C 46 20 50 38 54 54 C 56 59 59 62 62 62 C 66 44 74 32 82 32 C 90 32 95 44 99 52 " +
-  "C 104 42 112 33 120 33 C 130 33 138 46 144 58 C 150 62 154 68 154 76 L 160 86 L 162 100 " +
-  "L 158 100 L 154 88 C 153 90 152 92 151 94 L 153 152 L 147 152 L 144 104 L 141 104 " +
-  "L 141 152 L 135 152 L 134 96 C 118 99 96 99 78 96 L 78 152 L 72 152 L 70 104 L 67 104 " +
-  "L 64 152 L 58 152 L 57 92 C 54 86 52 80 50 74 C 46 60 40 42 34 32 C 30 30 24 30 18 30 " +
-  "C 14 30 12 28 12 24 Z";
-
-// One body part per sector, as in the original design.
+// The camel has 100 pieces per sector (camel/camel.svg), filled from the
+// bottom up. A sector fills with its share of projection files, pulses
+// while projections run, turns solid when they are all there, and gets a
+// fine texture when aggregation is complete too.
 const CAMEL_SECTIONS = [
-  { key: "mortality", label: "Mortality", part: "front legs", poly: "62,64 84,64 84,160 0,160 0,94 56,94" },
-  { key: "coastal", label: "Coastal", part: "humps", poly: "62,0 200,0 200,64 62,64" },
-  { key: "agriculture", label: "Agriculture", part: "back legs", poly: "130,64 200,64 200,160 130,160" },
-  { key: "energy", label: "Energy", part: "neck and head", poly: "0,0 62,0 62,64 56,94 0,94" },
-  { key: "labor", label: "Labor", part: "body", poly: "84,64 130,64 130,160 84,160" },
+  { key: "mortality", label: "Mortality", part: "shoulder and front legs" },
+  { key: "coastal", label: "Coastal", part: "back and humps" },
+  { key: "agriculture", label: "Agriculture", part: "hindquarters, back legs and tail" },
+  { key: "energy", label: "Energy", part: "head and neck" },
+  { key: "labor", label: "Labor", part: "belly" },
 ];
-const CAMEL_VIEW = "8 2 158 154";
+let camelSvg = null;
 
-// Area below each height per region, so p percent fills p percent of the area.
-let camelAreas = null;
-function regionAreas() {
-  if (camelAreas) return camelAreas;
-  const ctx = document.createElement("canvas").getContext("2d");
-  const sil = new Path2D(CAMEL_PATH);
-  camelAreas = {};
-  for (const sec of CAMEL_SECTIONS) {
-    const poly = new Path2D();
-    sec.poly.split(" ").map((p) => p.split(",").map(Number))
-      .forEach(([x, y], i) => (i ? poly.lineTo(x, y) : poly.moveTo(x, y)));
-    poly.closePath();
-    const rows = [];
-    for (let y = 0; y < 160; y++) {
-      let n = 0;
-      for (let x = 0; x < 200; x++) {
-        if (ctx.isPointInPath(sil, x + 0.5, y + 0.5) && ctx.isPointInPath(poly, x + 0.5, y + 0.5)) n++;
-      }
-      rows.push(n);
-    }
-    camelAreas[sec.key] = rows;
-  }
-  return camelAreas;
-}
-
-function fillLine(key, frac) {
-  const rows = regionAreas()[key];
-  const total = rows.reduce((a, b) => a + b, 0);
-  let acc = 0;
-  for (let y = rows.length - 1; y >= 0; y--) {
-    acc += rows[y];
-    if (acc >= frac * total) return y;
-  }
-  return 0;
-}
-
-function camelDefs(prefix) {
-  return `<clipPath id="${prefix}-sil"><path d="${CAMEL_PATH}"/></clipPath>` +
-    CAMEL_SECTIONS.map((s) => `<clipPath id="${prefix}-${s.key}"><polygon points="${s.poly}"/></clipPath>`).join("") +
-    `<pattern id="${prefix}-tex" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
-    `<line x1="0" y1="0" x2="0" y2="4" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1.3"/></pattern>`;
+async function loadCamel() {
+  try {
+    const r = await fetch("camel/camel.svg");
+    if (!r.ok) return;
+    const doc = new DOMParser().parseFromString(await r.text(), "image/svg+xml");
+    const svg = doc.documentElement;
+    if (svg.localName !== "svg" || doc.querySelector("parsererror")) return;
+    camelSvg = document.importNode(svg, true);
+    camelSvg.removeAttribute("width");
+    camelSvg.removeAttribute("height");
+    camelSvg.dataset.grid = "visible";
+    camelSvg.dataset.motion = "none";
+    // One texture per sector: the sector color with fine light stripes.
+    const ns = "http://www.w3.org/2000/svg";
+    const defs = document.createElementNS(ns, "defs");
+    defs.innerHTML = CAMEL_SECTIONS.map((s) =>
+      `<pattern id="camel-tex-${s.key}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
+      `<rect width="7" height="7" class="tex-bg tex-${s.key}"/><line x1="0" y1="0" x2="0" y2="7" class="tex-line"/></pattern>`).join("");
+    camelSvg.insertBefore(defs, camelSvg.firstChild);
+    $("camel").replaceChildren(camelSvg);
+    renderCamel();
+  } catch (e) { /* the page works without the camel */ }
 }
 
 function renderCamel() {
   const prog = CAMEL_SECTIONS.map((s) => {
     const sec = DATA.sectors[s.key];
-    if (!sec) return { ...s, tracked: false };
+    if (!sec) return { ...s, tracked: false, proj: 0, agg: 0 };
     const f = sectorFiles(sec);
     const proj = pctOf(f.proj, f.projExp), agg = pctOf(f.agg, f.aggExp);
     return { ...s, tracked: true, proj, agg, projDone: proj >= 100, allDone: proj >= 100 && agg >= 100,
       running: sectorRunning(sec) };
   });
-  let body = "";
-  for (const s of prog) {
-    let fill = "", tip;
-    if (!s.tracked) {
-      tip = `${s.label} (${s.part}): not tracked yet`;
-    } else {
-      const frac = Math.min(s.proj, 100) / 100;
-      const y = frac > 0 ? fillLine(s.key, frac) : 160;
-      fill = s.projDone ? `<rect class="fill" x="0" y="0" width="200" height="160"/>` :
-        (frac > 0 ? `<rect class="fill" x="0" y="${y}" width="200" height="${160 - y}"/>` : "");
-      if (s.allDone) fill += `<rect x="0" y="0" width="200" height="160" fill="url(#cm-tex)"/>`;
-      tip = `${s.label} (${s.part}): projection files ${fmtPctShort(s.proj)}, aggregation files ${fmtPctShort(s.agg)}` +
-        (s.running ? ", projections running" : "");
+
+  if (camelSvg) {
+    for (const s of prog) {
+      const n = !s.tracked ? 0 : s.projDone ? 100 : Math.max(s.proj > 0 ? 1 : 0, Math.min(99, Math.round(s.proj)));
+      camelSvg.querySelectorAll(`.cell[data-sector="${s.key}"]`).forEach((c) => {
+        c.dataset.filled = String(Number(c.dataset.index) <= n);
+      });
+      camelSvg.classList.toggle(`pulse-${s.key}`, s.tracked && s.running && !s.projDone);
+      camelSvg.classList.toggle(`solid-${s.key}`, s.tracked && s.projDone);
+      camelSvg.classList.toggle(`tex-${s.key}`, s.tracked && s.allDone);
     }
-    const st = !s.tracked ? "" : s.allDone ? "all-done" : s.projDone ? "proj-done" : s.running ? "pulse" : "";
-    body += `<g clip-path="url(#cm-${s.key})" class="sec sec-${s.key} ${st}"><title>${esc(tip)}</title>` +
-      `<rect class="base" x="0" y="0" width="200" height="160"/>${fill}</g>`;
+    const desc = camelSvg.querySelector("desc");
+    if (desc) desc.textContent = "Two-humped camel. " + prog.map((s) => s.tracked ?
+      `${s.label}: ${fmtPctShort(s.proj)} of projection files` : `${s.label}: not tracked yet`).join("; ") + ".";
   }
-  const dividers = CAMEL_SECTIONS.map((s) => `<polygon class="divider" points="${s.poly}"/>`).join("");
-  $("camel").innerHTML = `<svg viewBox="${CAMEL_VIEW}" xmlns="http://www.w3.org/2000/svg"><defs>${camelDefs("cm")}</defs>` +
-    `<g clip-path="url(#cm-sil)">${body}${dividers}</g></svg>`;
 
   $("camel-key").innerHTML = prog.map((s) => {
     const note = !s.tracked ? "not tracked" : s.allDone ? "all done" : s.projDone ? "projections done" :
       `${fmtPctShort(s.proj)} projection`;
     return `<span class="ckey" title="${esc(s.part)}"><span class="cdot sec-${s.key}"></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
   }).join("");
-
-  const css = getComputedStyle(document.documentElement);
-  const parts = CAMEL_SECTIONS.map((s) => `<g clip-path="url(#fi-${s.key})"><rect width="200" height="160" ` +
-    `fill="${css.getPropertyValue(`--sec-${s.key}`).trim()}"/></g>`).join("");
-  const icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${CAMEL_VIEW}"><defs>${camelDefs("fi")}</defs>` +
-    `<g clip-path="url(#fi-sil)">${parts}<g fill="none" stroke="#ffffff" stroke-width="2.5">` +
-    CAMEL_SECTIONS.map((s) => `<polygon points="${s.poly}"/>`).join("") + `</g></g></svg>`;
-  $("favicon").setAttribute("href", "data:image/svg+xml," + encodeURIComponent(icon));
 }
 
 /* ---------- interactions and boot ---------- */
@@ -801,6 +847,7 @@ async function boot() {
   view.ssp = defaultSsp(runType());
   setup();
   renderCamel();
+  loadCamel();
   renderResources();
   renderJobs();
   renderAll();

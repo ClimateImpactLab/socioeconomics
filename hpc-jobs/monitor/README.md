@@ -5,29 +5,36 @@ AMEL sectors (agriculture, mortality, energy, labor). It shows run status
 only, never projection results. The page follows the design of the old
 mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monitor):
 
-- The camel logo at the top: a lean two-humped camel split into five body
-  parts, one per sector: front legs mortality (red), humps coastal (blue),
-  back legs agriculture (green), neck and head energy (yellow), body labor
-  (grey). Each part fills from the ground up with the sector's share of
-  projection files present and pulses softly while projections are
-  running; it is solid when all projection files are there, and gets a
-  fine striped texture when all aggregation files are there too. Coastal
-  is not tracked yet. The tab icon is the same camel in the five colors.
+- The camel at the top (from camel-progress-kit): a two-humped camel made
+  of 100 pieces per sector: head and neck energy (yellow), shoulder and
+  front legs mortality (red), back and humps coastal (blue), belly labor
+  (grey), hindquarters, back legs and tail agriculture (green). Pieces fill
+  from the bottom up with the sector's share of projection files and pulse
+  softly while projections run; the sector turns solid when all projection
+  files are there, and gets fine light stripes when aggregation is complete
+  too. Coastal is not tracked yet. The tab icon is the kit's color favicon
+  in the same five colors (site/camel/).
 - A row of small cards for the selected sector and run type: expected
   units, complete, partial, not started, projection and aggregation
-  progress, units being written, and an estimated time to finish.
-- Sector and run type tabs (montecarlo by default, median for energy,
-  which has no montecarlo; its montecarlo tab is greyed out), and a
-  sub-model tab for crops and fuels.
+  progress, units being written, time to finish, and SUs to finish.
+- Right above the grid: sector, run type and sub-model tabs (montecarlo by
+  default, median for energy, whose montecarlo tab is greyed out). Each
+  sector tab shows its progress and the SUs needed to finish it, with a
+  one-line explanation underneath.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
   it was written.
 - Resources: storage and service units of the cil account, as thin bars.
-  When the account has no allocation, it says "No allocation yet".
-- SLURM jobs: running and pending counts, partitions, one bar splitting
-  core hours by person (display names; everyone not in the manifest is
-  "Other users"), and the jobs grouped by job name.
+  When the account has no allocation, it says "No allocation yet". Below
+  them, service units since the start date in the manifest, on every
+  partition of the account: one bar per person in the manifest (display
+  names) plus one "Other users" bar for everyone else. Each bar is split by
+  partition with shades and light textures, and a small key gives each
+  partition's name and total. Jobs whose formula is different (bigmem,
+  GPU) are listed under the bars, not counted.
+- SLURM jobs: running and pending counts, partitions, and the jobs grouped
+  by job name.
 - SSP tabs, the legend, and the grid. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
   then a thin line, then the aggregation squares colored by type (costs
@@ -72,6 +79,7 @@ monitor/
     index.html
     style.css
     app.js
+    camel/              camel.svg (100 pieces per sector) and favicon.svg
     data/status.json    the real data the page reads
     data/details/...    file sizes and dates per cell, loaded on click
     mock/               the same files for the mock
@@ -116,8 +124,30 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   changing, and counts as stopped after 6 hours with no file changes.
 - The time to finish comes from how many stage steps finished in the last
   24 hours.
-- Service units are core hours (elapsed time times allocated CPUs) on the
-  cil partition since `account.su_since`, per person, from sacct. The
+- SUs to finish, per sector and run type, for the units whose projections
+  are not done yet:
+  - lower bound: remaining units x the median generate time per unit seen
+    so far; upper bound: remaining units x the longest time seen so far;
+  - a unit's time comes from its projection file dates: the files are
+    written one after another, so the time from the first to the last of
+    n files, times n / (n - 1), covers the whole run;
+  - when nothing has finished yet, the lower bound uses the reference time
+    per unit and the upper bound the job time limit, both set per sector in
+    the manifest (`reference:`), with their sources written next to them:
+    mortality 20.5 h, energy 6.5 h, labor 1.4 h, agriculture 2.1 h, from
+    earlier production runs and the cil2 single run logs;
+  - SUs = hours x billing (1 for these jobs). Aggregation is not included;
+    it is much shorter than generate.
+- Service units follow the RCC formula for non GPU jobs:
+  SUs = ElapsedRaw / 3600 x billing, with billing read from each job's
+  AllocTRES (not assumed equal to the CPUs). For example, a job on amd with
+  billing=1, cpu=1, mem=45G that ran 36 h 25 s used 36.01 SUs. The sum
+  covers every job on the cil account since `account.su_since`, per
+  person and partition. The formula is applied on the partitions in
+  `account.su_billing_partitions` (amd, caslake, amd-hm, and cil, which is
+  counted the same way until RCC says otherwise). GPU jobs, bigmem, other
+  partitions and jobs without a billing value are flagged with their
+  elapsed hours instead of counted. The
   allocation and balance come from `rcchelp balance -a cil`, and storage
   from `rcchelp quota` (group filesets of the cil account).
 
@@ -136,17 +166,19 @@ The contract between the collector and the page; the mock follows it.
     "allocation_status": "none",     // "ok", "none" (no allocation yet) or "unknown"
     "allocation_su": null, "used_su": null, "balance_su": null,
     "su_since": "2026-10-01",        // start of the cycle for core hours per person
-    "su_partition": "cil",           // core hours count only this partition
     "storage": [                     // null when rcchelp could not be read
       {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5}
     ]
   },
   "people": [                        // only people in the manifest, by display name
-    {"name": "Sebastian", "linked": true, "su_used": 219,
+    {"name": "Sebastian", "linked": true,
+     "su_used": 219.4,               // SUs since su_since, all partitions
+     "su_by_partition": {"amd": 150.2, "cil": 69.2},   // largest first
+     "su_flagged": {"bigmem": {"jobs": 2, "hours": 30.5, "reason": "bigmem partition"}},
      "active_jobs": [{"job_name": "energy-median", "partition": "amd", "state": "RUNNING",
                       "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0}]}
   ],
-  "other_users": {"users": 2, "su_used": 1850, "active_jobs": []},
+  "other_users": {"users": 2, "su_used": 1850, "su_by_partition": {"amd": 1850}, "su_flagged": {}, "active_jobs": []},
   "sectors": {
     "mortality": {
       "label": "Mortality",
@@ -161,6 +193,9 @@ The contract between the collector and the page; the mock follows it.
           "subdir": "median",
           "counts": {"not_started": 0, "running": 0, "partial": 0, "done": 0, "failed": 0, "total": 520},
           "eta_hours": null, "eta_basis": null,
+          "su_estimate": {"remaining": 520, "hours_low": 20.5, "hours_high": 36, "su_low": 10660,
+                          "su_high": 18720, "source": "reference",   // or "observed"
+                          "basis": "520 units left x 20.5 h (reference) to 36 h (job limit), 1 SU per hour"},
           "units": [                 // only units with something on disk
             {"model": "main", "ssp": "SSP3", "rcp": "rcp45", "iam": "low", "gcm": "CCSM4", "batch": null,
              "state": "partial",     // not_started|running|partial|done|failed, from the folder

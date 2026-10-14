@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>AMEL run status</title>
-<link rel="icon" id="favicon" type="image/svg+xml" href="">
+<link rel="icon" type="image/svg+xml" href="camel/favicon.svg">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -27,17 +27,6 @@
 
 <div class="cards" id="cards"></div>
 
-<div class="top-bar">
-  <div id="sector-tabs" class="run-selector"></div>
-  <div class="top-bar-sep"></div>
-  <div id="runtype-tabs" class="run-selector"></div>
-  <div class="top-bar-sep hidden" id="model-sep"></div>
-  <div id="model-tabs" class="run-selector"></div>
-</div>
-
-<div class="info-bar" id="info-bar">Click any cell to see its files</div>
-<div id="file-detail"></div>
-
 <section class="panel open" id="resources-panel">
   <button class="panel-header" data-panel="resources-panel">
     <span class="left"><span class="panel-title">Resources</span></span>
@@ -57,9 +46,23 @@
 </section>
 
 <div class="top-bar">
+  <div id="sector-tabs" class="run-selector"></div>
+  <div class="top-bar-sep"></div>
+  <div id="runtype-tabs" class="run-selector"></div>
+  <div class="top-bar-sep hidden" id="model-sep"></div>
+  <div id="model-tabs" class="run-selector"></div>
+</div>
+<div class="tab-note">SUs to finish: the units whose projections are not done, times the median time per
+  finished unit (lower) or the longest one (upper); with nothing finished yet, the reference time
+  and the job time limit from the manifest. SUs = hours x billing.</div>
+
+<div class="top-bar">
   <div id="ssp-tabs" class="run-selector"></div>
   <div class="legend" id="legend"></div>
 </div>
+
+<div class="info-bar" id="info-bar">Click any cell to see its files</div>
+<div id="file-detail"></div>
 
 <div class="grid-wrap"><table class="grid-table" id="grid"></table></div>
 
