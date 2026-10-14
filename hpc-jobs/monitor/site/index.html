@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>AMEL run status</title>
+<title>CIL | Projections, new socioeconomics</title>
 <link rel="icon" type="image/svg+xml" href="camel/favicon.svg">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -13,11 +13,12 @@
 <header class="head">
   <div id="camel" class="camel" role="img" aria-label="Progress by sector"></div>
   <div class="head-text">
-    <h1>AMEL run status</h1>
+    <h1>CIL | Projections, new socioeconomics</h1>
     <div class="subtitle" id="subtitle">Loading...</div>
     <div id="camel-key" class="camel-key"></div>
   </div>
   <div class="head-right">
+    <img class="cil-logo" src="cil-logo.svg" alt="Climate Impact Lab">
     <span id="mock-badge" class="badge hidden">mock data</span>
     <button id="theme-toggle" class="icon-btn" title="Switch light and dark">&#9681;</button>
   </div>
@@ -25,9 +26,7 @@
 
 <div id="stale-banner" class="stale hidden"></div>
 
-<div class="cards" id="cards"></div>
-
-<section class="panel open" id="resources-panel">
+<section class="panel" id="resources-panel">
   <button class="panel-header" data-panel="resources-panel">
     <span class="left"><span class="panel-title">Resources</span></span>
     <span class="panel-arrow">&gt;</span>
@@ -35,7 +34,7 @@
   <div class="panel-body" id="resources-content"></div>
 </section>
 
-<section class="panel open" id="jobs-panel">
+<section class="panel" id="jobs-panel">
   <button class="panel-header" data-panel="jobs-panel">
     <span class="left"><span class="panel-title">SLURM jobs</span>
       <span class="panel-badge badge-run" id="badge-run">0 running</span>
@@ -45,6 +44,8 @@
   <div class="panel-body" id="jobs-content"></div>
 </section>
 
+<div class="cards" id="cards"></div>
+
 <div class="top-bar">
   <div id="sector-tabs" class="run-selector"></div>
   <div class="top-bar-sep"></div>
@@ -52,9 +53,9 @@
   <div class="top-bar-sep hidden" id="model-sep"></div>
   <div id="model-tabs" class="run-selector"></div>
 </div>
-<div class="tab-note">SUs to finish: the units whose projections are not done, times the median time per
-  finished unit (lower) or the longest one (upper); with nothing finished yet, the reference time
-  and the job time limit from the manifest. SUs = hours x billing.</div>
+<div class="pick-note" id="pick-note">Pick a sector to see its grid.</div>
+<div class="tab-note">SUs to finish: units left &times; median (low) to longest (high) time per unit;
+  reference times until 10 units finish.</div>
 
 <div class="top-bar">
   <div id="ssp-tabs" class="run-selector"></div>

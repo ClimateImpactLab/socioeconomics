@@ -8,29 +8,15 @@ account:
   su_since: "2026-10-01"   # start of the current cycle; service units count from here
   # RCC formula for non GPU jobs: SUs = ElapsedRaw / 3600 x billing, with
   # billing read from each job's AllocTRES. It applies on these partitions.
-  # cil is the account's own partition; it is counted with the same formula
-  # until RCC says otherwise.
-  su_billing_partitions: [amd, caslake, amd-hm, cil]
+  su_billing_partitions: [amd, caslake, amd-hm]
+  # The group's own nodes: no SUs, shown as core hours only.
+  su_free_partitions: [cil]
   # bigmem and GPU jobs (and any partition not listed above) use other
   # formulas: they are listed as flagged, with their hours, not counted.
-
-# People shown in the cluster strip (jobs and service units). The username
-# links a display name to a cluster user; it is never published.
-people:
-  - name: Sebastian
-    username: cadavidsanchez
-  - name: Diana
-    username: null
-  - name: Marine
-    username: null
-  - name: Maiqi
-    username: null
-  - name: Adwait
-    username: null
-  - name: Sila
-    username: null
-  - name: Sarah
-    username: null
+  # Cluster users always listed in Resources, even with no jobs yet.
+  always_show_users: [silacetiner, dtadeo]
+  # Shown in black instead of a palette color.
+  highlight_user: cadavidsanchez
 
 # Scenario space. valid_pairs lists the SSP-RCP combinations the projection
 # engine accepts (it drops SSP1 with rcp85, and SSP5 with anything but rcp85).
@@ -166,20 +152,23 @@ sectors:
     # (median of 8 tasks). Job limit from the cil2 generate sbatch (caslake, 45G).
     reference:
       hours_per_unit: 20.5
+      hours_per_unit_max: 23.7   # longest of the 8 cil2 single tasks
       billing: 1
       time_limit_hours: 36
     output_root: /project/cil/gcp/outputs_newsocioeconomics/mortality
 
   agriculture:
     label: Agriculture
-    models: [cassava, corn, rice, sorghum, soy, wheat_spring, wheat_winter]
-    derived_models: [wheat_combined]
+    # wheat_combined is built from spring and winter wheat by the post stage;
+    # only it is aggregated, so spring and winter have no aggregated files.
+    models: [cassava, corn, rice, sorghum, soy, wheat_spring, wheat_winter, wheat_combined]
     stages: [generate, aggregate, costs, post]
     run_types: [quick_test, single, median, montecarlo]
-    # Reference: cil2 single runs logged 2.1 h per unit (median of 56 tasks,
-    # longest 6.2 h). Job limit from the cil2 generate sbatch (caslake, 50G).
+    # No reference time yet for the new runs, so the SU estimate shows
+    # "not known yet". (The cil2 test runs logged 2.1 h per unit, longest
+    # 6.2 h.) Job limit from the cil2 generate sbatch (caslake, 50G).
     reference:
-      hours_per_unit: 2.1
+      hours_per_unit: null
       billing: 1
       time_limit_hours: 12
     output_root: /project/cil/gcp/outputs_newsocioeconomics/agriculture
@@ -209,6 +198,7 @@ sectors:
     # 1 task, 64G, 36 h, array 0-47.
     reference:
       hours_per_unit: 1.4
+      hours_per_unit_max: 1.42   # longest of the 8 cil2 single tasks
       billing: 1
       time_limit_hours: 36
     output_root: /project/cil/gcp/outputs_newsocioeconomics/labor
@@ -282,7 +272,8 @@ files:
         - "Agespec_interaction_response-young-incadapt-aggregated.nc4"
         - "Agespec_interaction_response-young-noadapt-aggregated.nc4"
   # agriculture/impacts-mealy/montecarlo/<crop>-2025 and <crop>-2025_1pct_winsorization:
-  # 4 projection, 12 aggregation (4 costs, 8 aggregated).
+  # 4 projection, 12 aggregation (4 costs, 8 aggregated); spring and winter wheat
+  # only 2 costs and no aggregated (they are combined into wheat_combined).
   agriculture:
     cassava:
       projection:
@@ -397,19 +388,9 @@ files:
         - "wheat_spring-280823-noadapt.nc4"
       costs:
         - "adaptation_costs.nc4"
-        - "adaptation_costs-aggregated.nc4"
         - "winsorized/wheat_spring-280823-fulladaptcosts.nc4"
-        - "winsorized/wheat_spring-280823-fulladaptcosts-aggregated.nc4"
       levels: []
-      aggregated:
-        - "wheat_spring-280823-aggregated.nc4"
-        - "wheat_spring-280823-histclim-aggregated.nc4"
-        - "wheat_spring-280823-incadapt-aggregated.nc4"
-        - "wheat_spring-280823-noadapt-aggregated.nc4"
-        - "winsorized/wheat_spring-280823-aggregated.nc4"
-        - "winsorized/wheat_spring-280823-histclim-aggregated.nc4"
-        - "winsorized/wheat_spring-280823-incadapt-aggregated.nc4"
-        - "winsorized/wheat_spring-280823-noadapt-aggregated.nc4"
+      aggregated: []
     wheat_winter:
       projection:
         - "wheat_winter-280823.nc4"
@@ -418,19 +399,30 @@ files:
         - "wheat_winter-280823-noadapt.nc4"
       costs:
         - "adaptation_costs.nc4"
-        - "adaptation_costs-aggregated.nc4"
         - "winsorized/wheat_winter-280823-fulladaptcosts.nc4"
-        - "winsorized/wheat_winter-280823-fulladaptcosts-aggregated.nc4"
+      levels: []
+      aggregated: []
+    wheat_combined:
+      projection:
+        - "wheat_combined-280823.nc4"
+        - "wheat_combined-280823-histclim.nc4"
+        - "wheat_combined-280823-incadapt.nc4"
+        - "wheat_combined-280823-noadapt.nc4"
+      costs:
+        - "adaptation_costs.nc4"
+        - "adaptation_costs-aggregated.nc4"
+        - "winsorized/wheat_combined-280823-fulladaptcosts.nc4"
+        - "winsorized/wheat_combined-280823-fulladaptcosts-aggregated.nc4"
       levels: []
       aggregated:
-        - "wheat_winter-280823-aggregated.nc4"
-        - "wheat_winter-280823-histclim-aggregated.nc4"
-        - "wheat_winter-280823-incadapt-aggregated.nc4"
-        - "wheat_winter-280823-noadapt-aggregated.nc4"
-        - "winsorized/wheat_winter-280823-aggregated.nc4"
-        - "winsorized/wheat_winter-280823-histclim-aggregated.nc4"
-        - "winsorized/wheat_winter-280823-incadapt-aggregated.nc4"
-        - "winsorized/wheat_winter-280823-noadapt-aggregated.nc4"
+        - "wheat_combined-280823-aggregated.nc4"
+        - "wheat_combined-280823-histclim-aggregated.nc4"
+        - "wheat_combined-280823-incadapt-aggregated.nc4"
+        - "wheat_combined-280823-noadapt-aggregated.nc4"
+        - "winsorized/wheat_combined-280823-aggregated.nc4"
+        - "winsorized/wheat_combined-280823-histclim-aggregated.nc4"
+        - "winsorized/wheat_combined-280823-incadapt-aggregated.nc4"
+        - "winsorized/wheat_combined-280823-noadapt-aggregated.nc4"
   # energy_pixel_interaction/impacts-blueghost/median: 4 projection,
   # 4 aggregation (2 levels, 2 aggregated) at the price014 price scenario.
   energy:

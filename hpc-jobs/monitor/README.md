@@ -1,4 +1,4 @@
-# AMEL run-status monitor
+# CIL | Projections, new socioeconomics: run-status monitor
 
 A status dashboard for the new socioeconomics projection runs of the four
 AMEL sectors (agriculture, mortality, energy, labor). It shows run status
@@ -12,30 +12,53 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   from the bottom up with the sector's share of projection files and pulse
   softly while projections run; the sector turns solid when all projection
   files are there, and gets fine light stripes when aggregation is complete
-  too. Coastal is not tracked yet. The tab icon is the kit's color favicon
-  in the same five colors (site/camel/).
-- A row of small cards for the selected sector and run type: expected
-  units, complete, partial, not started, projection and aggregation
-  progress, units being written, time to finish, and SUs to finish.
+  too. Coastal is not tracked yet. The kit's walking animation is paused
+  for now (`CAMEL_WALK` in app.js); when on, the camel walks only while
+  projection files are being written in the output folders, the same
+  signal as the grid's "writing" state.
+- The CIL logo at the top right (site/cil-logo.svg), inverted and
+  desaturated in dark mode, following the same light and dark switch. The tab icon is
+  the kit's color favicon in the same five colors (site/camel/).
 - Right above the grid: sector, run type and sub-model tabs (montecarlo by
   default, median for energy, whose montecarlo tab is greyed out). Each
-  sector tab shows its progress and the SUs needed to finish it, with a
-  one-line explanation underneath.
+  sector tab has its camel color, the selected one filled with it, and
+  shows its progress and the SUs needed to finish it ("not known yet" for
+  agriculture), with a one-line explanation underneath.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
   it was written.
-- Resources: storage and service units of the cil account, as thin bars.
-  When the account has no allocation, it says "No allocation yet". Below
-  them, service units since the start date in the manifest, on every
-  partition of the account: one bar per person in the manifest (display
-  names) plus one "Other users" bar for everyone else. Each bar is split by
-  partition with shades and light textures, and a small key gives each
-  partition's name and total. Jobs whose formula is different (bigmem,
-  GPU) are listed under the bars, not counted.
-- SLURM jobs: running and pending counts, partitions, and the jobs grouped
-  by job name.
-- SSP tabs, the legend, and the grid. Each cell has one small square per
+- Resources: storage of the cil account as thin bars, then service units
+  in two clearly separate parts:
+  - Official (RCC): what RCC charges, from `rcchelp balance`, used out of
+    allocation. Today that is no allocation and nothing charged; when RCC
+    starts charging, this figure will show it.
+  - Estimated since the start date in the manifest, labeled "not charged
+    by RCC yet": one bar for the account, one colored segment per cluster
+    user, and inside each user's segment one textured part per partition
+    (amd stripes, caslake dots, amd-hm solid). A key gives each user's
+    SUs, core hours and share, and a texture key the totals per partition.
+    It counts only the scarce partitions (amd, caslake, amd-hm); the cil
+    partition is the group's own nodes and is not shown at all. Users in
+    `account.always_show_users` are always listed, and
+    `account.highlight_user` shows in black.
+  A small "i" button next to the bar opens the notes: what the estimate
+  counts, how SUs are computed per job (with the sacct command to check
+  one), jobs left out because their formula is different (bigmem, GPU),
+  and stale accounting records.
+- Resources and SLURM jobs start collapsed.
+- SLURM jobs: running and pending counts, partitions, users, and a table
+  of every running or queued job: job id, name, user, partition, state,
+  running, pending and done tasks, and elapsed time.
+- A row of small cards for the selected sector and run type, right above
+  the tabs and the grid: expected units, complete, partial, not started,
+  projection and aggregation progress, units being written, time to
+  finish, and SUs to finish.
+- SSP tabs, the legend, and the grid. Each SSP tab and each scenario
+  column shows units with all projection files and with all aggregation
+  files apart, for example "P 120/480, A 0/480". Energy shows every SSP at
+  once, with all its SSP tabs selected; the other sectors show one SSP at a
+  time. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
   then a thin line, then the aggregation squares colored by type (costs
   orange, levels purple, aggregated blue). The border gives the state:
@@ -44,6 +67,13 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 
 The grid comes only from the output folders. Slurm and rcchelp are used
 only for Resources and SLURM jobs.
+
+Colors and textures: each sector, state and user has one color, and each
+partition one texture, used the same way everywhere on the page (badges,
+bars, keys, tables). States are set once in style.css (`--st-*`) and
+partition textures as `.ptex-*`; users get colors from a palette that
+avoids the state hues. Sector tabs follow the AMEL order: Agriculture,
+Mortality, Energy, Labor. Coastal shows "not tracked (yet)".
 
 ## Expected files per unit
 
@@ -55,13 +85,21 @@ in the `files:` section of `manifest.yml`.
 | Sector | Production folder used | Projection | Aggregation |
 |---|---|---|---|
 | Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 36: 4 costs (`<age>-costs`), 16 levels, 16 aggregated |
-| Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder) |
+| Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder). Spring and winter wheat are not aggregated themselves: 2 costs (`adaptation_costs` and the winsorized `fulladaptcosts`), no aggregated. They are combined into `wheat_combined`, tracked as its own sub-model with the full 12. |
 | Energy | `energy_pixel_interaction/impacts-blueghost/median` | 4: the four variants per fuel | 4: levels and aggregated at the price014 price scenario, for full adaptation and histclim |
 | Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 5: full adaptation, histclim, incadapt, noadapt, histclim-noadapt | 30: 15 levels and 15 aggregated (each variant weighted by gdp, pop and wage) |
 
+Aggregation types per sector: mortality has costs, levels and aggregated;
+agriculture costs and aggregated (no levels); energy levels and aggregated
+(no costs); labor levels and aggregated, weighted by gdp, pop and wage (no
+costs). The legend, the cell squares, the counts and the detail panel show
+only the types a sector has. Each list was checked against several finished
+production leaves: every expected file is there, for every type.
+
 Not counted: mortality's polymins .csv files, its `-costs-levels` and
 `-costs-aggregated` files (the old monitor did not count them either),
-and the winsorized copies of the agriculture projection files.
+the winsorized copies of the agriculture projection and adaptation_costs
+files, and energy's `-global` files, which belong only to the global run.
 
 Agriculture crop ids: cassava 110221; corn, rice, sorghum, soy 160221;
 wheat 280823. If the new aggregation configs use another price scenario
@@ -72,7 +110,7 @@ in the manifest need to change.
 
 ```
 monitor/
-  manifest.yml          what the dashboard tracks (sectors, scenarios, GCMs, files, people)
+  manifest.yml          what the dashboard tracks (sectors, scenarios, GCMs, files, SU rules)
   collect_status.py     scans the output folders, Slurm and rcchelp, writes site/data/
   make_mock_status.py   writes a realistic mock to site/mock/
   site/                 the static site (deployable as-is)
@@ -131,33 +169,41 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   - a unit's time comes from its projection file dates: the files are
     written one after another, so the time from the first to the last of
     n files, times n / (n - 1), covers the whole run;
-  - when nothing has finished yet, the lower bound uses the reference time
-    per unit and the upper bound the job time limit, both set per sector in
-    the manifest (`reference:`), with their sources written next to them:
-    mortality 20.5 h, energy 6.5 h, labor 1.4 h, agriculture 2.1 h, from
-    earlier production runs and the cil2 single run logs;
+  - observed times are used only once at least 10 units of that sector and
+    run type have finished; until then the lower bound uses the reference
+    time per unit and the upper bound its longest reference time (or the
+    job time limit), set per sector in the manifest (`reference:`) with
+    their sources: mortality 20.5 h (longest 23.7 h), energy 6.5 h (job
+    limit 12 h or 36 h), labor 1.4 h (longest 1.42 h). Agriculture has no
+    reference time yet, so it shows "not known yet";
   - SUs = hours x billing (1 for these jobs). Aggregation is not included;
     it is much shorter than generate.
 - Service units follow the RCC formula for non GPU jobs:
   SUs = ElapsedRaw / 3600 x billing, with billing read from each job's
   AllocTRES (not assumed equal to the CPUs). For example, a job on amd with
-  billing=1, cpu=1, mem=45G that ran 36 h 25 s used 36.01 SUs. The sum
-  covers every job on the cil account since `account.su_since`, per
-  person and partition. The formula is applied on the partitions in
-  `account.su_billing_partitions` (amd, caslake, amd-hm, and cil, which is
-  counted the same way until RCC says otherwise). GPU jobs, bigmem, other
-  partitions and jobs without a billing value are flagged with their
-  elapsed hours instead of counted. The
+  billing=1, cpu=1, mem=45G that ran 36 h 25 s used 36.01 SUs. To check a
+  job: `sacct -X -j <jobid> -n -P -o JobID,ElapsedRaw,Partition,AllocTRES`.
+  The formula applies on `account.su_billing_partitions` (amd, caslake,
+  amd-hm). The cil partition is the group's own nodes
+  (`account.su_free_partitions`): it uses no SUs and is left out.
+  Core hours are elapsed hours x the job's allocated CPUs (cpu= in
+  AllocTRES). Only the scarce partitions are counted. GPU jobs, bigmem, other partitions and
+  jobs without a billing value are flagged with their elapsed hours
+  instead of counted. Only jobs that have finished (they have an end
+  time) or that squeue shows right now count: sacct sometimes keeps a job
+  as RUNNING or PENDING long after it ended, when its record was never
+  closed, and those stale records are listed apart, not counted. Every user with jobs on the account is listed by
+  cluster username. The
   allocation and balance come from `rcchelp balance -a cil`, and storage
   from `rcchelp quota` (group filesets of the cil account).
 
-## status.json format (schema 2)
+## status.json format (schema 3)
 
 The contract between the collector and the page; the mock follows it.
 
 ```jsonc
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "source": "collector",             // "mock" or "collector"
   "generated_at": "2026-10-13T18:00:00Z",
   "scan_interval_hours": 4,
@@ -165,20 +211,27 @@ The contract between the collector and the page; the mock follows it.
     "name": "cil",
     "allocation_status": "none",     // "ok", "none" (no allocation yet) or "unknown"
     "allocation_su": null, "used_su": null, "balance_su": null,
-    "su_since": "2026-10-01",        // start of the cycle for core hours per person
+    "su_since": "2026-10-01",        // start of the cycle for SUs and core hours
+    "su_estimated_since": 219.4,     // sacct estimate, scarce partitions; not what RCC charges
+    "su_stale_records": [{"job_id": "53282084_1", "user": "someuser", "state": "RUNNING",
+                          "partition": "caslake", "hours": 1580.2}],   // not counted
+    "highlight_user": "cadavidsanchez",
+    "su_billing_partitions": ["amd", "caslake", "amd-hm"],
+    "su_free_partitions": ["cil"],
     "storage": [                     // null when rcchelp could not be read
       {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5}
     ]
   },
-  "people": [                        // only people in the manifest, by display name
-    {"name": "Sebastian", "linked": true,
-     "su_used": 219.4,               // SUs since su_since, all partitions
-     "su_by_partition": {"amd": 150.2, "cil": 69.2},   // largest first
+  "users": [                         // every user with jobs or usage, by cluster username; null without Slurm
+    {"user": "someuser",
+     "su_used": 219.4,               // SUs since su_since
+     "su_by_partition": {"amd": 150.2, "caslake": 69.2},   // largest first
+     "core_hours": 219.4,            // elapsed hours x CPUs, scarce partitions only
+     "core_hours_by_partition": {"amd": 150.2, "caslake": 69.2},
      "su_flagged": {"bigmem": {"jobs": 2, "hours": 30.5, "reason": "bigmem partition"}},
-     "active_jobs": [{"job_name": "energy-median", "partition": "amd", "state": "RUNNING",
+     "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
                       "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0}]}
   ],
-  "other_users": {"users": 2, "su_used": 1850, "su_by_partition": {"amd": 1850}, "su_flagged": {}, "active_jobs": []},
   "sectors": {
     "mortality": {
       "label": "Mortality",

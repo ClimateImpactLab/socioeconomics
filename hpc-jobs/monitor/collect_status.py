@@ -50,6 +50,10 @@ STALE_HOURS = 6
 # Window for the time-to-finish estimate.
 ETA_WINDOW_HOURS = 24
 
+# Observed times per unit replace the manifest reference only from this many
+# finished units on.
+MIN_OBSERVED_UNITS = 10
+
 
 def log(msg):
     print(msg, flush=True)
@@ -218,6 +222,9 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     for model in models:
         names = flat_names(spec[model])
         per_stage = {st: stage_files(st, spec[model], stages) for st in stages}
+        # A stage that writes nothing for this sub-model (spring and winter
+        # wheat are never aggregated themselves) does not apply to it.
+        model_stages = [st for st in stages if st == "generate" or per_stage[st]]
         has_twin = any(n.startswith("winsorized/") for n in names)
         model_dir = rt_root if model == "main" else os.path.join(rt_root, model)
         twin_dir = None if model == "main" else os.path.join(rt_root, f"{model}-1pct_winsorization")
@@ -238,7 +245,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     hits = {n: lookup(n, cell["rcp"], leaf_files, twin_files) for n in names}
 
                     stage_recs, fail_reason = {}, None
-                    for stage in stages:
+                    for stage in model_stages:
                         rec, reason = stage_record(stage, info, hits, per_stage[stage], now)
                         stage_recs[stage] = rec
                         fail_reason = fail_reason or reason
@@ -255,7 +262,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                         if hours:
                             unit_hours.append(hours)
 
-                    stage_states = [stage_recs[s]["state"] for s in stages]
+                    stage_states = [stage_recs[s]["state"] for s in model_stages]
                     if "failed" in stage_states:
                         state = "failed"
                     elif "running" in stage_states:
@@ -339,8 +346,10 @@ def estimate_sus(remaining, unit_hours, sector, rt_name):
 
     Lower: remaining units x the median time per unit seen so far.
     Upper: remaining units x the longest time seen so far.
-    With no finished unit yet, the manifest reference time is the lower
-    bound and the job time limit the upper one. SUs = hours x billing.
+    With fewer than MIN_OBSERVED_UNITS finished units, the manifest
+    reference time is the lower bound, and its longest reference time (or
+    the job time limit) the upper one. A sector with no reference time is
+    "not known yet". SUs = hours x billing.
     """
     ref = sector.get("reference") or {}
     billing = ref.get("billing", 1)
@@ -349,7 +358,7 @@ def estimate_sus(remaining, unit_hours, sector, rt_name):
         limit = limit.get(rt_name)
     if remaining <= 0:
         return {"remaining": 0, "su_low": 0, "su_high": 0, "basis": "nothing left to run"}
-    if unit_hours:
+    if len(unit_hours) >= MIN_OBSERVED_UNITS:
         unit_hours = sorted(unit_hours)
         low_h = unit_hours[len(unit_hours) // 2] if len(unit_hours) % 2 else \
             (unit_hours[len(unit_hours) // 2 - 1] + unit_hours[len(unit_hours) // 2]) / 2
@@ -360,11 +369,13 @@ def estimate_sus(remaining, unit_hours, sector, rt_name):
         source = "observed"
     else:
         low_h = ref.get("hours_per_unit")
-        high_h = limit if limit else low_h
         if low_h is None:
             return {"remaining": remaining, "su_low": None, "su_high": None,
-                    "basis": "no finished units and no reference time"}
-        basis = (f"{plural(remaining, 'unit')} left x {low_h:g} h (reference) to {high_h:g} h (job limit), "
+                    "source": "unknown", "basis": "not known yet: no reference time per unit"}
+        ref_max = ref.get("hours_per_unit_max")
+        high_h = ref_max or limit or low_h
+        what = "longest reference" if ref_max else "job limit"
+        basis = (f"{plural(remaining, 'unit')} left x {low_h:g} h (reference) to {high_h:g} h ({what}), "
                  f"{billing:g} SU per hour")
         source = "reference"
     high_h = max(high_h, low_h)
@@ -436,7 +447,7 @@ def live_tasks(account):
             elapsed_s = squeue_elapsed_s(elapsed) if state == "RUNNING" else 0
         except ValueError:
             elapsed_s = 0
-        rows.append({"base": ids.split("_")[0], "user": user, "name": name,
+        rows.append({"id": ids, "base": ids.split("_")[0], "user": user, "name": name,
                      "state": state, "partition": partition, "elapsed_s": elapsed_s})
     return rows
 
@@ -476,8 +487,9 @@ def active_jobs_by_user(account, rows):
             job["elapsed_s"] = max(job["elapsed_s"], row["elapsed_s"])
 
     by_user = {}
-    for (user, _), job in jobs.items():
+    for (user, base), job in jobs.items():
         by_user.setdefault(user, []).append({
+            "job_id": base,
             "job_name": job["job_name"],
             "partition": ",".join(job["partitions"]),
             "state": "RUNNING" if job["running"] else "PENDING",
@@ -489,46 +501,61 @@ def active_jobs_by_user(account, rows):
     return by_user
 
 
-def job_billing(tres):
-    """The billing value from an AllocTRES string such as 'billing=1,cpu=1,mem=45G'."""
-    m = re.search(r"(?:^|,)billing=([\d.]+)", tres or "")
+def tres_value(tres, key):
+    """A number from an AllocTRES string such as 'billing=1,cpu=1,mem=45G'."""
+    m = re.search(rf"(?:^|,){re.escape(key)}=([\d.]+)", tres or "")
     return float(m.group(1)) if m else None
 
 
-def flag_reason(partition, tres, billing_partitions):
-    """Why a job is left out of the SU totals, or None if the formula applies."""
-    if "gres/gpu" in (tres or "") or "gpu" in partition:
-        return "GPU job"
-    if "bigmem" in partition:
-        return "bigmem partition"
-    if partition not in billing_partitions:
-        return "partition without a known formula"
-    if job_billing(tres) is None:
-        return "no billing value"
-    return None
+def usage_by_user(account, since, billing_partitions, free_partitions, live):
+    """SUs and core hours on the account since the start date, per user and partition.
 
+    Only the scarce partitions count (the billing partitions); jobs on the
+    group's own free partitions are left out entirely. SUs follow the RCC
+    formula for non GPU jobs, SUs = ElapsedRaw / 3600 x billing, with
+    billing read from each job's AllocTRES; core hours = elapsed hours x
+    allocated CPUs. GPU and bigmem jobs, other partitions and jobs without
+    a billing value are flagged, with their elapsed hours, instead of
+    guessed. These are estimates; the official use comes from rcchelp.
 
-def su_by_user(account, since, billing_partitions):
-    """Service units on the account since the start date, per user and partition.
-
-    SUs = ElapsedRaw / 3600 x billing, with billing read from each job's
-    AllocTRES (RCC formula for non GPU jobs). Jobs where that formula does
-    not apply are kept apart as flagged, with their elapsed hours.
+    Only jobs that finished (they have an end time) or that squeue shows
+    right now count. sacct sometimes keeps a job as RUNNING or PENDING long
+    after it ended, when its record was never closed; those stale records
+    are not counted and are returned apart.
     --truncate clips jobs that started earlier to the start date.
-    Returns {user: {"su": {partition: SUs}, "flagged": {partition:
-    {"jobs": n, "hours": h, "reason": text}}}}, or None if sacct failed.
+    Returns ({user: {"su": {}, "core_hours": {}, "flagged": {}}}, stale),
+    or (None, None) if sacct failed.
     """
     out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account,
                    "--starttime", since, "--endtime", "now", "--truncate",
-                   "--format=JobID,User,Partition,ElapsedRaw,AllocTRES"])
+                   "--format=JobID,User,Partition,ElapsedRaw,AllocTRES,State,End"])
     if out is None:
-        return None
-    totals = {}
+        return None, None
+    live_ids = {r["id"] for r in live or []}
+    live_bases = {r["base"] for r in live or []}
+
+    def in_squeue(job):
+        if job in live_ids:
+            return True
+        base = job.split("_")[0]
+        return base in live_bases and ("_" not in job or "[" in job)
+
+    totals, stale = {}, []
     for line in out.splitlines():
         parts = line.strip().split("|")
-        if len(parts) != 5 or not parts[1]:
+        if len(parts) != 7 or not parts[1]:
             continue
-        _job, user, partition, elapsed, tres = parts
+        job, user, partition, elapsed, tres, state, end = parts
+        state = state.split()[0] if state else ""
+        open_record = state in ("RUNNING", "PENDING", "REQUEUED", "SUSPENDED") or end in ("", "Unknown", "None")
+        if open_record and live is not None and not in_squeue(job):
+            try:
+                stale_h = round(int(elapsed) / 3600.0, 1)
+            except ValueError:
+                stale_h = None
+            stale.append({"job_id": job, "user": user, "state": state,
+                          "partition": partition.split(",")[0], "hours": stale_h})
+            continue
         try:
             hours = int(elapsed) / 3600.0
         except ValueError:
@@ -537,31 +564,42 @@ def su_by_user(account, since, billing_partitions):
             continue
         # A job that could run on several partitions lists them all; it ran on the first.
         partition = partition.split(",")[0] or "unknown"
-        per = totals.setdefault(user, {"su": {}, "flagged": {}})
-        reason = flag_reason(partition, tres, billing_partitions)
-        if reason:
-            f = per["flagged"].setdefault(partition, {"jobs": 0, "hours": 0.0, "reason": reason})
-            f["jobs"] += 1
-            f["hours"] += hours
+        if partition in free_partitions:
+            continue
+        per = totals.setdefault(user, {"su": {}, "core_hours": {}, "flagged": {}})
+        cpus = tres_value(tres, "cpu")
+        billing = tres_value(tres, "billing")
+        if "gres/gpu" in (tres or "") or "gpu" in partition:
+            reason = "GPU job"
+        elif "bigmem" in partition:
+            reason = "bigmem partition"
+        elif partition not in billing_partitions:
+            reason = "partition without a known formula"
+        elif billing is None:
+            reason = "no billing value"
         else:
-            per["su"][partition] = per["su"].get(partition, 0.0) + hours * job_billing(tres)
-    return totals
+            per["su"][partition] = per["su"].get(partition, 0.0) + hours * billing
+            if cpus:
+                per["core_hours"][partition] = per["core_hours"].get(partition, 0.0) + hours * cpus
+            continue
+        f = per["flagged"].setdefault(partition, {"jobs": 0, "hours": 0.0, "reason": reason})
+        f["jobs"] += 1
+        f["hours"] += hours
+    return totals, stale
 
 
-def su_summary(entries):
-    """Total SUs, SUs per partition and flagged jobs for one person or a pooled group."""
-    su, flagged = {}, {}
-    for e in entries:
-        for p, v in e["su"].items():
-            su[p] = su.get(p, 0.0) + v
-        for p, f in e["flagged"].items():
-            g = flagged.setdefault(p, {"jobs": 0, "hours": 0.0, "reason": f["reason"]})
-            g["jobs"] += f["jobs"]
-            g["hours"] += f["hours"]
-    parts = {p: round(v, 2) for p, v in sorted(su.items(), key=lambda x: -x[1]) if v >= 0.005}
-    for g in flagged.values():
-        g["hours"] = round(g["hours"], 2)
-    return round(sum(su.values()), 2), parts, flagged
+def usage_summary(entry):
+    """Rounded totals and per-partition values for one user, largest first."""
+    def by_part(d):
+        return {p: round(v, 2) for p, v in sorted(d.items(), key=lambda x: -x[1]) if v >= 0.005}
+    flagged = {p: {**f, "hours": round(f["hours"], 2)} for p, f in entry["flagged"].items()}
+    return {
+        "su_used": round(sum(entry["su"].values()), 2),
+        "su_by_partition": by_part(entry["su"]),
+        "core_hours": round(sum(entry["core_hours"].values()), 2),
+        "core_hours_by_partition": by_part(entry["core_hours"]),
+        "su_flagged": flagged,
+    }
 
 
 def account_balance(account):
@@ -632,16 +670,6 @@ def storage_quotas(account):
     return rows
 
 
-def report_visible_users(manifest, rows, su):
-    """Log how many users Slurm shows, and listed people with nothing visible."""
-    seen = {r["user"] for r in rows or []} | set(su or {})
-    log(f"slurm shows jobs from {len(seen)} user(s)")
-    for person in manifest["people"]:
-        user = person.get("username")
-        if user and user not in seen:
-            log(f"note: no jobs or usage seen for {person['name']} since the start date")
-
-
 # ---------- main ----------
 
 def main():
@@ -661,6 +689,7 @@ def main():
     account = manifest["account"]["name"]
     since = manifest["account"]["su_since"]
     billing_partitions = manifest["account"]["su_billing_partitions"]
+    free_partitions = manifest["account"].get("su_free_partitions", [])
 
     os.makedirs(args.out_dir, exist_ok=True)
     shutil.rmtree(os.path.join(args.out_dir, "details"), ignore_errors=True)
@@ -686,58 +715,48 @@ def main():
         }
 
     use_slurm = not args.no_slurm and shutil.which("sacct") and shutil.which("squeue")
-    rows, su, jobs, storage = None, None, None, None
+    rows, su, jobs, storage, stale = None, None, None, None, None
     balance = {"allocation_status": "unknown",
                "allocation_su": None, "used_su": None, "balance_su": None}
     if use_slurm:
         rows = live_tasks(account)
-        su = su_by_user(account, since, billing_partitions)
+        su, stale = usage_by_user(account, since, billing_partitions, free_partitions, rows)
         jobs = active_jobs_by_user(account, rows) if rows is not None else None
         balance = account_balance(account)
         storage = storage_quotas(account)
-        report_visible_users(manifest, rows, su)
     else:
         log("slurm tools not used; resources and jobs will show n/a")
 
-    # People are published by display name only, never the cluster username.
-    listed = {p.get("username") for p in manifest["people"] if p.get("username")}
-    people = []
-    for person in manifest["people"]:
-        user = person.get("username")
-        entry = su.get(user) if su is not None and user else None
-        total, parts, flagged = su_summary([entry] if entry else [])
-        people.append({
-            "name": person["name"],
-            "linked": bool(user),
-            "su_used": None if su is None else total,
-            "su_by_partition": None if su is None else parts,
-            "su_flagged": None if su is None else flagged,
-            "active_jobs": None if jobs is None else jobs.get(user, []) if user else [],
-        })
-
-    # Everyone on the account who is not in the manifest, as one group.
-    other_users = {"users": None, "su_used": None, "su_by_partition": None, "su_flagged": None,
-                   "active_jobs": None}
-    if jobs is not None or su is not None:
-        others = {u: j for u, j in (jobs or {}).items() if u not in listed}
-        merged = [job for rows_ in others.values() for job in rows_]
-        merged.sort(key=lambda r: (r["state"] != "RUNNING", -r["elapsed_min"], r["job_name"]))
-        other_users = {"users": len(set(others) | {u for u in (su or {}) if u not in listed}),
-                       "su_used": None, "su_by_partition": None, "su_flagged": None,
-                       "active_jobs": merged if jobs is not None else None}
-        if su is not None:
-            pooled = [e for u, e in su.items() if u not in listed]
-            (other_users["su_used"], other_users["su_by_partition"],
-             other_users["su_flagged"]) = su_summary(pooled)
+    # Every user with jobs or usage on the account, by cluster username.
+    users = None
+    if su is not None or jobs is not None:
+        users = []
+        always = manifest["account"].get("always_show_users", [])
+        for user in sorted(set(su or {}) | set(jobs or {}) | set(always)):
+            entry = (su or {}).get(user, {"su": {}, "core_hours": {}, "flagged": {}})
+            row = {"user": user, **usage_summary(entry)} if su is not None else \
+                {"user": user, "su_used": None, "su_by_partition": None, "core_hours": None,
+                 "core_hours_by_partition": None, "su_flagged": None}
+            row["active_jobs"] = jobs.get(user, []) if jobs is not None else None
+            users.append(row)
+        users = [r for r in users if r["su_used"] or r["su_flagged"] or r["active_jobs"] or r["user"] in always]
+        users.sort(key=lambda r: (-(r["su_used"] or 0), -(r["core_hours"] or 0), r["user"]))
+        log(f"slurm shows {len(users)} user(s) on the account")
+    # Estimated from sacct; RCC's own figure (rcchelp) is the official one.
+    su_total = None if su is None else round(sum(r["su_used"] for r in users), 2)
 
     status = {
-        "schema_version": 2,
+        "schema_version": 3,
         "source": "collector",
         "generated_at": now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 4,
-        "account": {"name": account, **balance, "su_since": since, "storage": storage},
-        "people": people,
-        "other_users": other_users,
+        "account": {"name": account, **balance, "su_since": since, "storage": storage,
+                    "su_estimated_since": su_total,
+                    "su_stale_records": stale,
+                    "highlight_user": manifest["account"].get("highlight_user"),
+                    "su_billing_partitions": billing_partitions,
+                    "su_free_partitions": free_partitions},
+        "users": users,
         "sectors": sectors_out,
     }
 

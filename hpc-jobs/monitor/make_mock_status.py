@@ -56,20 +56,21 @@ MOCK_JOB_NAMES = [
 
 
 
-def mock_su(rng, scale):
-    """SUs for one person on the billing partitions, plus flagged jobs."""
-    parts = {}
-    for p, share in zip(["cil", "amd", "caslake", "amd-hm"], [0.5, 0.3, 0.15, 0.05]):
-        if rng.random() < 0.8 or p == "cil":
-            parts[p] = round(scale * share * rng.uniform(0.4, 1.6), 2)
-    parts = {p: v for p, v in sorted(parts.items(), key=lambda x: -x[1]) if v > 0}
+def mock_usage(rng, scale):
+    """SUs and core hours on the scarce partitions, and a few flagged jobs."""
+    core, su = {}, {}
+    for p, share in zip(["amd", "caslake", "amd-hm"], [0.55, 0.35, 0.1]):
+        if rng.random() < 0.8 or p == "amd":
+            core[p] = round(scale * share * rng.uniform(0.4, 1.6), 2)
+            su[p] = round(core[p] * rng.uniform(0.6, 1.0), 2)
     flagged = {}
     if rng.random() < 0.3:
         flagged["bigmem"] = {"jobs": rng.randint(1, 6), "hours": round(rng.uniform(5, 300), 2),
                              "reason": "bigmem partition"}
-    if rng.random() < 0.15:
-        flagged["gpu"] = {"jobs": rng.randint(1, 3), "hours": round(rng.uniform(1, 40), 2), "reason": "GPU job"}
-    return round(sum(parts.values()), 2), parts, flagged
+    order = lambda d: {k: v for k, v in sorted(d.items(), key=lambda x: -x[1]) if v > 0}
+    return {"su_used": round(sum(su.values()), 2), "su_by_partition": order(su),
+            "core_hours": round(sum(core.values()), 2), "core_hours_by_partition": order(core),
+            "su_flagged": flagged}
 
 
 def mock_su_estimate(counts, stages, sector, rt_name):
@@ -82,11 +83,16 @@ def mock_su_estimate(counts, stages, sector, rt_name):
     remaining = counts["total"] - counts["done"] - counts["partial"]
     if remaining <= 0:
         return {"remaining": 0, "su_low": 0, "su_high": 0, "basis": "nothing left to run"}
-    low, high, billing = ref["hours_per_unit"], max(limit or 0, ref["hours_per_unit"]), ref.get("billing", 1)
+    low, billing = ref.get("hours_per_unit"), ref.get("billing", 1)
+    if low is None:
+        return {"remaining": remaining, "su_low": None, "su_high": None, "source": "unknown",
+                "basis": "not known yet: no reference time per unit"}
+    high = ref.get("hours_per_unit_max") or limit or low
+    what = "longest reference" if ref.get("hours_per_unit_max") else "job limit"
     return {"remaining": remaining, "hours_low": low, "hours_high": high,
             "su_low": round(remaining * low * billing), "su_high": round(remaining * high * billing),
             "source": "reference",
-            "basis": f"{remaining} units left x {low:g} h (reference) to {high:g} h (job limit), {billing:g} SU per hour"}
+            "basis": f"{remaining} units left x {low:g} h (reference) to {high:g} h ({what}), {billing:g} SU per hour"}
 
 
 def mock_active_jobs(rng):
@@ -96,6 +102,7 @@ def mock_active_jobs(rng):
         running = rng.randint(1, min(size, 40))
         queued = rng.randint(0, size - running) if rng.random() < 0.6 else 0
         jobs.append({
+            "job_id": str(rng.randint(59_900_000, 60_100_000)),
             "job_name": name,
             "partition": partition,
             "state": "RUNNING",
@@ -106,7 +113,8 @@ def mock_active_jobs(rng):
     if rng.random() < 0.4:
         name, partition, size = rng.choice(MOCK_JOB_NAMES)
         queued = rng.randint(1, size)
-        jobs.append({"job_name": name, "partition": partition, "state": "PENDING",
+        jobs.append({"job_id": str(rng.randint(59_900_000, 60_100_000)),
+                     "job_name": name, "partition": partition, "state": "PENDING",
                      "tasks": {"running": 0, "queued": queued, "done": 0},
                      "elapsed_min": 0.0})
     jobs.sort(key=lambda j: (j["state"] != "RUNNING", -j["elapsed_min"]))
@@ -334,21 +342,23 @@ def main():
             "run_types": run_types_out,
         }
 
-    total_su = 0
-    people = []
-    weights = [rng.uniform(0.5, 2.0) for _ in manifest["people"]]
-    for person, w in zip(manifest["people"], weights):
-        people.append({
-            "name": person["name"],
-            "linked": True,
-            **dict(zip(("su_used", "su_by_partition", "su_flagged"), mock_su(rng, 40_000 * w))),
-            "active_jobs": mock_active_jobs(rng),
-        })
+    # Placeholder usernames: the mock never shows real accounts.
+    users = []
+    for i in range(1, 10):
+        users.append({"user": f"user{i:02d}", **mock_usage(rng, 40_000 * rng.uniform(0.1, 2.0)),
+                      "active_jobs": mock_active_jobs(rng)})
+    acct = manifest["account"]
+    if acct.get("highlight_user"):
+        users.append({"user": acct["highlight_user"], **mock_usage(rng, 30_000), "active_jobs": mock_active_jobs(rng)})
+    for name in acct.get("always_show_users", []):
+        users.append({"user": name, "su_used": 0, "su_by_partition": {}, "core_hours": 0,
+                      "core_hours_by_partition": {}, "su_flagged": {}, "active_jobs": []})
+    users.sort(key=lambda r: -r["su_used"])
 
-    total_su = sum(p["su_used"] for p in people)
+    total_su = round(sum(u["su_used"] for u in users), 2)
     allocation = 1_000_000
     status = {
-        "schema_version": 2,
+        "schema_version": 3,
         "source": "mock",
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 4,
@@ -356,17 +366,23 @@ def main():
             "name": manifest["account"]["name"],
             "allocation_status": "ok",
             "allocation_su": allocation,
-            "used_su": total_su,
-            "balance_su": allocation - total_su,
+            "used_su": round(total_su * 0.6),
+            "balance_su": allocation - round(total_su * 0.6),
             "su_since": manifest["account"]["su_since"],
+            "su_estimated_since": total_su,
+            "su_stale_records": [
+                {"job_id": "53282084_1", "user": "user03", "state": "RUNNING", "partition": "caslake", "hours": 1580.2},
+                {"job_id": "50096159", "user": "user05", "state": "RUNNING", "partition": "amd", "hours": 1610.7},
+            ],
+            "highlight_user": manifest["account"].get("highlight_user"),
+            "su_billing_partitions": manifest["account"]["su_billing_partitions"],
+            "su_free_partitions": manifest["account"].get("su_free_partitions", []),
             "storage": [
                 {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5},
                 {"label": "cil /cds3", "used": "61.2T", "quota": "125.0T", "used_pct": 49.0},
             ],
         },
-        "people": people,
-        "other_users": {"users": 3, **dict(zip(("su_used", "su_by_partition", "su_flagged"), mock_su(rng, 18_000))),
-                        "active_jobs": mock_active_jobs(rng) + mock_active_jobs(rng)},
+        "users": users,
         "sectors": sectors_out,
     }
 

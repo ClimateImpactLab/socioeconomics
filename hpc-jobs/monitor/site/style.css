@@ -29,6 +29,12 @@
   --sec-agriculture: #3a9a4a;
   --sec-energy: #e0a91b;
   --sec-labor: #6f6e69;
+
+  /* One color per state: jobs and cells share them. */
+  --st-run: #e0603f; --st-run-bg: rgba(224, 96, 63, 0.10);
+  --st-pend: #b8862a; --st-pend-bg: rgba(200, 154, 64, 0.14);
+  --st-done: #3f9a4f;
+  --st-none: #99998f;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -83,6 +89,13 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
 .head-text { flex: 1; min-width: 0; }
 .head-right { display: flex; align-items: center; gap: 8px; align-self: flex-start; }
+/* CIL logo: one SVG, inverted and desaturated in dark mode. */
+.cil-logo { display: block; height: 26px; width: auto; opacity: 0.9; }
+:root[data-theme="dark"] .cil-logo { filter: invert(1) brightness(1.9) saturate(0); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cil-logo { filter: invert(1) brightness(1.9) saturate(0); }
+}
+.head-right { align-items: center; }
 .badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 10px;
   background: var(--amber-bg); color: var(--amber-tx); }
 .icon-btn { background: none; border: 0.5px solid var(--bd2); border-radius: 4px; color: var(--tx2);
@@ -152,6 +165,16 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .run-opt:hover:not(.active):not(:disabled) { background: var(--bg2); }
 .run-opt:disabled { color: var(--tx3); opacity: 0.55; cursor: not-allowed; }
 .run-opt .opt-count { color: var(--tx3); font-weight: 400; margin-left: 4px; }
+.run-opt.sec-tab { border-bottom-width: 3px; }
+.run-opt.sec-mortality { border-bottom-color: var(--sec-mortality); }
+.run-opt.sec-mortality.active { background: color-mix(in srgb, var(--sec-mortality) 22%, var(--bg)); border-color: var(--sec-mortality); }
+.run-opt.sec-agriculture { border-bottom-color: var(--sec-agriculture); }
+.run-opt.sec-agriculture.active { background: color-mix(in srgb, var(--sec-agriculture) 22%, var(--bg)); border-color: var(--sec-agriculture); }
+.run-opt.sec-energy { border-bottom-color: var(--sec-energy); }
+.run-opt.sec-energy.active { background: color-mix(in srgb, var(--sec-energy) 22%, var(--bg)); border-color: var(--sec-energy); }
+.run-opt.sec-labor { border-bottom-color: var(--sec-labor); }
+.run-opt.sec-labor.active { background: color-mix(in srgb, var(--sec-labor) 22%, var(--bg)); border-color: var(--sec-labor); }
+.run-opt.sec-tab.active { color: var(--tx); font-weight: 700; }
 .run-opt:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 
 .info-bar { background: var(--bg2); border: 0.5px solid var(--bd); border-radius: 6px; padding: 4px 10px;
@@ -199,8 +222,8 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .panel-header .left { display: flex; align-items: center; gap: 8px; }
 .panel-title { font-size: 14px; font-weight: 500; }
 .panel-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
-.badge-run { background: var(--green-bg); color: var(--green-tx); }
-.badge-pend { background: var(--amber-bg); color: var(--amber-tx); }
+.badge-run { background: var(--st-run-bg); color: var(--st-run); }
+.badge-pend { background: var(--st-pend-bg); color: var(--st-pend); }
 .panel-arrow { font-size: 12px; color: var(--tx3); transition: transform 0.2s; }
 .panel.open .panel-arrow { transform: rotate(90deg); }
 .panel-body { display: none; padding: 8px 14px 10px; }
@@ -230,11 +253,9 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --su-a: #aab4c8; --su-b: #7f899e; --su-c: #565f73; }
 }
-.su-row { gap: 8px; }
 .su-track { display: flex; width: 240px; height: 8px; background: var(--bd); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
 .su-seg { height: 100%; }
 .su-seg + .su-seg { box-shadow: inset 1px 0 0 var(--bg); }
-.su-total { font-family: var(--mono); font-size: 10px; color: var(--tx2); }
 .su-p0 { background: var(--su-a); }
 .su-p1 { background: var(--su-b); }
 .su-p2 { background: var(--su-c); }
@@ -246,16 +267,69 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .su-swatch { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
 .su-flag { font-size: 9px; color: var(--tx3); margin-top: 4px; max-width: 560px; }
 .tab-note { font-size: 9px; color: var(--tx3); margin: -4px 0 8px; }
+.res-bar.placeholder { background: repeating-linear-gradient(45deg, var(--bd) 0 2px, transparent 2px 4px); }
+.su-table { border-collapse: collapse; font-size: 10px; margin-top: 2px; }
+.su-table th { text-align: left; font-weight: 500; color: var(--tx3); font-size: 9px; padding: 1px 8px 2px 0; }
+.su-table td { padding: 1px 8px 1px 0; line-height: 14px; vertical-align: middle; }
+.su-table .r { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.su-table .su-user { font-family: var(--mono); color: var(--tx2); }
+.su-table .su-track { width: 220px; height: 8px; }
+.su-flag code { font-family: var(--mono); background: var(--bg2); padding: 0 3px; border-radius: 2px; user-select: all; }
+.su-bar-all { display: flex; width: 100%; height: 9px; background: var(--bd); border-radius: 2px; overflow: hidden; flex-shrink: 0; }
+.su-bar-all .seg { height: 100%; }
+.su-bar-all .seg + .seg { box-shadow: inset 1px 0 0 var(--bg); }
+.su-label { width: 320px; color: var(--tx2); }
+.su-label b { color: var(--tx); font-weight: 600; }
+.est-tag { font-size: 9px; color: var(--st-pend); border: 0.5px solid var(--st-pend); border-radius: 8px; padding: 0 5px; margin-left: 4px; }
+.ukey { display: flex; flex-wrap: wrap; gap: 3px 14px; margin-top: 5px; font-size: 10px; color: var(--tx2); }
+.ukey-item { display: inline-flex; align-items: center; gap: 5px; }
+.ukey-item .mono { font-family: var(--mono); color: var(--tx3); font-size: 9px; }
+.udot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.jobs-table td.mono { font-family: var(--mono); }
+/* Partitions by texture (light marks over whatever color is underneath):
+   amd stripes, caslake dots, amd-hm solid, cil fine lines, others crosshatch. */
+.ptex-amd { background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.6) 0 1.2px, transparent 1.2px 3.6px); }
+.ptex-caslake { background-image: radial-gradient(circle, rgba(255, 255, 255, 0.7) 0.85px, transparent 1.05px); background-size: 3.2px 3.2px; }
+.ptex-amd-hm { background-image: none; }
+.ptex-cil { background-image: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.55) 0 1px, transparent 1px 3px); }
+.ptex-bigmem, .ptex-gpu, .ptex-other { background-image:
+  repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.5) 0 1px, transparent 1px 4px),
+  repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.5) 0 1px, transparent 1px 4px); }
+.pswatch { display: inline-block; width: 14px; height: 8px; border-radius: 2px; background-color: var(--tx3); flex-shrink: 0; margin-right: 4px; }
+.part-pill .pswatch { width: 10px; height: 7px; margin-right: 2px; }
+.info-btn { width: 15px; height: 15px; border-radius: 50%; border: 0.5px solid var(--tx3); background: none; color: var(--tx3);
+  font: italic 9px/1 Georgia, serif; cursor: pointer; padding: 0; margin-left: 6px; flex-shrink: 0; }
+.info-btn:hover, .info-btn.on { border-color: var(--tx2); color: var(--tx2); background: var(--bg2); }
+.su-info { margin-top: 6px; padding: 6px 10px; border-left: 2px solid var(--bd2); background: var(--bg2); border-radius: 0 4px 4px 0;
+  font-size: 9.5px; color: var(--tx2); max-width: 720px; line-height: 1.5; }
+.su-info p + p { margin-top: 4px; }
+.su-info code { font-family: var(--mono); background: var(--bg); padding: 0 3px; border-radius: 2px; user-select: all; }
+/* The estimate: label, then the bar as wide as the names below it, all centered. */
+.su-est { display: inline-flex; flex-direction: column; align-items: stretch; gap: 5px; margin-top: 8px; max-width: 100%; }
+.su-est-head { display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 10px; color: var(--tx2); }
+.su-est-head b { color: var(--tx); font-family: var(--mono); font-weight: 600; }
+.su-est .ukey { justify-content: center; margin-top: 0; }
+.su-est .info-btn { margin-left: 2px; }
+:root { --hl-user: #2e2e2c; }
+:root[data-theme="dark"] { --hl-user: #d6d6cf; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --hl-user: #d6d6cf; } }
+.su-est .ukey.pkey { justify-content: flex-start; }
+.pick-note { display: none; font-size: 11px; color: var(--tx3); margin: -2px 0 10px; }
+body.no-sector .pick-note, body.no-model .pick-note { display: block; }
+body.no-model #ssp-tabs, body.no-model #legend, body.no-model #info-bar,
+body.no-model #file-detail, body.no-model .grid-wrap { display: none !important; }
+body.no-sector #cards, body.no-sector .top-bar-sep, body.no-sector #runtype-tabs, body.no-sector #model-tabs,
+body.no-sector .tab-note, body.no-sector #ssp-tabs, body.no-sector #legend, body.no-sector #info-bar,
+body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !important; }
 .res-foot { font-size: 8px; color: var(--tx3); text-align: right; margin-top: 4px; }
 
 /* Jobs */
 .jobs-line { font-size: 11px; color: var(--tx2); margin-bottom: 8px; line-height: 1.5; }
 .jobs-line .lbl { color: var(--tx3); }
-.state-run { color: var(--green-tx); font-weight: 500; }
-.state-pend { color: var(--amber-tx); font-weight: 500; }
+.state-run { color: var(--st-run); font-weight: 500; }
+.state-pend { color: var(--st-pend); font-weight: 500; }
 .part-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 8px;
   font-size: 10px; font-weight: 500; margin: 0 2px; border: 0.5px solid var(--bd); color: var(--tx2); }
-.part-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .grp { border: 0.5px solid var(--bd); border-radius: 6px; margin-bottom: 4px; overflow: hidden; }
 .grp-header { padding: 6px 10px; font-size: 11px; font-weight: 500; cursor: pointer; user-select: none;
   display: flex; justify-content: space-between; align-items: center; background: var(--bg2); }
@@ -295,7 +369,7 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .sc-hdr { font-size: 10px; font-weight: 500; }
 .sc-hdr-rcp45 { border-bottom: 2px solid var(--blue) !important; background: rgba(106, 158, 200, 0.08); color: var(--rcp45-tx); }
 .sc-hdr-rcp85 { border-bottom: 2px solid var(--redline) !important; background: rgba(200, 112, 112, 0.08); color: var(--rcp85-tx); }
-.sc-hdr .sc-count { opacity: 0.6; font-weight: 400; }
+.sc-hdr .sc-count { opacity: 0.6; font-weight: 400; font-size: 8px; }
 .edge-l45 { border-left: 0.5px solid rgba(106, 158, 200, 0.25); }
 .edge-r45 { border-right: 0.5px solid rgba(106, 158, 200, 0.25); }
 .edge-l85 { border-left: 0.5px solid rgba(200, 112, 112, 0.25); }
@@ -319,15 +393,15 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 
 .batch.bst-empty { opacity: 0.4; }
 .batch.bst-progress { border: 1.5px dashed var(--progress); }
-.batch.bst-active { border: 1.5px solid var(--writing); background: rgba(255, 99, 71, 0.06);
+.batch.bst-active { border: 1.5px solid var(--st-run); background: var(--st-run-bg);
   animation: pulse-writing 2.5s ease-in-out infinite; opacity: 1; }
 .batch.bst-complete { border: 1.5px solid var(--complete); }
-.batch.bst-done { border: 1.5px solid var(--done-bd); }
+.batch.bst-done { border: 1.5px solid color-mix(in srgb, var(--st-done) 55%, transparent); }
 .batch.bst-aggpart { border: 2px solid var(--failed); background: var(--failed-bg); }
 .batch.bst-aggpart .batch-row { position: relative; }
 .batch.bst-aggpart .batch-row::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(200, 50, 50, 0.15) 2px, rgba(200, 50, 50, 0.15) 3px); }
-@keyframes pulse-writing { 0%, 100% { border-color: rgba(255, 99, 71, 0.4); } 50% { border-color: rgba(255, 99, 71, 1); } }
+@keyframes pulse-writing { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .batch.bst-active, .camel svg .cell { animation: none !important; }
 }
