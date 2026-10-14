@@ -177,9 +177,12 @@ function sectorActive(sec) {
     rt.last_projection_write && scan - new Date(rt.last_projection_write).getTime() < 24 * 3.6e6);
 }
 
-function activeMark(key) {
-  return `<span class="sec-spin" style="color:var(--sec-${key})" title="Projection files written in the last 24 hours">` +
-    `<i></i><i></i><i></i><i></i></span>`;
+// A 3 by 3 grid of small squares: animated in the sector color when the
+// sector is active, still and dim grey when it is not.
+function activeMark(key, active) {
+  const tip = active ? "Projection files written in the last 24 hours" : "No projection files written in the last 24 hours";
+  return `<span class="sec-spin${active ? " on" : ""}"${active ? ` style="color:var(--sec-${key})"` : ""} title="${tip}">` +
+    "<i></i>".repeat(9) + `</span>`;
 }
 
 function sectorRunning(sec) {
@@ -280,7 +283,7 @@ function renderTabs() {
   selector($("sector-tabs"), sectorOrder().map((k) => [k, DATA.sectors[k]]).map(([k, s]) => {
     const f = sectorFiles(s);
     const est = sectorSuEstimate(s);
-    return { key: k, label: s.label, cls: `sec-tab sec-${k}`, extra: sectorActive(s) ? activeMark(k) : "",
+    return { key: k, label: s.label, cls: `sec-tab sec-${k}`, extra: activeMark(k, sectorActive(s)),
       count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) +
         (est ? `, ${suRange(est.low, est.high)} to finish` : ", SUs not known yet") };
   }), view.sector, (k) => {
@@ -866,7 +869,9 @@ function renderCamel() {
   $("camel-key").innerHTML = prog.map((s) => {
     const note = !s.tracked ? "not tracked (yet)" : s.allDone ? "all done" : s.projDone ? "projections done" :
       `${fmtPctShort(s.proj)} projection`;
-    return `<span class="ckey" title="${esc(s.part)}"><span class="cdot sec-${s.key}"></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
+    const on = s.tracked && sectorActive(DATA.sectors[s.key]);
+    return `<span class="ckey" title="${esc(s.part)}${on ? ", active" : ""}"><span class="cring${on ? " on" : ""}" style="color:var(--sec-${s.key})">` +
+      `<span class="cdot sec-${s.key}"></span></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
   }).join("");
 }
 
