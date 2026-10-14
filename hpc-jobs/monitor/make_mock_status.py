@@ -326,6 +326,8 @@ def main():
                 "eta_hours": eta_hours,
                 "eta_basis": eta_basis,
                 "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type),
+                "last_projection_write": (now - datetime.timedelta(hours=rng.uniform(1, 12))).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if counts["running"] else None,
                 "units": listed,
             }
             for (model, batch), cells_ in details.items():

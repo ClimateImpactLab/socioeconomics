@@ -218,6 +218,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     steps_left = 0
     gen_done = 0
     unit_hours = []
+    last_projection_write = 0
 
     for model in models:
         names = flat_names(spec[model])
@@ -243,6 +244,9 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                         twin_files = twin["files"] if twin else {}
                     leaf_files = info["files"] if info else {}
                     hits = {n: lookup(n, cell["rcp"], leaf_files, twin_files) for n in names}
+                    for n in spec[model]["projection"]:
+                        if hits[n]:
+                            last_projection_write = max(last_projection_write, hits[n][1])
 
                     stage_recs, fail_reason = {}, None
                     for stage in model_stages:
@@ -319,6 +323,8 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
         "eta_hours": eta_hours,
         "eta_basis": eta_basis,
         "su_estimate": su_estimate,
+        # Newest projection file date, for the "active sector" sign on the tabs.
+        "last_projection_write": iso_utc(last_projection_write) if last_projection_write else None,
         "units": units,
     }
 

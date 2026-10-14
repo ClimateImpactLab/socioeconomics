@@ -40,7 +40,10 @@ function userName(user) {
 const SU_STYLES = 5;
 
 const params = new URLSearchParams(location.search);
-const BASE = params.get("source") === "mock" ? "mock/" : "data/";
+// The collector pushes its data to the monitor-data branch every 4 hours, so
+// the page reads it from there; the copy deployed with the site is the fallback.
+const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeconomics/monitor-data/data/";
+let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
 
 let DATA = null;
 const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], selected: null };
@@ -166,20 +169,44 @@ function sectorFiles(sec) {
   return t;
 }
 
+// A sector is active when projection files were written in its folders in
+// the last 24 hours before the scan, or a unit is being written right now.
+function sectorActive(sec) {
+  const scan = new Date(DATA.generated_at).getTime();
+  return sectorRunning(sec) || Object.values(sec.run_types).some((rt) =>
+    rt.last_projection_write && scan - new Date(rt.last_projection_write).getTime() < 24 * 3.6e6);
+}
+
+function activeMark(key) {
+  return `<span class="sec-spin" style="color:var(--sec-${key})" title="Projection files written in the last 24 hours">` +
+    `<i></i><i></i><i></i><i></i></span>`;
+}
+
 function sectorRunning(sec) {
   return Object.values(sec.run_types).some((rt) =>
     rt.units.some((u) => u.stages.generate && u.stages.generate.state === "running"));
 }
 
 // Units with all projection files, and with all aggregation files.
-function paCounts(sec, units) {
-  let p = 0, a = 0;
+// Projection (P) and aggregation (A) files present out of expected, for a
+// set of units; expUnits is the number of expected units per sub-model.
+function paFiles(sec, units, expUnits, models) {
+  const out = { p: 0, pExp: 0, a: 0, aExp: 0 };
+  for (const m of models) {
+    const spec = specOf(sec, m);
+    out.pExp += expUnits * spec.projection.length;
+    out.aExp += expUnits * groupTotal(spec, AGG_GROUPS);
+  }
   for (const u of units) {
     const c = unitCounts(u, specOf(sec, u.model));
-    if (c.proj >= c.projTotal) p += 1;
-    if (c.aggTotal && c.agg >= c.aggTotal) a += 1;
+    out.p += c.proj;
+    out.a += c.agg;
   }
-  return { p, a };
+  return out;
+}
+
+function paText(n) {
+  return `P ${fmtN(n.p)}/${fmtN(n.pExp)}, A ${fmtN(n.a)}/${fmtN(n.aExp)}`;
 }
 
 function gridKind(rt) {
@@ -242,7 +269,7 @@ function selector(el, items, active, onPick) {
     const b = document.createElement("button");
     const on = it.active != null ? it.active : it.key === active;
     b.className = "run-opt" + (on ? " active" : "") + (it.cls ? " " + it.cls : "");
-    b.innerHTML = esc(it.label) + (it.count != null ? `<span class="opt-count">${esc(it.count)}</span>` : "");
+    b.innerHTML = esc(it.label) + (it.extra || "") + (it.count != null ? `<span class="opt-count">${esc(it.count)}</span>` : "");
     if (it.disabled) { b.disabled = true; b.title = it.title || ""; }
     else b.onclick = () => onPick(it.key);
     el.appendChild(b);
@@ -253,7 +280,7 @@ function renderTabs() {
   selector($("sector-tabs"), sectorOrder().map((k) => [k, DATA.sectors[k]]).map(([k, s]) => {
     const f = sectorFiles(s);
     const est = sectorSuEstimate(s);
-    return { key: k, label: s.label, cls: `sec-tab sec-${k}`,
+    return { key: k, label: s.label, cls: `sec-tab sec-${k}`, extra: sectorActive(s) ? activeMark(k) : "",
       count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) +
         (est ? `, ${suRange(est.low, est.high)} to finish` : ", SUs not known yet") };
   }), view.sector, (k) => {
@@ -299,7 +326,9 @@ function renderTabs() {
   $("model-sep").classList.toggle("hidden", !showModels);
   if (!showModels) { $("model-tabs").innerHTML = ""; view.model = null; return; }
   if (!view.model && !view.modelOff) view.model = rt.dims.models[0];
-  selector($("model-tabs"), rt.dims.models.map((m) => ({ key: m, label: m })), view.model, (k) => {
+  const perModel = rt.counts.total / rt.dims.models.length;
+  selector($("model-tabs"), rt.dims.models.map((m) => ({ key: m, label: m,
+    count: paText(paFiles(sec, rt.units.filter((u) => u.model === m), perModel, [m])) })), view.model, (k) => {
     // Clicking the selected sub-model again clears it and hides its grid.
     view.modelOff = k === view.model;
     view.model = view.modelOff ? null : k;
@@ -379,11 +408,10 @@ function renderSspTabs() {
   const items = all.map((ssp) => {
     let exp = 0;
     for (const c of rt.dims.cells.filter((c) => c.ssp === ssp)) {
-      exp += rt.dims.gcms[c.rcp].length * (rt.dims.batches || 1) * models.length;
+      exp += rt.dims.gcms[c.rcp].length * (rt.dims.batches || 1);
     }
-    const n = paCounts(sec, rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)));
-    return { key: ssp, label: ssp, active: view.ssps.includes(ssp),
-      count: `P ${fmtN(n.p)}/${fmtN(exp)}, A ${fmtN(n.a)}/${fmtN(exp)}` };
+    const n = paFiles(sec, rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)), exp, models);
+    return { key: ssp, label: ssp, active: view.ssps.includes(ssp), count: paText(n) };
   });
   selector($("ssp-tabs"), items, null, (k) => {
     if (multi) {
@@ -464,9 +492,9 @@ function renderGrid() {
   cells.forEach((c, i) => {
     if (i) { h1 += `<th class="sep-col"></th>`; h2 += `<th class="sep-col"></th>`; }
     const models = fixedModel ? [fixedModel] : rt.dims.models;
-    const exp = rt.dims.gcms[c.rcp].length * batches.length * models.length;
-    const n = paCounts(sec, rt.units.filter((u) => u.ssp === c.ssp && u.rcp === c.rcp && u.iam === c.iam && models.includes(u.model)));
-    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}">${showSsp ? c.ssp + " " : ""}${c.rcp}-${c.iam}<br><span class="sc-count">P ${n.p}/${exp}, A ${n.a}/${exp}</span></th>`;
+    const n = paFiles(sec, rt.units.filter((u) => u.ssp === c.ssp && u.rcp === c.rcp && u.iam === c.iam && models.includes(u.model)),
+      rt.dims.gcms[c.rcp].length * batches.length, models);
+    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}">${showSsp ? c.ssp + " " : ""}${c.rcp}-${c.iam}<br><span class="sc-count">${paText(n)}</span></th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
@@ -848,6 +876,11 @@ function setup() {
   document.querySelectorAll(".panel-header").forEach((h) => {
     h.onclick = () => $(h.dataset.panel).classList.toggle("open");
   });
+  $("pa-info-btn").addEventListener("click", () => {
+    const open = $("pa-info").classList.toggle("hidden") === false;
+    $("pa-info-btn").setAttribute("aria-expanded", String(open));
+    $("pa-info-btn").classList.toggle("on", open);
+  });
   $("resources-content").addEventListener("click", (e) => {
     const b = e.target.closest("#su-info-btn");
     if (!b) return;
@@ -902,18 +935,34 @@ async function boot() {
     if (saved) document.documentElement.dataset.theme = saved;
   } catch (e) { /* storage may be blocked */ }
 
-  try {
-    const r = await fetch(`${BASE}status.json`, { cache: "no-store" });
+  const load = async (base) => {
+    const r = await fetch(`${base}status.json`, { cache: "no-store" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    DATA = await r.json();
+    return r.json();
+  };
+  let localCopy = false;
+  try {
+    DATA = await load(BASE);
   } catch (err) {
-    document.body.insertAdjacentHTML("afterbegin",
-      `<div class="error">Could not load ${esc(BASE)}status.json (${esc(err.message)}).</div>`);
-    return;
+    if (BASE !== REMOTE_BASE) {
+      document.body.insertAdjacentHTML("afterbegin",
+        `<div class="error">Could not load ${esc(BASE)}status.json (${esc(err.message)}).</div>`);
+      return;
+    }
+    try {
+      BASE = "data/";
+      DATA = await load(BASE);
+      localCopy = true;
+    } catch (err2) {
+      document.body.insertAdjacentHTML("afterbegin",
+        `<div class="error">Could not load the status data (${esc(err2.message)}).</div>`);
+      return;
+    }
   }
 
   const ageH = (Date.now() - new Date(DATA.generated_at).getTime()) / 3.6e6;
-  $("subtitle").textContent = `Last scan: ${new Date(DATA.generated_at).toLocaleString()}, every ${DATA.scan_interval_hours} h`;
+  $("subtitle").textContent = `Last scan: ${new Date(DATA.generated_at).toLocaleString()}, every ${DATA.scan_interval_hours} h` +
+    (localCopy ? " (local copy)" : "");
   if (DATA.source === "mock") $("mock-badge").classList.remove("hidden");
   if (ageH > 2 * DATA.scan_interval_hours) {
     $("stale-banner").textContent = `The last scan is ${ageH.toFixed(1)} hours old. The scheduled job may have stopped.`;

@@ -23,7 +23,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   default, median for energy, whose montecarlo tab is greyed out). Each
   sector tab has its camel color, the selected one filled with it, and
   shows its progress and the SUs needed to finish it ("not known yet" for
-  agriculture), with a one-line explanation underneath.
+  agriculture), with a one-line explanation underneath. A sector is active
+  when projection files were written in its folders in the last 24 hours
+  (or a unit is being written now); its tab then shows four small squares
+  in the sector color, lighting in turn. Sub-model tabs (crops, fuels)
+  show their own P and A file counts. Clicking a selected sector or
+  sub-model again clears it.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
@@ -42,10 +47,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     partition is the group's own nodes and is not shown at all. Users in
     `account.always_show_users` are always listed, and
     `account.highlight_user` shows in black.
-  A small "i" button next to the bar opens the notes: what the estimate
-  counts, how SUs are computed per job (with the sacct command to check
-  one), jobs left out because their formula is different (bigmem, GPU),
-  and stale accounting records.
+  A small "i" button next to the bar opens three short notes: the account
+  has no allocation yet for this cycle, the SUs are only an estimate, and
+  the SU formula with the sacct command to check a job. Stale accounting
+  records (jobs sacct still shows as running but squeue does not have)
+  are left out of the numbers.
 - Resources and SLURM jobs start collapsed.
 - SLURM jobs: running and pending counts, partitions, users, and a table
   of every running or queued job: job id, name, user, partition, state,
@@ -55,8 +61,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   projection and aggregation progress, units being written, time to
   finish, and SUs to finish.
 - SSP tabs, the legend, and the grid. Each SSP tab and each scenario
-  column shows units with all projection files and with all aggregation
-  files apart, for example "P 120/480, A 0/480". Energy shows every SSP at
+  column shows P, projection files present out of expected, and A,
+  aggregation files present out of expected, for example
+  "P 917/4,160, A 0/4,160"; a small "i" next to the SSP tabs says so. Energy shows every SSP at
   once, with all its SSP tabs selected; the other sectors show one SSP at a
   time. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
@@ -112,13 +119,16 @@ in the manifest need to change.
 monitor/
   manifest.yml          what the dashboard tracks (sectors, scenarios, GCMs, files, SU rules)
   collect_status.py     scans the output folders, Slurm and rcchelp, writes site/data/
+  monitor_job.sbatch    self-scheduling Slurm job: queues its next run, then runs run_monitor.sh
+  run_monitor.sh        one run: collector, then publish
+  publish_data.sh       pushes site/data/ to the monitor-data branch
   make_mock_status.py   writes a realistic mock to site/mock/
   site/                 the static site (deployable as-is)
     index.html
     style.css
     app.js
     camel/              camel.svg (100 pieces per sector) and favicon.svg
-    data/status.json    the real data the page reads
+    data/status.json    local copy of the data (fallback; the page reads monitor-data first)
     data/details/...    file sizes and dates per cell, loaded on click
     mock/               the same files for the mock
 ```
@@ -271,6 +281,103 @@ The contract between the collector and the page; the mock follows it.
 `"<SSP>|<rcp>|<iam>|<GCM>"` to one entry per expected file, in files_spec
 order: `[size in bytes, written time in Unix seconds]`, or `0` if missing.
 
+## Automatic updates
+
+Every 4 hours a self-scheduling Slurm job on Midway3 (`monitor_job.sbatch`;
+scrontab is disabled on this cluster) runs `run_monitor.sh`: it loads
+impact-env, runs `collect_status.py`, then `publish_data.sh` pushes
+`site/data/` (status.json and the per cell detail files) to the
+`monitor-data` branch of ClimateImpactLab/socioeconomics. Each push is one
+fresh commit that replaces the previous one, so the branch never grows.
+The publish step works in its own scratch folder (`monitor/.publish/`,
+ignored by git), so the working tree and its branch are never touched.
+
+The page reads
+`https://raw.githubusercontent.com/ClimateImpactLab/socioeconomics/monitor-data/data/status.json`
+when it loads, and falls back to the `data/` copy deployed with the site
+if that fails (the subtitle then says "(local copy)"). New data needs no
+Vercel redeploy. GitHub caches raw files for about 5 minutes. The repo is
+public, so the data on that branch is public too: cluster usernames and
+job names, no results.
+
+### 1. Deploy key (once)
+
+The push uses a deploy key without a passphrase, never a personal key.
+On a Midway3 login node:
+
+```
+ssh-keygen -t ed25519 -N "" -C "amel-monitor deploy key" -f ~/.ssh/cil_monitor_deploy
+chmod 600 ~/.ssh/cil_monitor_deploy
+ssh-keyscan github.com >> ~/.ssh/known_hosts
+cat ~/.ssh/cil_monitor_deploy.pub
+```
+
+On GitHub, in ClimateImpactLab/socioeconomics: Settings, Deploy keys, Add
+deploy key. Title "amel-monitor (Midway3)", paste the `.pub` line, tick
+"Allow write access". This needs admin rights on the repo. With gh:
+
+```
+gh repo deploy-key add ~/.ssh/cil_monitor_deploy.pub --repo ClimateImpactLab/socioeconomics \
+  --allow-write --title "amel-monitor (Midway3)"
+```
+
+Check it (it should say "successfully authenticated"):
+
+```
+ssh -i ~/.ssh/cil_monitor_deploy -o IdentitiesOnly=yes -T git@github.com
+```
+
+The script pushes with `ssh -i ~/.ssh/cil_monitor_deploy -o IdentitiesOnly=yes`,
+so only that key is used. A deploy key with write access can push to any
+branch; protecting `main` (require pull requests) closes that gap.
+
+### 2. Start it (once)
+
+`monitor_job.sbatch` runs on partition cil, account cil, for up to 15
+minutes with 2G. Each run first queues the next one for 4 hours later
+(`--begin=now+4hours`), then collects and publishes, so the chain goes on
+even if one run fails. It always uses the job name `amel-monitor` with
+`--dependency=singleton`, and skips queuing when a run is already waiting,
+so there is never more than one waiting. Logs go to
+`hpc-jobs/logs/monitor/monitor_<jobid>.log`.
+
+The log folder must exist before the first job (Slurm opens the log before
+the script starts). Then submit it once; it runs right away and queues the
+next run:
+
+```
+mkdir -p /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/logs/monitor
+sbatch /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/monitor/monitor_job.sbatch
+```
+
+To run the collector and publish once without touching the schedule:
+`bash .../hpc-jobs/monitor/run_monitor.sh`.
+
+### 3. Check
+
+```
+squeue --me -n amel-monitor -o "%.10i %.8T %.20S %.10M"   # the waiting run and when it starts
+sacct -n -X --name=amel-monitor -S now-2days               # recent runs and their state
+ls -t hpc-jobs/logs/monitor/ | head -1                     # newest log
+```
+
+There should always be one `amel-monitor` job, PENDING with a start time
+up to 4 hours ahead (or RUNNING for a few minutes, with the next one
+PENDING). On GitHub, the `monitor-data` branch shows the time of the last
+push in its single commit ("Monitor data, <time> UTC"). On the page, the
+subtitle shows the last scan time.
+
+### 4. Stop
+
+```
+scancel --me -n amel-monitor
+```
+
+This cancels the waiting run (and a run in progress), which ends the
+chain. Start it again with the `sbatch` line above. If the chain ever
+stops on its own (for example after a cluster outage), `squeue` shows
+nothing and the page warns that the last scan is old; submit it again.
+
 ## Deploying to Vercel
 
 From a Mac, in `site/`:
@@ -279,5 +386,5 @@ From a Mac, in `site/`:
 npx vercel --prod
 ```
 
-Run the collector on the cluster first; the repo is on the shared volume,
-so the Mac sees the new `data/` at once.
+A redeploy is only needed for changes to the page itself. New data reaches
+the page through the monitor-data branch (see Automatic updates).
