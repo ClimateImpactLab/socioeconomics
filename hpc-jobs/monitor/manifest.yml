@@ -462,7 +462,10 @@ files:
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-price014-aggregated.nc4"
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-price014-aggregated.nc4"
   # labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41:
-  # 5 projection, 30 aggregation (15 levels, 15 aggregated; gdp, pop and wage weights).
+  # 4 projection, 31 aggregation (15 levels, 16 aggregated; gdp, pop and wage weights).
+  # The histclim-noadapt file is not made by the projection: a separate step
+  # after it (make_noadapt_histclim.py) builds it, so it counts with the
+  # aggregation stage, listed first under aggregated.
   labor:
     main:
       projection:
@@ -470,7 +473,6 @@ files:
         - "uninteracted_main_model_agnonag_27_28_41-histclim.nc4"
         - "uninteracted_main_model_agnonag_27_28_41-incadapt.nc4"
         - "uninteracted_main_model_agnonag_27_28_41-noadapt.nc4"
-        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt.nc4"
       costs: []
       levels:
         - "uninteracted_main_model_agnonag_27_28_41-gdp-levels.nc4"
@@ -489,6 +491,7 @@ files:
         - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-pop-levels.nc4"
         - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt-wage-levels.nc4"
       aggregated:
+        - "uninteracted_main_model_agnonag_27_28_41-histclim-noadapt.nc4"
         - "uninteracted_main_model_agnonag_27_28_41-gdp-aggregated.nc4"
         - "uninteracted_main_model_agnonag_27_28_41-pop-aggregated.nc4"
         - "uninteracted_main_model_agnonag_27_28_41-wage-aggregated.nc4"
