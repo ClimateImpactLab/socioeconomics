@@ -137,3 +137,4 @@ The first row is only an example of how to fill the table.
 | date | user | sector | run type | job id | partition | memory requested | peak memory | time | status | notes |
 |------|------|--------|----------|--------|-----------|------------------|-------------|------|--------|-------|
 | 2026-10-02 | Sebastian CS | energy | quick_test | 12345678 | cil | 16G | 4G | 02:30:00 | COMPLETED | example only |
+| 2026-10-15 | Sebastian CS | labor | quick_test | 60760541 | amd | 50G | 43.79G | 01:51:47 | COMPLETED | singles now request 60G |
