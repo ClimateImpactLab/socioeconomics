@@ -12,17 +12,23 @@ jobs for its runs.
 energy/
   configs/    model configs, plus quick_test/, single/, median/
   jobs/       quick_test.sbatch, single.sbatch, median.sbatch
+labor/
+  configs/    model config, plus quick_test/, single/, median/, montecarlo/
+  jobs/       quick_test.sbatch, single.sbatch, median.sbatch, montecarlo.sbatch
+  README.md   specification source and how to run
 socioeconomics/
   jobs/       build_panel.sbatch
 logs/         Slurm logs (not tracked by git)
 ```
 
 Run types:
-- `quick_test`: one realization per fuel, to check everything works.
-- `single`: one realization per fuel and scenario.
+- `quick_test`: one realization per fuel or crop, to check everything works.
+- `single`: one realization per fuel or crop and scenario. Run singles first,
+  before any median or montecarlo.
 - `median`: all GCMs and scenarios.
 - `montecarlo`: all GCMs and scenarios, with many draws of the response
-  function. Only for sectors that have it (energy doesn't).
+  function. Only for sectors that have it (energy doesn't). One batch per
+  submission, see the sector README.
 - `build_panel` (socioeconomics): builds the new socioeconomic panel itself
   (income, population, and age cohorts per impact region) — the input data
   the sector runs read — and checks it against the climate compensation
@@ -75,7 +81,9 @@ of Chicago Research Computing Center (RCC).
    to check the run and to fill the table below.
 
    Same for `single`, `median` and `montecarlo`, changing the run type in both
-   lines.
+   lines. Montecarlo also needs the batch number
+   (`sbatch --export=ALL,BATCH=0 <sector>/jobs/montecarlo.sbatch`); each
+   sector's own README has the details.
 
    For the socioeconomic panel, steps 1 and 2 are not needed (the job runs
    this repository's own pipeline in the `irpanel.sif` container; the main

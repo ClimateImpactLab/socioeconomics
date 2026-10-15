@@ -1,0 +1,15 @@
+# Labor montecarlo (SSP3 / rcp85 / high): one batch of draws over all rcp85
+# GCMs, with full adaptation, noadapt, incadapt, and histclim. The batch
+# number is not set here: montecarlo.sbatch passes it on the command line
+# (--only-batch-number). Results land under
+# <outputdir>/batch<N>/<rcp>/<GCM>/<iam>/<ssp>/.
+import: "../uninteracted_main_model.yml"
+mode: montecarlo
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/labor/montecarlo
+timeout: 12
+do_farmers: true
+do_historical: true
+only-rcp: rcp85
+only-ssp: SSP3
+only-iam: high
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/
