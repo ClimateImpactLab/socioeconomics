@@ -1,0 +1,56 @@
+timerate: month
+grid-weight: cropwt
+rolling-years: 2
+climate: [ tasmax, edd, pr, pr-poly-2 = pr-monthsum-poly-2, tasmin ]
+models:
+  - csvvs: "/project/cil/home_dirs/egrenier/repos/agriculture/1_code/3_projections/2_run_projection/projection/csvv/rice-160221.csvv"
+    within-season: "social/baselines/agriculture/explicit_rolling_years/world-combo-201710-growing-seasons-rice-1stseason.csv"
+    clipping: false
+    covariates:
+      - loggdppc
+      - seasonaltasmax
+      - seasonalpr
+      - ir-share
+      - seasonalprspline: [300, 200, 250, 175]
+    description: Yield rate for rice
+    specifications:
+      gddkdd:
+        functionalform: coefficients
+        description: Temperature-driven yield rate for rice
+        depenunit: log kg / Ha
+        variables:
+          gdd-14-30: edd.bin(14) - edd.bin(30) [C day]
+          kdd-30: edd.bin(30) [C day]
+        beta-limits:
+          kdd-30: -inf, 0
+      tmin:
+        functionalform: coefficients
+        description: Temperature-driven yield rate for rice
+        depenunit: log kg / Ha
+        indepunit: C
+        variables:
+          tasmin: tasmin [C]
+      precip:
+        functionalform: sum-by-time
+        description: Precipitation-driven yield rate for rice
+        depenunit: log kg / Ha
+        indepunit: mm
+        suffixes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, r]
+        subspec:
+          variable: pr
+          functionalform: polynomial 
+    calculation:
+      - Sum:
+        - YearlySumIrregular:
+            model: gddkdd
+        - YearlySumIrregular:
+            model: precip
+        - YearlySumIrregular:
+            model: tmin
+      - Rebase
+      - KeepOnly:
+        - rebased
+        - response
+        - response2
+        - response22
+        

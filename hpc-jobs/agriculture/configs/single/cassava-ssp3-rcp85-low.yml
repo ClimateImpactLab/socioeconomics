@@ -1,0 +1,14 @@
+# Agriculture single (cassava): one run (rcp85 / CCSM4 / low / SSP3) with
+# the new socioeconomic panel, with full adaptation, noadapt, incadapt, and
+# histclim. Flat output layout (singledir '').
+import: "../cassava-110221.yml"
+mode: single
+singledir: ''
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/single/cassava
+do_farmers: true
+do_historical: true
+only-rcp: rcp85
+only-models: [CCSM4]
+only-ssp: SSP3
+only-iam: low
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/

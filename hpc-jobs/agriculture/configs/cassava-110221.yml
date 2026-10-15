@@ -1,0 +1,41 @@
+timerate: month
+grid-weight: cropwt
+rolling-years: 2
+climate: [ tasmax, edd, pr, pr-poly-2 = pr-monthsum-poly-2]
+models:
+  - csvvs: "/project/cil/home_dirs/egrenier/repos/agriculture/1_code/3_projections/2_run_projection/projection/csvv/cassava-110221.csvv"
+    within-season: "/project/cil/battuta_shares/gcp/social/baselines/agriculture/explicit_rolling_years/world-combo-202004-growing-seasons-cassava.csv"
+    clipping: false
+    covariates:
+      - loggdppc
+      - seasonaltasmax
+      - seasonalpr
+      - seasonalprspline: [75, 250, 100]
+    description: Yield rate for cassava
+    specifications:
+      gddkdd:
+        functionalform: coefficients
+        description: Temperature-driven yield rate for cassava
+        depenunit: log kg / Ha
+        variables:
+          gdd-10-29: edd.bin(10) - edd.bin(29) [C day]
+          kdd-29: edd.bin(29) [C day]
+        beta-limits:
+          kdd-29: -inf, 0
+      precip:
+        description: Precipitation-driven yield rate for cassava
+        depenunit: log kg / Ha
+        indepunit: mm
+        variable: pr
+        functionalform: polynomial
+    calculation:
+      - Sum:
+        - YearlySumIrregular:
+            model: gddkdd
+        - YearlySumIrregular:
+            model: precip
+      - Rebase
+      - KeepOnly:
+        - rebased
+        - response
+        - response2

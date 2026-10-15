@@ -1,0 +1,14 @@
+# Agriculture single (rice): one run (rcp45 / CCSM4 / high / SSP4) with the
+# new socioeconomic panel, with full adaptation, noadapt, incadapt, and
+# histclim. Flat output layout (singledir '').
+import: "../rice-160221.yml"
+mode: single
+singledir: ''
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/single/rice
+do_farmers: true
+do_historical: true
+only-rcp: rcp45
+only-models: [CCSM4]
+only-ssp: SSP4
+only-iam: high
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/

@@ -1,0 +1,253 @@
+timerate: month
+grid-weight: cropwt
+rolling-years: 2
+mvn-method: eigh
+climate: [ tasmax, edd, pr , pr-poly-2 = pr-monthsum-poly-2, pr-poly-3 = pr-monthsum-poly-3, pr-poly-4 = pr-monthsum-poly-4, tasmin ]
+models:
+  - csvvs: "/project/cil/home_dirs/egrenier/repos/agriculture/1_code/3_projections/2_run_projection/projection/csvv/wheat_winter-280823.csvv"
+    within-season: "social/baselines/agriculture/explicit_rolling_years/world-combo-202004-growing-seasons-wheat-winter.csv"
+    covariate-season: "social/baselines/agriculture/explicit_rolling_years/world-combo-202004-growing-seasons-wheat-winter_summer_phase.csv"
+    clipping: false
+    covariates:
+      - loggdppc
+      - seasonaltasmax
+      - seasonalpr
+      - ir-share
+      - seasonalprspline: [75, 100, 125, 100, 25]
+      - seasonaltasmax*seasonalpr
+      - seasonaltasmax*seasonalprspline: [75, 100, 125, 100, 25]
+    description: Yield rate for wheat
+    specifications:
+      gddkdd-begin:
+        functionalform: sum-by-time
+        description: Temperature-driven yield rate for wheat
+        depenunit: log kg / Ha
+        suffix-triangle:
+          - [0]
+          - [0, 0]
+          - [0, 0, 0]
+          - [0, 0, 0, 0]
+          - [0, 0, 0, 0, 0]
+          - [begin, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        subspec:
+          functionalform: coefficients
+          variables:
+            gdd-1-5: edd.bin(1) - edd.bin(5) [C day]
+            kdd-5: edd.bin(5) [C day]
+          beta-limits:
+            kdd-5: -inf, 0
+      gddkdd-end:
+        functionalform: sum-by-time
+        description: Temperature-driven yield rate for wheat
+        depenunit: log kg / Ha
+        suffix-triangle:
+          - [end]
+          - [end, end]
+          - [end, end, end]
+          - [end, end, end, end]
+          - [end, end, end, end, end]
+          - [0, end, end, end, end, end]
+          - [0, 0, end, end, end, end, end]
+          - [0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, 0, 0, end, end, end, end, end]
+        subspec:
+          functionalform: coefficients
+          variables:
+            gdd-1-9: edd.bin(1) - edd.bin(9) [C day]
+            kdd-9: edd.bin(9) [C day]
+          beta-limits:
+            kdd-9: -inf, 0
+      gddkdd-r:
+        functionalform: sum-by-time
+        description: Temperature-driven yield rate for wheat
+        depenunit: log kg / Ha
+        suffix-triangle:
+          - [0]
+          - [0, 0]
+          - [0, 0, 0]
+          - [0, 0, 0, 0]
+          - [0, 0, 0, 0, 0]
+          - [0, 0, 0, 0, 0, 0]
+          - [0, 0, 0, 0, 0, 0, 0]
+          - [0, 0, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, r, r, 0, 0, 0, 0, 0]
+        subspec:
+          functionalform: coefficients
+          variables:
+            gdd-0-19: edd.bin(0) - edd.bin(19) [C day]
+            kdd-19: edd.bin(19) [C day]
+          beta-limits:
+            kdd-19: -inf, 0
+      tmin-begin:
+        functionalform: sum-by-time
+        description: Temperature-driven yield rate for wheat
+        depenunit: log kg / Ha
+        indepunit: C
+        suffix-triangle:
+          - [0]
+          - [0, 0]
+          - [0, 0, 0]
+          - [0, 0, 0, 0]
+          - [0, 0, 0, 0, 0]
+          - [begin, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        subspec:
+          functionalform: coefficients
+          variables:
+            tasmin: tasmin [C]
+      tmin-end:
+        functionalform: sum-by-time
+        description: Temperature-driven yield rate for wheat
+        depenunit: log kg / Ha
+        indepunit: C
+        suffix-triangle:
+          - [end]
+          - [end, end]
+          - [end, end, end]
+          - [end, end, end, end]
+          - [end, end, end, end, end]
+          - [0, end, end, end, end, end]
+          - [0, 0, end, end, end, end, end]
+          - [0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, 0, 0, end, end, end, end, end]
+        subspec:
+          functionalform: coefficients
+          variables:
+            tasmin: tasmin [C]
+      tmin-r:
+        functionalform: sum-by-time
+        description: Temperature-driven yield rate for wheat
+        depenunit: log kg / Ha
+        indepunit: C
+        suffix-triangle:
+          - [0]
+          - [0, 0]
+          - [0, 0, 0]
+          - [0, 0, 0, 0]
+          - [0, 0, 0, 0, 0]
+          - [0, 0, 0, 0, 0, 0]
+          - [0, 0, 0, 0, 0, 0, 0]
+          - [0, 0, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, r, r, 0, 0, 0, 0, 0]
+        subspec:
+          functionalform: coefficients
+          variables:
+            tasmin: tasmin [C]
+      precip-begin:
+        functionalform: sum-by-time
+        description: Precipitation-driven yield rate for wheat
+        depenunit: log kg / Ha
+        indepunit: mm
+        suffix-triangle:
+          - [0]
+          - [0, 0]
+          - [0, 0, 0]
+          - [0, 0, 0, 0]
+          - [0, 0, 0, 0, 0]
+          - [begin, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          - [begin, begin, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        subspec:
+          variable: pr
+          functionalform: polynomial 
+      precip-end:
+        functionalform: sum-by-time
+        description: Precipitation-driven yield rate for wheat
+        depenunit: log kg / Ha
+        indepunit: mm
+        suffix-triangle:
+          - [end]
+          - [end, end]
+          - [end, end, end]
+          - [end, end, end, end]
+          - [end, end, end, end, end]
+          - [0, end, end, end, end, end]
+          - [0, 0, end, end, end, end, end]
+          - [0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, 0, end, end, end, end, end]
+          - [0, 0, 0, 0, 0, 0, 0, end, end, end, end, end]
+        subspec:
+          variable: pr
+          functionalform: polynomial 
+      precip-r:
+        functionalform: sum-by-time
+        description: Precipitation-driven yield rate for wheat
+        depenunit: log kg / Ha
+        indepunit: mm
+        suffix-triangle:
+          - [0]
+          - [0, 0]
+          - [0, 0, 0]
+          - [0, 0, 0, 0]
+          - [0, 0, 0, 0, 0]
+          - [0, 0, 0, 0, 0, 0]
+          - [0, 0, 0, 0, 0, 0, 0]
+          - [0, 0, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, r, 0, 0, 0, 0, 0]
+          - [0, 0, r, r, r, r, r, 0, 0, 0, 0, 0]
+        subspec:
+          variable: pr
+          functionalform: polynomial 
+    calculation:
+      - Sum:
+        - YearlySumIrregular:
+            model: gddkdd-begin
+        - YearlySumIrregular:
+            model: gddkdd-end
+        - YearlySumIrregular:
+            model: gddkdd-r
+        - YearlySumIrregular:
+            model: precip-begin
+        - YearlySumIrregular:
+            model: precip-end
+        - YearlySumIrregular:
+            model: precip-r
+        - YearlySumIrregular:
+            model: tmin-begin
+        - YearlySumIrregular:
+            model: tmin-end
+        - YearlySumIrregular:
+            model: tmin-r
+      - Rebase
+      - KeepOnly:
+        - rebased
+        - response
+        - response2
+        - response22
+        - response222 
+        - response2222 
+        - response22222 
+        - response2222222 
+        - response22222222
+

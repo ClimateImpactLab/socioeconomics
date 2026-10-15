@@ -1,0 +1,46 @@
+timerate: month
+grid-weight: cropwt
+rolling-years: 2
+climate: [ tasmax, edd, pr, pr-poly-2 = pr-monthsum-poly-2]
+models:
+  - csvvs: "/project/cil/home_dirs/egrenier/repos/agriculture/1_code/3_projections/2_run_projection/projection/csvv/sorghum-160221.csvv"
+    within-season: "social/baselines/agriculture/explicit_rolling_years/world-combo-202004-growing-seasons-sorghum.csv"
+    clipping: false
+    covariates:
+      - loggdppc
+      - seasonaltasmax
+      - seasonalpr
+      - ir-share
+      - seasonalprspline: [125,100,100]
+    description: Yield rate for sorghum
+    specifications:
+      gddkdd:
+        functionalform: coefficients
+        description: Temperature-driven yield rate for sorghum
+        depenunit: log kg / Ha
+        variables:
+          gdd-15-31: edd.bin(15) - edd.bin(31) [C day]
+          kdd-31: edd.bin(31) [C day]
+        beta-limits:
+          kdd-31: -inf, 0
+      precip:
+        functionalform: sum-by-time
+        description: Precipitation-driven yield rate for sorghum
+        depenunit: log kg / Ha
+        indepunit: mm
+        suffixes: [1, 2, 3, 4, 5, 6, r, r, r, r, r, r]
+        subspec:
+          variable: pr
+          functionalform: polynomial 
+    calculation:
+      - Sum:
+        - YearlySumIrregular:
+            model: gddkdd
+        - YearlySumIrregular:
+            model: precip
+      - Rebase
+      - KeepOnly:
+        - rebased
+        - response
+        - response2
+

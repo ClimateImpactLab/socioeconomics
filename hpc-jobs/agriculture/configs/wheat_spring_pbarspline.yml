@@ -1,0 +1,56 @@
+timerate: month
+grid-weight: cropwt
+rolling-years: 2
+mvn-method: eigh
+climate: [ tasmax, edd, pr, pr-poly-2 = pr-monthsum-poly-2, pr-poly-3 = pr-monthsum-poly-3, pr-poly-4 = pr-monthsum-poly-4, tasmin ]
+models:
+  - csvvs: "/project/cil/home_dirs/egrenier/repos/agriculture/1_code/3_projections/2_run_projection/projection/csvv/wheat_spring-280823.csvv"
+    within-season: "social/baselines/agriculture/explicit_rolling_years/world-combo-202004-growing-seasons-wheat-spring.csv"
+    clipping: false
+    covariates:
+      - seasonalprspline: [75, 100, 125, 100, 25]
+      - seasonaltasmax*seasonalprspline: [75, 100, 125, 100, 25]
+      - loggdppc
+      - seasonaltasmax
+      - seasonalpr
+      - ir-share
+      - seasonaltasmax*seasonalpr
+    description: Yield rate for spring wheat
+    specifications:
+      gddkdd:
+        functionalform: coefficients
+        description: Temperature-driven yield rate for spring wheat
+        depenunit: log kg / Ha
+        variables:
+          gdd-1-9: edd.bin(1) - edd.bin(9) [C day]
+          kdd-9: edd.bin(9) [C day]
+        beta-limits:
+          kdd-9: -inf, 0
+      tmin:
+        functionalform: coefficients
+        description: Temperature-driven yield rate for spring wheat
+        depenunit: log kg / Ha
+        indepunit: C
+        variables:
+          tasmin: tasmin [C]
+      precip:
+        description: Precipitation-driven yield rate for spring wheat
+        depenunit: log kg / Ha
+        indepunit: mm
+        variable: pr
+        functionalform: polynomial 
+    calculation:
+      - Sum:
+        - YearlySumIrregular:
+            model: gddkdd
+        - YearlySumIrregular:
+            model: precip
+        - YearlySumIrregular:
+            model: tmin
+      - Rebase
+      - KeepOnly:
+        - rebased
+        - response
+        - response2
+        - response22
+        

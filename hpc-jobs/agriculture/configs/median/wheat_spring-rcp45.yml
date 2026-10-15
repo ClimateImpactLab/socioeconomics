@@ -1,0 +1,13 @@
+# Agriculture median (wheat_spring, rcp45): point estimate over all rcp45
+# GCMs for every SSP and IAM the projection system knows (no only-ssp or
+# only-iam filter), with full adaptation, noadapt, incadapt, and histclim.
+# Median mode adds its own median/ level: results land under
+# <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/.
+import: "../wheat_spring_pbarspline.yml"
+mode: median
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/median/wheat_spring
+timeout: 12
+do_farmers: true
+do_historical: true
+only-rcp: rcp45
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/
