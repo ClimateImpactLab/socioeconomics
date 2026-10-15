@@ -5,7 +5,7 @@
 #SBATCH --account=cil
 #SBATCH --partition=amd
 #SBATCH --ntasks=1
-#SBATCH --mem=50G
+#SBATCH --mem=60G
 #SBATCH --time=08:00:00
 #SBATCH --array=0-15
 
