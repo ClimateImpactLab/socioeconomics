@@ -881,10 +881,11 @@ function renderJobs() {
 // bottom up. A sector fills with its share of projection files, pulses
 // while projections run, turns solid when they are all there, and gets a
 // fine texture when aggregation is complete too.
+// In CAMEL order: Coastal, Agriculture, Mortality, Energy, Labor.
 const CAMEL_SECTIONS = [
-  { key: "mortality", label: "Mortality", part: "shoulder and front legs" },
   { key: "coastal", label: "Coastal", part: "back and humps" },
   { key: "agriculture", label: "Agriculture", part: "hindquarters, back legs and tail" },
+  { key: "mortality", label: "Mortality", part: "shoulder and front legs" },
   { key: "energy", label: "Energy", part: "head and neck" },
   { key: "labor", label: "Labor", part: "belly" },
 ];
