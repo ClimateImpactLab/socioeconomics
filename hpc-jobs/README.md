@@ -137,3 +137,10 @@ The first row is only an example of how to fill the table.
 | date | user | sector | run type | job id | partition | memory requested | peak memory | time | status | notes |
 |------|------|--------|----------|--------|-----------|------------------|-------------|------|--------|-------|
 | 2026-10-02 | Sebastian CS | energy | quick_test | 12345678 | cil | 16G | 4G | 02:30:00 | COMPLETED | example only |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.49G | 01:59:41 | COMPLETED | cassava |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.53G | 02:17:04 | COMPLETED | corn |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 11.10G | 01:55:40 | COMPLETED | rice |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.65G | 01:29:58 | COMPLETED | sorghum |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.28G | 01:57:45 | COMPLETED | soy |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 16.40G | 02:50:00 | COMPLETED | wheat_spring |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 19.94G | 05:47:46 | COMPLETED | wheat_winter; singles now request 28G |
