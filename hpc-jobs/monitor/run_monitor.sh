@@ -1,7 +1,8 @@
 #!/bin/bash -l
 # Scheduled monitor run: collect the status, then publish it to the
-# monitor-data branch. Run every 4 hours by monitor_job.sbatch (see README),
-# or by hand: bash hpc-jobs/monitor/run_monitor.sh
+# monitor-data branch. Run every hour, on the hour, by monitor_job.sbatch
+# (see README), or by hand: bash hpc-jobs/monitor/run_monitor.sh
+# A run by hand never queues anything, so the hourly chain is left alone.
 set -euo pipefail
 
 MONITOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

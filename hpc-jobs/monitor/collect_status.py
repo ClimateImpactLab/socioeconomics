@@ -174,6 +174,17 @@ def leaf_path(root, *parts):
     return os.path.join(root, *[p for p in parts if p])
 
 
+DEFAULT_LAYOUT = "{run_type}/{model}/{subdir}"
+
+
+def model_dir_for(sector, rt_name, rt_cfg, model, root=None):
+    """Folder of one sub-model and run type, down to where batch or rcp
+    folders start, following the sector's layout in the manifest."""
+    rel = sector.get("layout", DEFAULT_LAYOUT).format(
+        run_type=rt_name, model="" if model == "main" else model, subdir=rt_cfg.get("subdir") or "")
+    return leaf_path(root or sector["output_root"], *rel.split("/"))
+
+
 def stage_record(stage, info, present, stage_names, now):
     """State of one stage from the folder alone, plus a reason when failed."""
     marker = info["markers"].get(stage) if info else None
@@ -207,10 +218,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     batch_list = [f"batch{i}" for i in range(batches)] if batches else [None]
     models = sector["models"]
     stages = sector["stages"]
-    subdir = rt_cfg.get("subdir")
-
     root = sector["output_root"].replace("/project/cil", cil_root, 1)
-    rt_root = os.path.join(root, rt_name)
 
     counts = {s: 0 for s in ["not_started", "running", "partial", "done", "failed"]}
     units = []
@@ -227,19 +235,20 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
         # wheat are never aggregated themselves) does not apply to it.
         model_stages = [st for st in stages if st == "generate" or per_stage[st]]
         has_twin = any(n.startswith("winsorized/") for n in names)
-        model_dir = rt_root if model == "main" else os.path.join(rt_root, model)
-        twin_dir = None if model == "main" else os.path.join(rt_root, f"{model}-1pct_winsorization")
+        model_dir = model_dir_for(sector, rt_name, rt_cfg, model, root)
+        twin_dir = None if model == "main" else \
+            model_dir_for(sector, rt_name, rt_cfg, f"{model}-1pct_winsorization", root)
         for batch_name in batch_list:
             batch_num = int(batch_name[5:]) if batch_name else None
             for cell in cells:
-                rcp_dir = leaf_path(model_dir, subdir, batch_name, cell["rcp"])
+                rcp_dir = leaf_path(model_dir, batch_name, cell["rcp"])
                 rcp_exists = os.path.isdir(rcp_dir)
                 for gcm in rcp_gcms[cell["rcp"]]:
                     info = read_leaf(os.path.join(rcp_dir, gcm, cell["iam"], cell["ssp"])) \
                         if rcp_exists else None
                     twin_files = {}
                     if info and has_twin and twin_dir:
-                        twin = read_leaf(leaf_path(twin_dir, subdir, batch_name, cell["rcp"],
+                        twin = read_leaf(leaf_path(twin_dir, batch_name, cell["rcp"],
                                                    gcm, cell["iam"], cell["ssp"]))
                         twin_files = twin["files"] if twin else {}
                     leaf_files = info["files"] if info else {}
@@ -317,8 +326,8 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
 
     return {
         "dims": {"models": models, "cells": cells, "gcms": rcp_gcms, "batches": batches},
-        "root": os.path.join(sector["output_root"], rt_name),
-        "subdir": subdir,
+        # Folder of each sub-model, down to the batch or rcp folders.
+        "model_dirs": {m: model_dir_for(sector, rt_name, rt_cfg, m) for m in models},
         "counts": counts,
         "eta_hours": eta_hours,
         "eta_basis": eta_basis,
@@ -437,10 +446,25 @@ def squeue_elapsed_s(text):
     return days * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
 
 
+def mem_text(text):
+    """Requested memory from squeue ('45G', '4000M') in a short form ('45G', '3.9G')."""
+    m = re.match(r"^([\d.]+)([KMGT]?)$", (text or "").strip())
+    if not m:
+        return None
+    size = float(m.group(1)) * {"K": 1 / 1024, "": 1, "M": 1, "G": 1024, "T": 1024 ** 2}[m.group(2)]
+    if size >= 1024 ** 2:
+        t = size / 1024 ** 2
+        return f"{t:.0f}T" if t == int(t) else f"{t:.1f}T"
+    if size >= 1024:
+        g = size / 1024
+        return f"{g:.0f}G" if g >= 10 or g == int(g) else f"{g:.1f}G"
+    return f"{size:.0f}M"
+
+
 def live_tasks(account):
     """One row per running or queued task on the account, or None on failure."""
     # -r gives one row per array task instead of one row per array.
-    out = run_cmd(["squeue", "-r", "-h", "-A", account, "-o", "%i|%u|%j|%T|%P|%M|%l|%L"])
+    out = run_cmd(["squeue", "-r", "-h", "-A", account, "-o", "%i|%u|%j|%T|%P|%M|%l|%L|%C|%m"])
     if out is None:
         return None
 
@@ -454,44 +478,57 @@ def live_tasks(account):
     rows = []
     for line in out.splitlines():
         parts = line.strip().split("|")
-        if len(parts) != 8:
+        if len(parts) != 10:
             continue
-        ids, user, name, state, partition, elapsed, limit, left = parts
+        ids, user, name, state, partition, elapsed, limit, left, cpus, mem = parts
         running = state == "RUNNING"
         rows.append({"id": ids, "base": ids.split("_")[0], "user": user, "name": name,
                      "state": state, "partition": partition,
                      "elapsed_s": (seconds(elapsed) or 0) if running else 0,
                      "limit_s": seconds(limit),
-                     "left_s": seconds(left) if running else None})
+                     "left_s": seconds(left) if running else None,
+                     "cpus": int(cpus) if cpus.isdigit() else None, "mem": mem_text(mem)})
     return rows
 
 
+FAILED_STATES = ("FAILED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL")
+
+
 def completed_task_counts(account, bases):
-    """Number of tasks that finished successfully, per job id."""
-    counts = {}
+    """Tasks that finished well and tasks that failed, per job id.
+
+    Returns ({job id: done}, {job id: failed}). Failed means failed, timeout,
+    out of memory or node failure; cancelled tasks are in neither.
+    """
+    done, failed = {}, {}
     if not bases:
-        return counts
+        return done, failed
     out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account,
                    "-j", ",".join(sorted(bases)), "--format=JobID,State"])
     for line in (out or "").splitlines():
         parts = line.strip().split("|")
-        if len(parts) == 2 and parts[1].split() and parts[1].split()[0] == "COMPLETED":
-            base = parts[0].split("_")[0]
-            counts[base] = counts.get(base, 0) + 1
-    return counts
+        if len(parts) != 2 or not parts[1].split():
+            continue
+        state, base = parts[1].split()[0], parts[0].split("_")[0]
+        if state == "COMPLETED":
+            done[base] = done.get(base, 0) + 1
+        elif state in FAILED_STATES:
+            failed[base] = failed.get(base, 0) + 1
+    return done, failed
 
 
 def active_jobs_by_user(account, rows):
     """Running and queued jobs per cluster user, one row per job or array."""
-    done = completed_task_counts(account, {r["base"] for r in rows})
+    done, failed = completed_task_counts(account, {r["base"] for r in rows})
     jobs = {}
     for row in rows:
         if row["state"] not in ("RUNNING", "COMPLETING", "PENDING"):
             continue
         job = jobs.setdefault((row["user"], row["base"]), {
             "job_name": row["name"], "partitions": [], "running": 0, "queued": 0,
-            "elapsed_s": 0, "done": done.get(row["base"], 0),
+            "elapsed_s": 0, "done": done.get(row["base"], 0), "failed": failed.get(row["base"], 0),
             "limit_s": row["limit_s"], "left_s": None,
+            "cpus": row["cpus"], "mem": row["mem"],
         })
         if row["partition"] not in job["partitions"]:
             job["partitions"].append(row["partition"])
@@ -513,8 +550,11 @@ def active_jobs_by_user(account, rows):
             "job_name": job["job_name"],
             "partition": ",".join(job["partitions"]),
             "state": "RUNNING" if job["running"] else "PENDING",
-            "tasks": {"running": job["running"], "queued": job["queued"], "done": job["done"]},
+            "tasks": {"running": job["running"], "queued": job["queued"], "done": job["done"],
+                      "failed": job["failed"]},
             "elapsed_min": round(job["elapsed_s"] / 60.0, 1),
+            "cpus": job["cpus"],   # per task
+            "mem": job["mem"],     # per task, as squeue shows it
             "limit_min": None if job["limit_s"] is None else round(job["limit_s"] / 60.0, 1),
             "left_min": None if job["left_s"] is None else round(job["left_s"] / 60.0, 1),
         })
@@ -821,7 +861,7 @@ def main():
         "schema_version": 4,
         "source": "collector",
         "generated_at": now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "scan_interval_hours": 4,
+        "scan_interval_hours": 1,
         "account": {"name": account, **balance, "su_since": since, "storage": storage,
                     "compute_total": compute_total,
                     "su_charged_total": charged_total,

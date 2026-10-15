@@ -551,3 +551,15 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .jobs-table td.time-short { color: var(--st-pend); font-weight: 600; }
 .ckey-label { align-self: center; font-size: 10px; color: var(--tx3); margin-right: 2px; }
 .res-counts.res-only { font-size: 10px; color: var(--tx2); }
+/* Task badges: R running, P pending, D done, F failed. */
+.tbs { display: inline-flex; gap: 3px; vertical-align: middle; }
+.tb { display: inline-block; font-family: var(--mono); font-size: 9.5px; font-weight: 600; line-height: 1;
+  padding: 2px 5px; border-radius: 3px; white-space: nowrap; }
+.tb-r { color: var(--st-run); background: var(--st-run-bg); }
+.tb-p { color: var(--st-pend); background: var(--st-pend-bg); }
+.tb-d { color: var(--st-done); background: color-mix(in srgb, var(--st-done) 13%, transparent); }
+.tb-f { color: var(--red); background: color-mix(in srgb, var(--red) 15%, transparent); }
+.tb-key { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 10px; color: var(--tx2); margin: 0 0 5px; }
+.tb-key-sep { width: 8px; }
+.juser { display: inline-flex; align-items: center; gap: 3px; margin-right: 12px; white-space: nowrap; }
+.part-pill .tbs { margin-left: 2px; }

@@ -125,8 +125,10 @@ def mock_active_jobs(rng):
             "partition": partition,
             "state": "RUNNING",
             "tasks": {"running": running, "queued": queued,
-                      "done": rng.randint(0, max(size - running - queued, 0))},
+                      "done": rng.randint(0, max(size - running - queued, 0)),
+                      "failed": rng.randint(1, 3) if rng.random() < 0.2 else 0},
             "elapsed_min": elapsed,
+            "cpus": rng.choice([1, 1, 2, 4]), "mem": rng.choice(["45G", "64G", "8G", "16G"]),
             "limit_min": limit,
             "left_min": round(limit - elapsed, 1),
         })
@@ -135,13 +137,20 @@ def mock_active_jobs(rng):
         queued = rng.randint(1, size)
         jobs.append({"job_id": str(rng.randint(59_900_000, 60_100_000)),
                      "job_name": name, "partition": partition, "state": "PENDING",
-                     "tasks": {"running": 0, "queued": queued, "done": 0},
-                     "elapsed_min": 0.0, "limit_min": 36 * 60.0, "left_min": None})
+                     "tasks": {"running": 0, "queued": queued, "done": 0, "failed": 0},
+                     "elapsed_min": 0.0, "cpus": 1, "mem": "45G", "limit_min": 36 * 60.0, "left_min": None})
     jobs.sort(key=lambda j: (j["state"] != "RUNNING", -j["elapsed_min"]))
     return jobs
 
 
 GROUPS = ["projection", "costs", "levels", "aggregated"]
+
+
+def model_dir_for(sector, rt_name, rt_cfg, model):
+    """Same rule as the collector: the sector's layout, empty parts dropped."""
+    rel = sector.get("layout", "{run_type}/{model}/{subdir}").format(
+        run_type=rt_name, model="" if model == "main" else model, subdir=rt_cfg.get("subdir") or "")
+    return os.path.join(sector["output_root"], *[p for p in rel.split("/") if p])
 
 
 def file_spec_for(files_cfg, sector_name):
@@ -342,8 +351,7 @@ def main():
                     "gcms": rcp_gcms,
                     "batches": batches,
                 },
-                "root": os.path.join(sector["output_root"], run_type),
-                "subdir": rt_cfg.get("subdir"),
+                "model_dirs": {m: model_dir_for(sector, run_type, rt_cfg, m) for m in sector["models"]},
                 "counts": counts,
                 "eta_hours": eta_hours,
                 "eta_basis": eta_basis,
@@ -387,7 +395,7 @@ def main():
         "schema_version": 4,
         "source": "mock",
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "scan_interval_hours": 4,
+        "scan_interval_hours": 1,
         "account": {
             "name": manifest["account"]["name"],
             "allocation_status": "ok",

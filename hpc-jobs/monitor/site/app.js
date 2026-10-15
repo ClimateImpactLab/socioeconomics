@@ -40,7 +40,7 @@ function userName(user) {
 const SU_STYLES = 5;
 
 const params = new URLSearchParams(location.search);
-// The collector pushes its data to the monitor-data branch every 4 hours, so
+// The collector pushes its data to the monitor-data branch every hour, so
 // the page reads it from there; the copy deployed with the site is the fallback.
 const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeconomics/monitor-data/data/";
 let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
@@ -160,13 +160,11 @@ function filesOf(sec, rt) {
   return out;
 }
 
+// A sector's progress is the progress of its main run only (montecarlo,
+// or median where there is no montecarlo); singles and tests do not count.
 function sectorFiles(sec) {
-  const t = { proj: 0, projExp: 0, agg: 0, aggExp: 0 };
-  for (const rt of Object.values(sec.run_types)) {
-    const f = filesOf(sec, rt);
-    for (const k of Object.keys(t)) t[k] += f[k];
-  }
-  return t;
+  const rt = sec.run_types[defaultRunType(sec)];
+  return rt ? filesOf(sec, rt) : { proj: 0, projExp: 0, agg: 0, aggExp: 0 };
 }
 
 // A sector is active when projection files were written in its folders in
@@ -257,7 +255,7 @@ function renderAll() {
   renderTabs();
   const needModel = !!view.sector && gridKind(runType()) === "gcms" && runType().dims.models.length > 1 && !view.model;
   document.body.classList.toggle("no-model", needModel);
-  $("pick-note").textContent = !view.sector ? "Pick a sector to see its grid." : "Pick a sub-model to see its grid.";
+  $("pick-note").textContent = !view.sector ? "Select a sector and a run type (single, median or montecarlo) to see progress." : "Pick a sub-model to see its grid.";
   if (!view.sector) return;
   renderCards();
   if (needModel) return;
@@ -552,9 +550,13 @@ function fitGrid() {
 
 function cellPath(info) {
   const rt = runType();
-  const parts = [rt.root];
-  if (info.model !== "main") parts.push(info.model);
-  if (rt.subdir) parts.push(rt.subdir);
+  const parts = [];
+  if (rt.model_dirs) parts.push(rt.model_dirs[info.model]);
+  else {
+    parts.push(rt.root);
+    if (info.model !== "main") parts.push(info.model);
+    if (rt.subdir) parts.push(rt.subdir);
+  }
   if (info.batch != null) parts.push(`batch${info.batch}`);
   parts.push(info.rcp, info.gcm, info.iam, info.ssp);
   return parts.join("/");
@@ -810,11 +812,17 @@ function partPill(name, n) {
   return `<span class="part-pill">${partSwatch(name)}${esc(name)}${n != null ? ": " + n : ""}</span>`;
 }
 
-function stateCounts(running, queued) {
-  const p = [];
-  if (running) p.push(`<span class="state-run">${fmtN(running)} running</span>`);
-  if (queued) p.push(`<span class="state-pend">${fmtN(queued)} pending</span>`);
-  return p.join(", ") || `<span class="lbl">none</span>`;
+// Task counts as small letter badges: R running, P pending, D done, F failed.
+const TASK_BADGES = [["running", "R", "running"], ["queued", "P", "pending"], ["done", "D", "done"], ["failed", "F", "failed"]];
+function taskBadges(t, keys) {
+  const out = TASK_BADGES.filter(([k]) => (!keys || keys.includes(k)) && t[k])
+    .map(([k, letter, word]) => `<span class="tb tb-${letter.toLowerCase()}" title="${fmtN(t[k])} ${word}">${letter} ${fmtN(t[k])}</span>`);
+  return out.length ? `<span class="tbs">${out.join("")}</span>` : `<span class="lbl">none</span>`;
+}
+function sumTasks(jobs) {
+  const t = { running: 0, queued: 0, done: 0, failed: 0 };
+  for (const j of jobs) for (const k of Object.keys(t)) t[k] += j.tasks[k] || 0;
+  return t;
 }
 
 // Time left under this many minutes shows in amber.
@@ -834,22 +842,29 @@ function renderJobs() {
     return;
   }
 
+  // Live tasks per partition; a pending job that may run on several
+  // partitions counts on the first one.
   const parts = {};
-  for (const j of jobs) for (const p of j.partition.split(",")) parts[p] = (parts[p] || 0) + 1;
+  for (const j of jobs) {
+    const p = j.partition.split(",")[0];
+    const t = (parts[p] = parts[p] || { running: 0, queued: 0 });
+    t.running += j.tasks.running;
+    t.queued += j.tasks.queued;
+  }
+  const live = ["running", "queued"];
   let html = `<div class="jobs-line">${fmtN(jobs.length)} ${jobs.length === 1 ? "job" : "jobs"}
-    (${fmtN(run + pend)} tasks): ${stateCounts(run, pend)}
+    (${fmtN(run + pend)} tasks) ${taskBadges({ running: run, queued: pend }, live)}
     ${Object.keys(parts).length ? `<span class="lbl" style="margin-left:10px">Partitions</span> ` +
-      Object.keys(parts).sort().map((p) => partPill(p, parts[p])).join(" ") : ""}</div>`;
+      Object.keys(parts).sort().map((p) => `<span class="part-pill">${partSwatch(p)}${esc(p)} ${taskBadges(parts[p], live)}</span>`).join(" ") : ""}</div>`;
 
   const always = DATA.account.always_show_users || [];
   const shown = groups.filter((g) => (g.jobs && g.jobs.length) || always.includes(g.name) || g.name === DATA.account.highlight_user);
   if (shown.length) {
     html += `<div class="jobs-line"><span class="lbl">Users</span> ` + shown.map((g) => {
       const js = g.jobs || [];
-      const r = js.reduce((n, j) => n + j.tasks.running, 0), q = js.reduce((n, j) => n + j.tasks.queued, 0);
-      return `<span class="udot" style="background:${userColor(g.name)}"></span> <b>${userName(g.name)}</b>: ` +
-        (js.length ? stateCounts(r, q) : `<span class="lbl">no jobs</span>`);
-    }).join(" | ") + `</div>`;
+      return `<span class="juser"><span class="udot" style="background:${userColor(g.name)}"></span> <b>${userName(g.name)}</b> ` +
+        (js.length ? taskBadges(sumTasks(js), live) : `<span class="lbl">no jobs</span>`) + `</span>`;
+    }).join("") + `</div>`;
   }
 
   const a = DATA.account;
@@ -859,15 +874,20 @@ function renderJobs() {
     html += `<div class="jobs-empty">No jobs on the ${esc(a.name)} account right now</div>`;
   } else {
     const order = [...jobs].sort((x, y) => (x.state !== "RUNNING") - (y.state !== "RUNNING") || y.elapsed_min - x.elapsed_min);
+    html += `<div class="tb-key">` + TASK_BADGES.map(([, letter, word]) =>
+      `<span class="tb tb-${letter.toLowerCase()}">${letter}</span> ${word}`).join(`<span class="tb-key-sep"></span>`) + ` <span class="lbl">(tasks)</span></div>`;
     html += `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>State</th>
-      <th class="r">Running</th><th class="r">Pending</th><th class="r">Done</th><th class="r">Elapsed</th>
+      <th>Tasks</th><th class="r">Elapsed</th>
+      <th class="r" title="Per task">CPUs</th><th class="r" title="Per task">Memory</th>
       <th class="r">Time limit</th><th class="r">Time left</th></tr>` +
       order.map((j) => `<tr><td class="mono">${esc(j.job_id || "")}</td><td>${esc(j.job_name)}</td>
         <td><span class="ukey-item"><span class="udot" style="background:${userColor(j.person)}"></span>${userName(j.person)}</span></td>
         <td>${j.partition.split(",").map((p) => partPill(p)).join("")}</td>
         <td class="${j.state === "RUNNING" ? "state-run" : "state-pend"}">${j.state === "RUNNING" ? "Running" : "Pending"}</td>
-        <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td><td class="r">${fmtN(j.tasks.done)}</td>
+        <td>${taskBadges(j.tasks)}</td>
         <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td>
+        <td class="r">${j.cpus != null ? fmtN(j.cpus) : ""}</td>
+        <td class="r">${esc(j.mem || "")}</td>
         <td class="r">${j.limit_min != null ? fmtMin(j.limit_min) : ""}</td>
         <td class="r${j.left_min != null && j.left_min < LEFT_WARN_MIN ? " time-short" : ""}"${j.left_min != null && j.left_min < LEFT_WARN_MIN ? ' title="Under 2 hours left before the time limit"' : ""}>${j.left_min != null ? fmtMin(j.left_min) : ""}</td></tr>`).join("") + `</table></div>`;
   }
@@ -1107,7 +1127,8 @@ async function boot() {
   }
 
   const ageH = (Date.now() - new Date(DATA.generated_at).getTime()) / 3.6e6;
-  $("subtitle").textContent = `Last scan: ${new Date(DATA.generated_at).toLocaleString()}, every ${DATA.scan_interval_hours} h` +
+  const every = DATA.scan_interval_hours === 1 ? "every hour" : `every ${DATA.scan_interval_hours} h`;
+  $("subtitle").textContent = `Last scan: ${new Date(DATA.generated_at).toLocaleString()}, ${every}` +
     (localCopy ? " (local copy)" : "");
   if (DATA.source === "mock") $("mock-badge").classList.remove("hidden");
   if (ageH > 2 * DATA.scan_interval_hours) {

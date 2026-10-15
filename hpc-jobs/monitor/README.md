@@ -9,7 +9,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   of 100 pieces per sector: head and neck energy (yellow), shoulder and
   front legs mortality (red), back and humps coastal (blue), belly labor
   (grey), hindquarters, back legs and tail agriculture (green). Pieces fill
-  from the bottom up with the sector's share of projection files and pulse
+  from the bottom up with the sector's share of projection files in its
+  main run only (montecarlo for agriculture, mortality and labor, median
+  for energy; singles and other run types do not count) and pulse
   softly while projections run; the sector turns solid when all projection
   files are there, and gets fine light stripes when aggregation is complete
   too. Coastal is not tracked yet. The kit's walking animation is paused
@@ -22,7 +24,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Right above the grid: sector, run type and sub-model tabs (montecarlo by
   default, median for energy, whose montecarlo tab is greyed out). Each
   sector tab has its camel color, the selected one filled with it, and
-  shows its progress and the SUs needed to finish it ("not known yet" for
+  shows the progress of its main run (the same as the camel) and the SUs
+  needed to finish it ("not known yet" for
   agriculture), with a one-line explanation underneath. A sector is active
   when projection files were written in its folders in the last 24 hours
   (or a unit is being written now); its tab then shows four small squares
@@ -77,9 +80,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   grid is hidden and a short note asks to turn the phone. Taps do what
   hover does: a tap on a cell shows its summary and files, and a tap on
   the SU bar marks its user and partition.
-- SLURM jobs: running and pending counts, partitions, users, and a table
-  of every running or queued job: job id, name, user, partition, state,
-  running, pending and done tasks, elapsed time, time limit and time left
+- SLURM jobs: task counts for the account, each partition and each user,
+  as small letter badges (R running, P pending, D done, F failed, with a
+  key above the table), and a table of every running or queued job: job
+  id, name, user, partition, state, task badges, elapsed time, CPUs and memory requested
+  (per task for arrays), time limit and time left
   before the limit (from squeue; for an array, the task closest to its
   limit). Time left shows in amber when it is under 2 hours. Below it, a collapsed
   list of jobs on the account that ended badly (timeout, out of memory,
@@ -192,10 +197,15 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
 
 ## How the collector reads the folders
 
-- It walks
-  `<output_root>/<run type>/[<sub-model>/][<subdir>/][batch<N>/]<rcp>/<GCM>/<iam>/<SSP>/`.
-  `subdir` is the folder the engine adds itself: median mode writes under
-  an extra `median/` level, so the manifest sets `subdir: median` there.
+- It walks `<output_root>/<layout>/[batch<N>/]<rcp>/<GCM>/<iam>/<SSP>/`,
+  where `layout` comes from each sector in the manifest. The default is
+  `{run_type}/{model}/{subdir}`: mortality, agriculture and labor, where
+  the median runs write under an extra `median/` level (`subdir: median`).
+  Energy uses `{model}/{run_type}`, each fuel first and no extra median
+  level: `energy/electricity/single/rcp45/...` and
+  `energy/electricity/median/rcp45/...`.
+- Scenarios: SSP2, SSP3 and SSP4, each with rcp45 and rcp85 and both IAMs
+  (12 scenarios), as in the original specifications.
 - A file counts as present only if it exists and is not empty.
 - `status-global.txt` gives finished stages and their times. A stage that
   a worker claimed (`status-<stage>.txt`) is running while files keep
@@ -246,7 +256,7 @@ The contract between the collector and the page; the mock follows it.
   "schema_version": 4,
   "source": "collector",             // "mock" or "collector"
   "generated_at": "2026-10-13T18:00:00Z",
-  "scan_interval_hours": 4,
+  "scan_interval_hours": 1,
   "account": {
     "name": "cil",
     "allocation_status": "ok",       // "ok", "none" (no allocation listed) or "unknown"
@@ -272,7 +282,9 @@ The contract between the collector and the page; the mock follows it.
      "core_hours_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},
      "su_flagged": {"bigmem": {"jobs": 2, "hours": 30.5, "reason": "bigmem partition"}},
      "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
-                      "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0,
+                      "tasks": {"running": 32, "queued": 0, "done": 16, "failed": 1},   // failed: failed, timeout, out of memory, node failure
+                      "elapsed_min": 1391.0,
+                      "cpus": 1, "mem": "45G",   // requested, per task
                       "limit_min": 2160.0,    // null with no limit
                       "left_min": 769.0}]}    // smallest among running tasks; null while pending
   ],
@@ -292,8 +304,8 @@ The contract between the collector and the page; the mock follows it.
         "median": {
           "dims": {"models": ["main"], "cells": [{"ssp": "SSP3", "rcp": "rcp45", "iam": "low"}],
                    "gcms": {"rcp45": ["..."], "rcp85": ["..."]}, "batches": null},
-          "root": "/project/cil/gcp/outputs_newsocioeconomics/mortality/median",
-          "subdir": "median",
+          "model_dirs": {"main": "/project/cil/gcp/outputs_newsocioeconomics/mortality/median/median"},
+                                     // each sub-model's folder, down to the batch or rcp folders
           "counts": {"not_started": 0, "running": 0, "partial": 0, "done": 0, "failed": 0, "total": 520},
           "eta_hours": null, "eta_basis": null,
           "su_estimate": {"remaining": 520, "hours_low": 20.5, "hours_high": 36, "su_low": 10660,
@@ -323,7 +335,8 @@ order: `[size in bytes, written time in Unix seconds]`, or `0` if missing.
 
 ## Automatic updates
 
-Every 4 hours a self-scheduling Slurm job on Midway3 (`monitor_job.sbatch`;
+Every hour, on the hour (America/Chicago), a self-scheduling Slurm job on
+Midway3 (`monitor_job.sbatch`;
 scrontab is disabled on this cluster) runs `run_monitor.sh`: it loads
 impact-env, runs `collect_status.py`, then `publish_data.sh` pushes
 `site/data/` (status.json and the per cell detail files) to the
@@ -374,8 +387,10 @@ branch; protecting `main` (require pull requests) closes that gap.
 ### 2. Start it (once)
 
 `monitor_job.sbatch` runs on partition cil, account cil, for up to 15
-minutes with 2G. Each run first queues the next one for 4 hours later
-(`--begin=now+4hours`), then collects and publishes, so the chain goes on
+minutes with 2G. Each run first queues the next one for the next full
+hour in America/Chicago (`--begin=<next hour>:00:00`; Slurm reads the time
+in the cluster's local time, which is Chicago), then collects and
+publishes, so the chain goes on
 even if one run fails. It always uses the job name `amel-monitor` with
 `--dependency=singleton`, and skips queuing when a run is already waiting,
 so there is never more than one waiting. Logs go to
@@ -390,8 +405,10 @@ mkdir -p /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/c
 sbatch /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/monitor/monitor_job.sbatch
 ```
 
-To run the collector and publish once without touching the schedule:
-`bash .../hpc-jobs/monitor/run_monitor.sh`.
+Manual runs never touch the chain. To collect and publish once:
+`bash .../hpc-jobs/monitor/run_monitor.sh`. To do the same as a Slurm job:
+`sbatch --export=ALL,MONITOR_ONCE=1 .../hpc-jobs/monitor/monitor_job.sbatch`;
+it skips queuing the next run.
 
 ### 3. Check
 
@@ -409,7 +426,7 @@ variables are allowed, so system profile scripts that fail on some nodes
 cannot stop the run.
 
 There should always be one `amel-monitor` job, PENDING with a start time
-up to 4 hours ahead (or RUNNING for a few minutes, with the next one
+at the next full hour (or RUNNING for a few minutes, with the next one
 PENDING). On GitHub, the `monitor-data` branch shows the time of the last
 push in its single commit ("Monitor data, <time> UTC"). On the page, the
 subtitle shows the last scan time.
