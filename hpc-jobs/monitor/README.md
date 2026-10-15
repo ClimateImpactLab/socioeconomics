@@ -79,7 +79,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   the SU bar marks its user and partition.
 - SLURM jobs: running and pending counts, partitions, users, and a table
   of every running or queued job: job id, name, user, partition, state,
-  running, pending and done tasks, and elapsed time. Below it, a collapsed
+  running, pending and done tasks, elapsed time, time limit and time left
+  before the limit (from squeue; for an array, the task closest to its
+  limit). Time left shows in amber when it is under 2 hours. Below it, a collapsed
   list of jobs on the account that ended badly (timeout, out of memory,
   failed, cancelled) in the last `account.ended_badly_days` days: job id,
   name, user, partition, how it ended and how long it ran. Array tasks
@@ -270,7 +272,9 @@ The contract between the collector and the page; the mock follows it.
      "core_hours_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},
      "su_flagged": {"bigmem": {"jobs": 2, "hours": 30.5, "reason": "bigmem partition"}},
      "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
-                      "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0}]}
+                      "tasks": {"running": 32, "queued": 0, "done": 16}, "elapsed_min": 1391.0,
+                      "limit_min": 2160.0,    // null with no limit
+                      "left_min": 769.0}]}    // smallest among running tasks; null while pending
   ],
   "ended_badly": [                   // newest first, at most 25; null without Slurm
     {"job_id": "59939384", "job_name": "labor-median", "user": "someuser", "partition": "caslake",
@@ -396,6 +400,13 @@ squeue --me -n amel-monitor -o "%.10i %.8T %.20S %.10M"   # the waiting run and 
 sacct -n -X --name=amel-monitor -S now-2days               # recent runs and their state
 ls -t hpc-jobs/logs/monitor/ | head -1                     # newest log
 ```
+
+If a run ends before publishing, its log ends with a line such as
+`monitor run stopped before publishing (exit code 2, during: cleaning the
+environment)`, naming the step it was on. During the environment clean up
+(deactivate, module purge and `source /etc/profile`), errors and unset
+variables are allowed, so system profile scripts that fail on some nodes
+cannot stop the run.
 
 There should always be one `amel-monitor` job, PENDING with a start time
 up to 4 hours ahead (or RUNNING for a few minutes, with the next one

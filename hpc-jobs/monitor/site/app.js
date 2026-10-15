@@ -811,6 +811,9 @@ function stateCounts(running, queued) {
   return p.join(", ") || `<span class="lbl">none</span>`;
 }
 
+// Time left under this many minutes shows in amber.
+const LEFT_WARN_MIN = 120;
+
 function renderJobs() {
   const groups = (DATA.users || []).map((u) => ({ name: u.user, jobs: u.active_jobs }));
   const known = DATA.users != null && DATA.users.some((u) => u.active_jobs != null);
@@ -851,13 +854,16 @@ function renderJobs() {
   } else {
     const order = [...jobs].sort((x, y) => (x.state !== "RUNNING") - (y.state !== "RUNNING") || y.elapsed_min - x.elapsed_min);
     html += `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>State</th>
-      <th class="r">Running</th><th class="r">Pending</th><th class="r">Done</th><th class="r">Elapsed</th></tr>` +
+      <th class="r">Running</th><th class="r">Pending</th><th class="r">Done</th><th class="r">Elapsed</th>
+      <th class="r">Time limit</th><th class="r">Time left</th></tr>` +
       order.map((j) => `<tr><td class="mono">${esc(j.job_id || "")}</td><td>${esc(j.job_name)}</td>
         <td><span class="ukey-item"><span class="udot" style="background:${userColor(j.person)}"></span>${userName(j.person)}</span></td>
         <td>${j.partition.split(",").map((p) => partPill(p)).join("")}</td>
         <td class="${j.state === "RUNNING" ? "state-run" : "state-pend"}">${j.state === "RUNNING" ? "Running" : "Pending"}</td>
         <td class="r">${fmtN(j.tasks.running)}</td><td class="r">${fmtN(j.tasks.queued)}</td><td class="r">${fmtN(j.tasks.done)}</td>
-        <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td></tr>`).join("") + `</table></div>`;
+        <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td>
+        <td class="r">${j.limit_min != null ? fmtMin(j.limit_min) : ""}</td>
+        <td class="r${j.left_min != null && j.left_min < LEFT_WARN_MIN ? " time-short" : ""}"${j.left_min != null && j.left_min < LEFT_WARN_MIN ? ' title="Under 2 hours left before the time limit"' : ""}>${j.left_min != null ? fmtMin(j.left_min) : ""}</td></tr>`).join("") + `</table></div>`;
   }
   html += endedBadlyHtml();
   $("jobs-content").innerHTML = html;

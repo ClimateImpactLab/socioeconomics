@@ -117,6 +117,8 @@ def mock_active_jobs(rng):
     for name, partition, size in rng.sample(MOCK_JOB_NAMES, rng.randint(0, 3)):
         running = rng.randint(1, min(size, 40))
         queued = rng.randint(0, size - running) if rng.random() < 0.6 else 0
+        limit = rng.choice([12, 24, 36]) * 60.0
+        elapsed = round(rng.uniform(5, limit - 10), 1)
         jobs.append({
             "job_id": str(rng.randint(59_900_000, 60_100_000)),
             "job_name": name,
@@ -124,7 +126,9 @@ def mock_active_jobs(rng):
             "state": "RUNNING",
             "tasks": {"running": running, "queued": queued,
                       "done": rng.randint(0, max(size - running - queued, 0))},
-            "elapsed_min": round(rng.uniform(5, 2400), 1),
+            "elapsed_min": elapsed,
+            "limit_min": limit,
+            "left_min": round(limit - elapsed, 1),
         })
     if rng.random() < 0.4:
         name, partition, size = rng.choice(MOCK_JOB_NAMES)
@@ -132,7 +136,7 @@ def mock_active_jobs(rng):
         jobs.append({"job_id": str(rng.randint(59_900_000, 60_100_000)),
                      "job_name": name, "partition": partition, "state": "PENDING",
                      "tasks": {"running": 0, "queued": queued, "done": 0},
-                     "elapsed_min": 0.0})
+                     "elapsed_min": 0.0, "limit_min": 36 * 60.0, "left_min": None})
     jobs.sort(key=lambda j: (j["state"] != "RUNNING", -j["elapsed_min"]))
     return jobs
 

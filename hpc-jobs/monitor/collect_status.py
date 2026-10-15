@@ -426,7 +426,7 @@ def run_rcchelp(args):
 
 
 def squeue_elapsed_s(text):
-    """Squeue elapsed time ('5:03', '1:02:03', '1-02:03:04') in seconds."""
+    """Squeue time ('5:03', '1:02:03', '1-02:03:04') in seconds."""
     days = 0
     if "-" in text:
         d, text = text.split("-", 1)
@@ -440,21 +440,29 @@ def squeue_elapsed_s(text):
 def live_tasks(account):
     """One row per running or queued task on the account, or None on failure."""
     # -r gives one row per array task instead of one row per array.
-    out = run_cmd(["squeue", "-r", "-h", "-A", account, "-o", "%i|%u|%j|%T|%P|%M"])
+    out = run_cmd(["squeue", "-r", "-h", "-A", account, "-o", "%i|%u|%j|%T|%P|%M|%l|%L"])
     if out is None:
         return None
+
+    def seconds(text):
+        # UNLIMITED, NOT_SET and INVALID have no number of seconds.
+        try:
+            return squeue_elapsed_s(text)
+        except ValueError:
+            return None
+
     rows = []
     for line in out.splitlines():
         parts = line.strip().split("|")
-        if len(parts) != 6:
+        if len(parts) != 8:
             continue
-        ids, user, name, state, partition, elapsed = parts
-        try:
-            elapsed_s = squeue_elapsed_s(elapsed) if state == "RUNNING" else 0
-        except ValueError:
-            elapsed_s = 0
+        ids, user, name, state, partition, elapsed, limit, left = parts
+        running = state == "RUNNING"
         rows.append({"id": ids, "base": ids.split("_")[0], "user": user, "name": name,
-                     "state": state, "partition": partition, "elapsed_s": elapsed_s})
+                     "state": state, "partition": partition,
+                     "elapsed_s": (seconds(elapsed) or 0) if running else 0,
+                     "limit_s": seconds(limit),
+                     "left_s": seconds(left) if running else None})
     return rows
 
 
@@ -483,6 +491,7 @@ def active_jobs_by_user(account, rows):
         job = jobs.setdefault((row["user"], row["base"]), {
             "job_name": row["name"], "partitions": [], "running": 0, "queued": 0,
             "elapsed_s": 0, "done": done.get(row["base"], 0),
+            "limit_s": row["limit_s"], "left_s": None,
         })
         if row["partition"] not in job["partitions"]:
             job["partitions"].append(row["partition"])
@@ -491,6 +500,11 @@ def active_jobs_by_user(account, rows):
         else:
             job["running"] += 1
             job["elapsed_s"] = max(job["elapsed_s"], row["elapsed_s"])
+            # The task closest to its limit decides the time left.
+            if row["left_s"] is not None:
+                job["left_s"] = row["left_s"] if job["left_s"] is None else min(job["left_s"], row["left_s"])
+        if row["limit_s"] is not None:
+            job["limit_s"] = max(job["limit_s"] or 0, row["limit_s"])
 
     by_user = {}
     for (user, base), job in jobs.items():
@@ -501,6 +515,8 @@ def active_jobs_by_user(account, rows):
             "state": "RUNNING" if job["running"] else "PENDING",
             "tasks": {"running": job["running"], "queued": job["queued"], "done": job["done"]},
             "elapsed_min": round(job["elapsed_s"] / 60.0, 1),
+            "limit_min": None if job["limit_s"] is None else round(job["limit_s"] / 60.0, 1),
+            "left_min": None if job["left_s"] is None else round(job["left_s"] / 60.0, 1),
         })
     for rows_ in by_user.values():
         rows_.sort(key=lambda r: (r["state"] != "RUNNING", -r["elapsed_min"], r["job_name"]))
