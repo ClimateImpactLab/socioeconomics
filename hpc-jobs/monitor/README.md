@@ -35,8 +35,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   it was written.
 - Resources: storage of the cil account as thin bars, then service units
   in two clearly separate parts:
-  - Official (RCC): what RCC charges, from `rcchelp balance`, used out of
-    allocation, and the balance left (the cil allocation started on
+  - Official (RCC): what RCC charges, from `rcchelp balance`, shown as
+    used out of allocation, such as "0 / 1,200,000" (the cil allocation started on
     2026-10-14 with 1,200,000 SU). RCC gives no use per user
     (`rcchelp usage -a cil --byuser` returns nothing), so the split by user
     comes from the bars below.

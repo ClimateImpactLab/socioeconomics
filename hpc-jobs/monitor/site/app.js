@@ -663,12 +663,18 @@ function barColor(pct) {
   return pct >= 90 ? "var(--red)" : pct >= 70 ? "var(--amber)" : "var(--green)";
 }
 
-function resRow(label, pct, counts, tip) {
+function resRow(label, pct, counts, tip, countsOnly) {
   const col = barColor(pct);
   const p = Math.min(pct == null ? 0 : pct, 100);
   return `<div class="res-row"${tip ? ` title="${esc(tip)}"` : ""}><span class="res-label">${esc(label)}</span>` +
     `<span class="res-bar"><span class="fill" style="width:${p.toFixed(1)}%;background:${col}"></span><span class="ticks"></span></span>` +
-    `<span class="res-pct" style="color:${col}">${fmtPct2(pct)}</span><span class="res-counts">${esc(counts)}</span></div>`;
+    (countsOnly ? `<span class="res-counts res-only">${esc(counts)}</span></div>` :
+      `<span class="res-pct" style="color:${col}">${fmtPct2(pct)}</span><span class="res-counts">${esc(counts)}</span></div>`);
+}
+
+// Sizes such as "500.00T" lose the zeros after the point ("500T", "118.1T").
+function trimSize(text) {
+  return String(text ?? "").replace(/^(\d+)\.(\d*?)0+([A-Za-z]*)$/, (m, i, d, u) => `${i}${d ? "." + d : ""}${u}`);
 }
 
 function renderResources() {
@@ -676,8 +682,8 @@ function renderResources() {
   let storage;
   if (a.storage == null) storage = `<div class="res-note muted">Not read in this scan</div>`;
   else if (!a.storage.length) storage = `<div class="res-note muted">No group storage found</div>`;
-  else storage = a.storage.map((s) => resRow(s.label, s.used_pct, `${s.used}/${s.quota}`,
-    `Used ${s.used} of ${s.quota}`)).join("");
+  else storage = a.storage.map((s) => resRow(s.label, s.used_pct, `${trimSize(s.used)}/${trimSize(s.quota)}`,
+    `Used ${trimSize(s.used)} of ${trimSize(s.quota)}`)).join("");
 
   $("resources-content").innerHTML =
     `<div class="res-sec"><div class="res-title">Storage</div>${storage}</div>` +
@@ -698,8 +704,8 @@ function serviceUnitsHtml() {
   let html;
   if (a.allocation_status === "ok") {
     const pct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : null;
-    html = resRow("Official (RCC)", pct, `${fmtN(a.used_su)}/${fmtN(a.allocation_su)}, ${fmtN(a.balance_su)} left`,
-      `Charged by RCC: ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`);
+    html = resRow("Official (RCC)", pct, `${fmtN(a.used_su)} / ${fmtN(a.allocation_su)}`,
+      `Charged by RCC: ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`, true);
   } else {
     const note = a.allocation_status === "none" ? "no allocation listed" : "not read in this scan";
     html = `<div class="res-row"><span class="res-label">Official (RCC)</span>` +
@@ -936,9 +942,8 @@ function renderCamel() {
       `${s.label}: ${fmtPctShort(s.proj)} of projection files` : `${s.label}: not tracked (yet)`).join("; ") + ".";
   }
 
-  $("camel-key").innerHTML = prog.map((s) => {
-    const note = !s.tracked ? "not tracked (yet)" : s.allDone ? "all done" : s.projDone ? "projections done" :
-      `${fmtPctShort(s.proj)} projection`;
+  $("camel-key").innerHTML = `<span class="ckey-label">Projection progress</span>` + prog.map((s) => {
+    const note = !s.tracked ? "not tracked (yet)" : s.allDone ? "all done" : s.projDone ? "100%" : fmtPctShort(s.proj);
     const on = s.tracked && sectorActive(DATA.sectors[s.key]);
     return `<span class="ckey${on ? " on" : ""}"${on ? ` style="--ant:var(--sec-${s.key})"` : ""}` +
       ` title="${esc(s.part)}${on ? ", active: jobs running or files written in the last day" : ""}">` +
