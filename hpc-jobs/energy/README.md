@@ -22,5 +22,6 @@ sbatch energy/jobs/median.sbatch
 ```
 
 Outputs go to
-`/project/cil/gcp/outputs_newsocioeconomics/energy/<run type>/<fuel>/`.
+`/project/cil/gcp/outputs_newsocioeconomics/energy/<fuel>/<run type>/`
+(`quick_test/`, `single/` or `median/`, added by the projection system).
 Logs go to `logs/energy/<run type>/`.

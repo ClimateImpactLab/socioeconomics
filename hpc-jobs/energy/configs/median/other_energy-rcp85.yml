@@ -5,7 +5,7 @@
 # median/ level: results land under <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/.
 import: "../hddcddspline_OTHERIND_other_energy.yml"
 mode: median
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/median/other_energy
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/other_energy
 deltamethod: no
 do_farmers: 'always'
 do_historical: true

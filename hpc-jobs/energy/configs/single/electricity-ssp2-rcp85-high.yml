@@ -1,10 +1,10 @@
 # Energy single (electricity): one realization (rcp85 / CCSM4 / high /
 # SSP2) against the new socioeconomic panel, with every adaptation
-# variant (do_farmers 'always'). Flat output layout (singledir '').
+# variant (do_farmers 'always').
+# Results land under <outputdir>/single/<rcp>/CCSM4/<iam>/<ssp>/.
 import: "../hddcddspline_OTHERIND_electricity.yml"
 mode: single
-singledir: ''
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/single/electricity
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/electricity
 deltamethod: no
 do_farmers: 'always'
 do_historical: true
