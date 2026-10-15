@@ -20,4 +20,4 @@ climcovar:
    class: mean
    length: 30
 loggdppc-delta: 9.087
-socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/

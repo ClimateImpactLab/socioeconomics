@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --mem=15G
 #SBATCH --time=12:00:00
-#SBATCH --array=0-15
+#SBATCH --array=0-31
 
 # Submit from hpc-jobs/ : config and log paths resolve against the
 # submission directory. One task per fuel x realization config.
@@ -15,11 +15,14 @@ export PYTHONUNBUFFERED=1
 
 FUELS=(electricity other_energy)
 CELLS=(
+    "ssp1-rcp45-low" "ssp1-rcp45-high"
     "ssp2-rcp45-low" "ssp2-rcp45-high" "ssp2-rcp85-low" "ssp2-rcp85-high"
     "ssp3-rcp45-low" "ssp3-rcp45-high" "ssp3-rcp85-low" "ssp3-rcp85-high"
+    "ssp4-rcp45-low" "ssp4-rcp45-high" "ssp4-rcp85-low" "ssp4-rcp85-high"
+    "ssp5-rcp85-low" "ssp5-rcp85-high"
 )
-FUEL=${FUELS[$((SLURM_ARRAY_TASK_ID / 8))]}
-CELL=${CELLS[$((SLURM_ARRAY_TASK_ID % 8))]}
+FUEL=${FUELS[$((SLURM_ARRAY_TASK_ID / 16))]}
+CELL=${CELLS[$((SLURM_ARRAY_TASK_ID % 16))]}
 CONFIG="$SLURM_SUBMIT_DIR/energy/configs/single/${FUEL}-${CELL}.yml"
 
 module load python

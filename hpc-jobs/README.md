@@ -11,6 +11,7 @@ the configs and jobs for its runs.
 energy/
   configs/    model configs, plus quick_test/, single/, median/
   jobs/       quick_test.sbatch, single.sbatch, median.sbatch
+  README.md   specification source and how to run
 logs/         Slurm logs (not tracked by git)
 ```
 
