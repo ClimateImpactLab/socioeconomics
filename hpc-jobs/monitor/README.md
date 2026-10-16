@@ -24,8 +24,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Right above the grid: sector, run type and sub-model tabs (montecarlo by
   default, median for energy, whose montecarlo tab is greyed out). Each
   sector tab has its camel color, the selected one filled with it, and
-  shows the progress of its main run (the same as the camel) and the SUs
-  needed to finish it ("not known yet" for
+  shows the progress of its main run, projection and aggregation apart,
+  each with its percent and file counts ("Projection 100% (64/64),
+  Aggregation 0% (0/496)"), and the SUs needed to finish it. Run type tabs
+  and the sector key next to the camel show the same two parts; the camel
+  itself fills with projection progress only ("not known yet" for
   agriculture), with a one-line explanation underneath. A sector is active
   when projection files were written in its folders in the last 24 hours
   (or a unit is being written now); its tab then shows four small squares
@@ -156,6 +159,7 @@ monitor/
   collect_status.py     scans the output folders, Slurm and rcchelp, writes site/data/
   monitor_job.sbatch    self-scheduling Slurm job: queues its next run, then runs run_monitor.sh
   run_monitor.sh        one run: collector, then publish
+  monitor_watchdog.sh   hourly crontab check: submits a run if none is queued or running
   publish_data.sh       pushes site/data/ to the monitor-data branch
   make_mock_status.py   writes a realistic mock to site/mock/
   site/                 the static site (deployable as-is)
@@ -387,18 +391,20 @@ branch; protecting `main` (require pull requests) closes that gap.
 ### 2. Start it (once)
 
 `monitor_job.sbatch` runs on partition cil, account cil, for up to 15
-minutes with 2G. Each run first queues the next one for the next full
-hour in America/Chicago (`--begin=<next hour>:00:00`; Slurm reads the time
-in the cluster's local time, which is Chicago), then collects and
-publishes, so the chain goes on
-even if one run fails. It always uses the job name `amel-monitor` with
-`--dependency=singleton`, and skips queuing when a run is already waiting,
-so there is never more than one waiting. Logs go to
-`hpc-jobs/logs/monitor/monitor_<jobid>.log`.
+minutes with 2G, always with the job name `amel-monitor`. Each run first
+queues the next one for the next full hour in America/Chicago (Slurm reads
+`--begin` in the cluster's local time, which is Chicago) and logs the time
+it asked for, then collects and publishes, so the chain goes on even if one
+run fails. There is never more than one run waiting:
 
-The log folder must exist before the first job (Slurm opens the log before
-the script starts). Then submit it once; it runs right away and queues the
-next run:
+- a waiting run that begins at or before the next full hour is kept (the
+  log says "keeping waiting run");
+- a waiting run that begins later (a leftover from an older schedule) is
+  cancelled and replaced (the log says "replacing waiting run").
+
+Logs go to `hpc-jobs/logs/monitor/monitor_<jobid>.log`. The log folder must
+exist before the first job (Slurm opens the log before the script starts).
+Then submit it once; it runs right away and queues the next run:
 
 ```
 mkdir -p /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/logs/monitor
@@ -410,37 +416,74 @@ Manual runs never touch the chain. To collect and publish once:
 `sbatch --export=ALL,MONITOR_ONCE=1 .../hpc-jobs/monitor/monitor_job.sbatch`;
 it skips queuing the next run.
 
-### 3. Check
+### 3. Email on failure
+
+A run that fails sends an email to cadavidsanchez@uchicago.edu (Slurm
+`--mail-type=FAIL`). The email names the job; the reason is at the end of
+its log, in a line such as `monitor run stopped before publishing (exit
+code 2, during: cleaning the environment)`, followed by `monitor run failed
+with exit code 2`. During the environment clean up (deactivate, module
+purge and `source /etc/profile`), errors and unset variables are allowed,
+so system profile scripts that fail on some nodes cannot stop the run.
+
+### 4. Watchdog
+
+`monitor_watchdog.sh` runs every hour from crontab on a login node. If no
+`amel-monitor` run is queued or running, it submits one, which starts the
+chain again; otherwise it only writes an "ok" line. It runs at half past
+the hour, away from the scans on the hour. Its log is
+`hpc-jobs/logs/monitor/watchdog.log`.
+
+Crontab line:
+
+```
+30 * * * * /bin/bash -l /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/monitor/monitor_watchdog.sh >> /project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/logs/monitor/watchdog.log 2>&1
+```
+
+To install it, on a Midway3 login node:
+
+```
+hostname                 # crontab is kept per login node: note this one
+crontab -l               # see what is there now
+crontab -e               # add the line above, save and close
+crontab -l               # check it is there
+```
+
+Each login node keeps its own crontab, so install it on one node only and
+note which (for example `midway3-login3`). To check or remove it later, log
+in to that same node (`ssh midway3-login3`).
+
+### 5. Check
 
 ```
 squeue --me -n amel-monitor -o "%.10i %.8T %.20S %.10M"   # the waiting run and when it starts
 sacct -n -X --name=amel-monitor -S now-2days               # recent runs and their state
-ls -t hpc-jobs/logs/monitor/ | head -1                     # newest log
+ls -t hpc-jobs/logs/monitor/monitor_*.log | head -1        # newest run log
+grep -h "queuing\|keeping\|replacing" $(ls -t hpc-jobs/logs/monitor/monitor_*.log | head -3)
+tail -5 hpc-jobs/logs/monitor/watchdog.log                 # watchdog checks
+crontab -l                                                 # on the watchdog's login node
 ```
-
-If a run ends before publishing, its log ends with a line such as
-`monitor run stopped before publishing (exit code 2, during: cleaning the
-environment)`, naming the step it was on. During the environment clean up
-(deactivate, module purge and `source /etc/profile`), errors and unset
-variables are allowed, so system profile scripts that fail on some nodes
-cannot stop the run.
 
 There should always be one `amel-monitor` job, PENDING with a start time
 at the next full hour (or RUNNING for a few minutes, with the next one
 PENDING). On GitHub, the `monitor-data` branch shows the time of the last
 push in its single commit ("Monitor data, <time> UTC"). On the page, the
-subtitle shows the last scan time.
+subtitle shows the last scan time, and a warning appears when the last
+scan is more than 2 hours old.
 
-### 4. Stop
+### 6. Stop
+
+Stop the watchdog first, or it will start the chain again within the hour.
+On the watchdog's login node, `crontab -e` and delete the line (or
+`crontab -r` if it is the only line). Then cancel the waiting run and any
+run in progress:
 
 ```
 scancel --me -n amel-monitor
 ```
 
-This cancels the waiting run (and a run in progress), which ends the
-chain. Start it again with the `sbatch` line above. If the chain ever
-stops on its own (for example after a cluster outage), `squeue` shows
-nothing and the page warns that the last scan is old; submit it again.
+Start everything again with the `sbatch` line in step 2 and the crontab
+line in step 4.
 
 ## Deploying to Vercel
 

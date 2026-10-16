@@ -162,6 +162,13 @@ function filesOf(sec, rt) {
 
 // A sector's progress is the progress of its main run only (montecarlo,
 // or median where there is no montecarlo); singles and tests do not count.
+// "Projection 100% (64/64), Aggregation 0% (0/496)"; a part with no
+// expected files is left out.
+function progressText(f) {
+  const part = (name, n, exp) => exp ? `${name} ${fmtPctShort(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)})` : null;
+  return [part("Projection", f.proj, f.projExp), part("Aggregation", f.agg, f.aggExp)].filter(Boolean).join(", ");
+}
+
 function sectorFiles(sec) {
   const rt = sec.run_types[defaultRunType(sec)];
   return rt ? filesOf(sec, rt) : { proj: 0, projExp: 0, agg: 0, aggExp: 0 };
@@ -282,7 +289,7 @@ function renderTabs() {
     const f = sectorFiles(s);
     const est = sectorSuEstimate(s);
     return { key: k, label: s.label, cls: `sec-tab sec-${k}`, extra: activeMark(k, sectorActive(s)),
-      count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) +
+      count: progressText(f) +
         (est ? `, ${suRange(est.low, est.high)} to finish` : ", SUs not known yet") };
   }), view.sector, (k) => {
     closeDetail();
@@ -308,7 +315,7 @@ function renderTabs() {
   const sec = sector();
   const items = Object.entries(sec.run_types).map(([k, rt]) => {
     const f = filesOf(sec, rt);
-    return { key: k, label: k, count: fmtPctShort(pctOf(f.proj + f.agg, f.projExp + f.aggExp)) };
+    return { key: k, label: k, count: progressText(f) };
   });
   for (const k of sec.disabled_run_types || []) {
     items.push({ key: k, label: k, disabled: true, title: "Not part of this sector" });
@@ -942,7 +949,7 @@ function renderCamel() {
     if (!sec) return { ...s, tracked: false, proj: 0, agg: 0 };
     const f = sectorFiles(sec);
     const proj = pctOf(f.proj, f.projExp), agg = pctOf(f.agg, f.aggExp);
-    return { ...s, tracked: true, proj, agg, projDone: proj >= 100, allDone: proj >= 100 && agg >= 100,
+    return { ...s, tracked: true, proj, agg, files: f, projDone: proj >= 100, allDone: proj >= 100 && agg >= 100,
       running: sectorRunning(sec) };
   });
 
@@ -963,8 +970,8 @@ function renderCamel() {
       `${s.label}: ${fmtPctShort(s.proj)} of projection files` : `${s.label}: not tracked (yet)`).join("; ") + ".";
   }
 
-  $("camel-key").innerHTML = `<span class="ckey-label">Projection progress</span>` + prog.map((s) => {
-    const note = !s.tracked ? "not tracked (yet)" : s.allDone ? "all done" : s.projDone ? "100%" : fmtPctShort(s.proj);
+  $("camel-key").innerHTML = prog.map((s) => {
+    const note = !s.tracked ? "not tracked (yet)" : progressText(s.files);
     const on = s.tracked && sectorActive(DATA.sectors[s.key]);
     return `<span class="ckey${on ? " on" : ""}"${on ? ` style="--ant:var(--sec-${s.key})"` : ""}` +
       ` title="${esc(s.part)}${on ? ", active: jobs running or files written in the last day" : ""}">` +

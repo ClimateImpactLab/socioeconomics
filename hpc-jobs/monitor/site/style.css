@@ -549,7 +549,6 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .su-pop code { display: block; margin-top: 3px; font-family: var(--mono); background: var(--bg2); padding: 2px 5px; border-radius: 3px; user-select: all; white-space: nowrap; }
 @media (max-width: 600px) { .su-pop code { white-space: normal; overflow-wrap: anywhere; } }
 .jobs-table td.time-short { color: var(--st-pend); font-weight: 600; }
-.ckey-label { align-self: center; font-size: 10px; color: var(--tx3); margin-right: 2px; }
 .res-counts.res-only { font-size: 10px; color: var(--tx2); }
 /* Task badges: R running, P pending, D done, F failed. */
 .tbs { display: inline-flex; gap: 3px; vertical-align: middle; }
@@ -563,3 +562,8 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tb-key-sep { width: 8px; }
 .juser { display: inline-flex; align-items: center; gap: 3px; margin-right: 12px; white-space: nowrap; }
 .part-pill .tbs { margin-left: 2px; }
+/* Sector and run type tabs carry projection and aggregation counts, so they
+   wrap as separate buttons at every width. */
+#sector-tabs, #runtype-tabs { flex-wrap: wrap; gap: 4px; }
+#sector-tabs .run-opt, #runtype-tabs .run-opt { border-radius: 4px; }
+#sector-tabs .run-opt:not(:first-child), #runtype-tabs .run-opt:not(:first-child) { border-left-style: solid; border-left-width: 1.5px; }
