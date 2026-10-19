@@ -122,19 +122,17 @@ of Chicago Research Computing Center (RCC).
 
 ## Resources used
 
-After each run, add a row using the `sacct` output from step 5:
+After each run that finishes, add a row using the `sacct` output from step 5:
 
 - `job id`: the number Slurm printed when you submitted the job.
 - `partition`: the `Partition` column.
 - `memory requested`: the `ReqMem` column.
 - `peak memory`: the largest `MaxRSS` among the `.batch` lines.
 - `time`: the `Elapsed` column (for arrays, the longest task).
-- `status`: the `State` column (`COMPLETED`, `FAILED`, `TIMEOUT`...).
 - `date`, `user`, `sector`, `run type` and `notes`: fill them in yourself.
 
-The first row is only an example of how to fill the table.
+The table lists only runs that finished, as a reference.
 
-| date | user | sector | run type | job id | partition | memory requested | peak memory | time | status | notes |
-|------|------|--------|----------|--------|-----------|------------------|-------------|------|--------|-------|
-| 2026-10-02 | Sebastian CS | energy | quick_test | 12345678 | cil | 16G | 4G | 02:30:00 | COMPLETED | example only |
-| 2026-10-15 | Sebastian CS | labor | quick_test | 60760541 | amd | 50G | 43.79G | 01:51:47 | COMPLETED | singles now request 60G |
+| date | user | sector | run type | job id | partition | memory requested | peak memory | time | notes |
+|------|------|--------|----------|--------|-----------|------------------|-------------|------|-------|
+| 2026-10-15 | Sebastian CS | labor | quick_test | 60760541 | amd | 50G | 43.79G | 01:51:47 | singles now request 60G |
