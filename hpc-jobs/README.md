@@ -111,4 +111,4 @@ The table lists only runs that finished, as a reference.
 | date | user | sector | run type | job id | partition | memory requested | peak memory | time | notes |
 |------|------|--------|----------|--------|-----------|------------------|-------------|------|-------|
 | 2026-10-15 | Sebastian CS | energy | single | 60845792 | amd | 15G | 10.23G | 07:51:39 | 24 tasks; 185 SU in total (about 7.7 SU per task) |
-| 2026-10-15 | Adwait Sinha | energy | median |  | amd | 15G | 9.25G | 28:54:00 | started 16:30; 151 tasks; longest task about 28.9 h; 3,810 SU in total for 780 units (about 4.9 SU per unit) |
+| 2026-10-15 | Adwait Sinha | energy | median | 60845127 | amd | 15G | 9.25G | 28:54:00 | started 16:30; 151 tasks; longest task about 28.9 h; 3,810 SU in total for 780 units (about 4.9 SU per unit) |
