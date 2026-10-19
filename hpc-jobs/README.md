@@ -97,20 +97,18 @@ of Chicago Research Computing Center (RCC).
 
 ## Resources used
 
-After each run, add a row using the `sacct` output from step 5:
+After each run that finishes, add a row using the `sacct` output from step 5:
 
 - `job id`: the number Slurm printed when you submitted the job.
 - `partition`: the `Partition` column.
 - `memory requested`: the `ReqMem` column.
 - `peak memory`: the largest `MaxRSS` among the `.batch` lines.
 - `time`: the `Elapsed` column (for arrays, the longest task).
-- `status`: the `State` column (`COMPLETED`, `FAILED`, `TIMEOUT`...).
 - `date`, `user`, `sector`, `run type` and `notes`: fill them in yourself.
 
-The first row is only an example of how to fill the table.
+The table lists only runs that finished, as a reference.
 
-| date | user | sector | run type | job id | partition | memory requested | peak memory | time | status | notes |
-|------|------|--------|----------|--------|-----------|------------------|-------------|------|--------|-------|
-| 2026-10-02 | Sebastian CS | energy | quick_test | 12345678 | cil | 16G | 4G | 02:30:00 | COMPLETED | example only |
-| 2026-10-15 |  | energy | single | 60845792 | amd | 15G | 10.23G | 07:51:39 | COMPLETED | 24 tasks; 185 SU in total (about 7.7 SU per task) |
-| 2026-10-15 |  | energy | median |  | amd | 15G | 9.25G | 28:54:00 | COMPLETED | started 16:30; 151 tasks; longest task about 28.9 h; 3,810 SU in total for 780 units (about 4.9 SU per unit) |
+| date | user | sector | run type | job id | partition | memory requested | peak memory | time | notes |
+|------|------|--------|----------|--------|-----------|------------------|-------------|------|-------|
+| 2026-10-15 | Sebastian CS | energy | single | 60845792 | amd | 15G | 10.23G | 07:51:39 | 24 tasks; 185 SU in total (about 7.7 SU per task) |
+| 2026-10-15 |  | energy | median |  | amd | 15G | 9.25G | 28:54:00 | started 16:30; 151 tasks; longest task about 28.9 h; 3,810 SU in total for 780 units (about 4.9 SU per unit) |
