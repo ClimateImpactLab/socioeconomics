@@ -39,40 +39,37 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
   it was written.
-- Resources: storage of the cil account as thin bars, then service units
-  in two clearly separate parts:
-  - Official (RCC): what RCC charges, from `rcchelp balance`, shown as
-    used out of allocation, such as "0 / 1,200,000" (the cil allocation started on
-    2026-10-14 with 1,200,000 SU). RCC gives no use per user
-    (`rcchelp usage -a cil --byuser` returns nothing), so the split by user
-    comes from the bars below.
-  - Two bars from sacct, one below the other, both since the start date
-    in the manifest (`su_since`, the day the allocation started). Each has
-    one colored segment per cluster user and, inside it, one textured part
-    per partition (cil lines, amd stripes, caslake dots, amd-hm solid):
-    - Service units charged: only the partitions RCC
-      charges (`account.su_charged_partitions`, now caslake and amd-hm).
-    - Compute used: the same
-      measure (elapsed hours x billing, in SU equivalent) on every
-      partition in `account.compute_partitions` (cil, amd, caslake,
-      amd-hm), with each user's core hours.
-    The start date shows once, above both bars. One key below both bars,
-    from the left and in alphabetical order, gives each user's color with
-    SU charged and compute used side by side, and one texture key gives each partition's
-    total, marked charged or not charged. Users in
-    `account.always_show_users` and every compute partition are always
-    listed, even with no use yet, and `account.highlight_user` shows in
-    charcoal. Highlighting works both ways: hovering a segment of either
-    bar marks its user and partition in the shared key, and hovering a
-    user or a partition in the key marks the matching segments in both
-    bars. A click keeps the highlight until the same thing is clicked
-    again. The date line and the bar titles start from the left.
-    Moving a partition between charged and not charged only needs a change
-    to `su_charged_partitions` in the manifest.
-  A small "i" button opens a popup next to it with the SU formula and the
-  sacct command to check a job; clicking outside or the button again
-  closes it. Stale accounting records (jobs sacct still shows as running but
-  squeue does not have) are left out of the numbers.
+- Resources: storage of the cil account as thin bars, then service units,
+  all since the start of the allocation cycle (`su_since`, 2026-10-01):
+  - Official (RCC): from `rcchelp balance -a cil`, shown as used out of
+    allocation, such as "0 / 1,200,000". RCC counts every partition,
+    including the time so far of running jobs, and updates about a day
+    later; a small "i" next to the bar says so.
+  - Service units, estimate: one plain segment per user, from
+    `sreport cluster AccountUtilizationByUser account=cil start=2026-10-01 end=now -t hours`,
+    the same count as RCC's (checked on the cluster), so its total lands
+    close to the official one apart from RCC's delay. RCC gives no use per
+    user (`rcchelp usage -a cil --byuser` returns nothing), so sreport gives
+    the split.
+  - Compute used: from sacct, elapsed hours x billing (in SU equivalent)
+    on every partition, including the time so far of running jobs, with
+    one colored segment per user and, inside it, one textured part per
+    partition (cil lines, amd stripes, caslake dots, amd-hm solid).
+    Records sacct shows as running but squeue does not have are left out,
+    since those jobs do not exist.
+  The start date shows once, above both bars. One key below both bars,
+  from the left and in alphabetical order, gives each user's color with
+  service units and compute used side by side, and one texture key gives
+  each partition's compute total. Users in `account.always_show_users` and
+  the partitions in `account.compute_partitions` are always listed, even
+  with no use yet, and `account.highlight_user` shows in charcoal.
+  Highlighting works both ways: hovering a segment of either bar marks its
+  user (and partition) in the shared key and the matching segments in both
+  bars, and hovering a user or a partition in the key does the same. A
+  click keeps the highlight until the same thing is clicked again. The "i"
+  next to the estimate says in one line that it is counted the same way as
+  RCC, which updates about a day later, and gives the compute formula with
+  the sacct command to check a job.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: no tab, and it is not in any count,
@@ -97,8 +94,15 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - A row of small cards for the selected sector and run type, right above
   the tabs and the grid: expected units, complete, partial, not started,
   projection and aggregation progress, units being written, time to
-  finish, and SUs to finish.
-- SSP tabs, the legend, and the grid. Each SSP tab and each scenario
+  finish, and SUs to finish. Time to finish covers the projection only;
+  aggregation shows as "not started" (or its units done) and is not
+  added in. Its tooltip gives the numbers and the pace used.
+- SSP tabs, the legend, and the grid. The SSP tabs are small round
+  badges, each with its own color from a palette apart from the sector,
+  user and state colors, following each SSP's story: SSP2 (middle of the
+  road) a neutral blue grey, SSP3 (regional rivalry) a muted red, SSP4
+  (inequality) a muted purple. The selected one is filled, the others
+  outlined. Each SSP tab and each scenario
   column shows P, projection files present out of expected, and A,
   aggregation files present out of expected, for example
   "P 917/4,160, A 0/4,160"; a small "i" next to the SSP tabs says so. Energy shows every SSP at
@@ -108,7 +112,10 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   then a thin line, then the aggregation squares colored by type (costs
   orange, levels purple, aggregated blue). The border gives the state:
   in progress, writing, projection complete, aggregation incomplete,
-  aggregation complete.
+  aggregation complete. The grid scrolls inside its own box, so the
+  column headers (scenarios, IAMs, batches) and the row labels (climate
+  models) stay in view. Hovering or clicking a cell softly marks its whole
+  row and column, with its climate model and its scenario headers.
 
 The grid comes only from the output folders. Slurm and rcchelp are used
 only for Resources and SLURM jobs.
@@ -214,50 +221,72 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
 - `status-global.txt` gives finished stages and their times. A stage that
   a worker claimed (`status-<stage>.txt`) is running while files keep
   changing, and counts as stopped after 6 hours with no file changes.
-- The time to finish comes from how many stage steps finished in the last
-  24 hours.
+- Time per unit, used for both the time to finish and the SUs to finish.
+  Observed times count only with at least 10 finished units of that run,
+  and only when they are within a factor of 2 of the reference time in the
+  manifest (when there is one); otherwise the reference is used. Sources,
+  in this order:
+  - tasks of one unit each (single and quick_test, set with
+    `one_unit_per_task` in the manifest, or any run with about as many
+    tasks as units started, such as the mortality montecarlo): sacct,
+    elapsed hours x billing of the finished tasks only, median (low) to
+    longest (high). Running tasks are left out, since their unit is not
+    done yet; counting their time so far against the finished units alone
+    roughly doubled the mortality figure;
+  - tasks of several units each (such as the energy median): sacct, the
+    SUs of all the run's tasks over the units finished, only once none of
+    the run's tasks is still running.
+    A task belongs to the run
+    when its job name matches the sector's `job_names` for that run type
+    (patterns such as `*energy*med*` and `*mort*mc*`, in both word orders,
+    case ignored; names matching `account.job_names_exclude`, such as
+    aggregation and post jobs, never count; a name matching several run
+    types goes to montecarlo, then median, then quick_test, then single)
+    and it started since the run's start: `run_started` when set, or else
+    the run's first projection file less the job time limit;
+  - otherwise, file dates: the time from the first to the last projection
+    file of each finished unit (times n / (n - 1) for n files), plus the
+    start up time measured from the same sector's singles (a single task's
+    elapsed time less its file span), which file dates miss;
+  - with none of these, the reference time per unit in the manifest
+    (`reference:`), and its longest reference time (or the job time limit)
+    as the upper bound: mortality 20.5 h (longest 23.7 h), energy 6.5 h
+    (job limit 12 h or 36 h), labor 1.4 h (longest 1.42 h). Agriculture has
+    no reference time yet, so it shows "not known yet".
+  The tooltips of the time to finish and SUs to finish cards say which
+  source was used.
+- The time to finish covers the projection units left only. The pace is
+  either the units being written now over the time per unit ("writing",
+  steady because it does not jump with bursts of finishes), or the units
+  finished in the last 6 hours ("recent", used with at least 3 of them).
+  With less data than that it shows "not enough data yet". A unit's finish
+  time is its status marker, or else its newest projection file.
 - SUs to finish, per sector and run type, for the units whose projections
-  are not done yet:
-  - lower bound: remaining units x the median generate time per unit seen
-    so far; upper bound: remaining units x the longest time seen so far;
-  - a unit's time comes from its projection file dates: the files are
-    written one after another, so the time from the first to the last of
-    n files, times n / (n - 1), covers the whole run;
-  - observed times are used only once at least 10 units of that sector and
-    run type have finished; until then the lower bound uses the reference
-    time per unit and the upper bound its longest reference time (or the
-    job time limit), set per sector in the manifest (`reference:`) with
-    their sources: mortality 20.5 h (longest 23.7 h), energy 6.5 h (job
-    limit 12 h or 36 h), labor 1.4 h (longest 1.42 h). Agriculture has no
-    reference time yet, so it shows "not known yet";
-  - SUs = hours x billing (1 for these jobs). Aggregation is not included;
-    it is much shorter than generate.
-- Service units follow the RCC formula for non GPU jobs:
-  SUs = ElapsedRaw / 3600 x billing, with billing read from each job's
-  AllocTRES (not assumed equal to the CPUs). For example, a job on amd with
-  billing=1, cpu=1, mem=45G that ran 36 h 25 s used 36.01 SUs. To check a
-  job: `sacct -X -j <jobid> -n -P -o JobID,ElapsedRaw,Partition,AllocTRES`.
-  The same measure is counted as compute used on every partition in
-  `account.compute_partitions` (cil, amd, caslake, amd-hm); only the part
-  on `account.su_charged_partitions` (caslake, amd-hm) counts as service
-  units charged. Core hours are elapsed hours x the job's allocated CPUs
-  (cpu= in AllocTRES). GPU jobs, bigmem, other partitions and
-  jobs without a billing value are flagged with their elapsed hours
-  instead of counted. Only jobs that have finished (they have an end
+  are not done yet: remaining units x the SUs per unit, low to high.
+  Aggregation is not included; it is much shorter than the projection.
+- Compute used = ElapsedRaw / 3600 x billing, with billing read from each
+  job's AllocTRES (not assumed equal to the CPUs), on every partition. For
+  example, a job on amd with billing=1, cpu=1, mem=45G that ran 36 h 25 s
+  used 36.01. To check a job:
+  `sacct -X -j <jobid> -n -P -o JobID,ElapsedRaw,Partition,AllocTRES`.
+  Core hours are elapsed hours x the job's allocated CPUs (cpu= in
+  AllocTRES). Jobs without a billing value are flagged with their elapsed
+  hours instead of counted. Only jobs that have finished (they have an end
   time) or that squeue shows right now count: sacct sometimes keeps a job
   as RUNNING or PENDING long after it ended, when its record was never
-  closed, and those stale records are listed apart, not counted. Every user with jobs on the account is listed by
-  cluster username. The
-  allocation and balance come from `rcchelp balance -a cil`, and storage
-  from `rcchelp quota` (group filesets of the cil account).
+  closed, and those stale records are listed apart, not counted. Every
+  user with jobs or use on the account is listed by cluster username. The
+  allocation and balance come from `rcchelp balance -a cil`, the service
+  units estimate from sreport, and storage from `rcchelp quota` (group
+  filesets of the cil account).
 
-## status.json format (schema 4)
+## status.json format (schema 5)
 
 The contract between the collector and the page; the mock follows it.
 
 ```jsonc
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "source": "collector",             // "mock" or "collector"
   "generated_at": "2026-10-13T18:00:00Z",
   "scan_interval_hours": 1,
@@ -265,26 +294,25 @@ The contract between the collector and the page; the mock follows it.
     "name": "cil",
     "allocation_status": "ok",       // "ok", "none" (no allocation listed) or "unknown"
     "allocation_su": 1200000, "used_su": 0, "balance_su": 1200000,
-    "su_since": "2026-10-14",        // the day the allocation started; SUs and core hours count from here
-    "compute_total": 319.4,          // compute used, all compute partitions, SU equivalent
-    "su_charged_total": 69.2,        // the part on charged partitions; an estimate, RCC's figure is used_su
+    "su_since": "2026-10-01",        // start of the allocation cycle; all use counts from here
+    "compute_total": 319.4,          // compute used, sacct, all partitions, SU equivalent
+    "su_estimate_total": 310.0,      // sreport, the way RCC counts; null when sreport failed
     "su_stale_records": [{"job_id": "53282084_1", "user": "someuser", "state": "RUNNING",
                           "partition": "caslake", "hours": 1580.2}],   // not counted
     "highlight_user": "cadavidsanchez",
-    "compute_partitions": ["cil", "amd", "caslake", "amd-hm"],
-    "su_charged_partitions": ["caslake", "amd-hm"],
+    "compute_partitions": ["cil", "amd", "caslake", "amd-hm"],   // always listed in the key
     "storage": [                     // null when rcchelp could not be read
       {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5}
     ]
   },
   "users": [                         // every user with jobs or usage, by cluster username; null without Slurm
     {"user": "someuser",
-     "compute_used": 319.4,          // elapsed hours x billing since su_since, all compute partitions
+     "compute_used": 319.4,          // elapsed hours x billing since su_since, all partitions
      "compute_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},   // largest first
-     "su_charged": 69.2,             // the part on charged partitions
+     "su_estimate": 310.0,           // sreport hours since su_since; null when sreport failed
      "core_hours": 319.4,            // elapsed hours x CPUs
      "core_hours_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},
-     "su_flagged": {"bigmem": {"jobs": 2, "hours": 30.5, "reason": "bigmem partition"}},
+     "su_flagged": {"gpu": {"jobs": 1, "hours": 3.5, "reason": "no billing value"}},
      "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
                       "tasks": {"running": 32, "queued": 0, "done": 16, "failed": 1},   // failed: failed, timeout, out of memory, node failure
                       "elapsed_min": 1391.0,
@@ -311,9 +339,13 @@ The contract between the collector and the page; the mock follows it.
           "model_dirs": {"main": "/project/cil/gcp/outputs_newsocioeconomics/mortality/median/median"},
                                      // each sub-model's folder, down to the batch or rcp folders
           "counts": {"not_started": 0, "running": 0, "partial": 0, "done": 0, "failed": 0, "total": 520},
-          "eta_hours": null, "eta_basis": null,
+          "eta_hours": 5.4,             // projection only; null when there is not enough data yet
+          "eta_method": "writing",      // "writing", "recent" or null
+          "eta_basis": "178 projection units left; 146 being written now, ...",
+          "aggregation": {"started": false, "done": 0},   // units with aggregation done
+          "unit_time_source": "sacct",  // where the time per unit came from; null when not known
           "su_estimate": {"remaining": 520, "hours_low": 20.5, "hours_high": 36, "su_low": 10660,
-                          "su_high": 18720, "source": "reference",   // or "observed"
+                          "su_high": 18720, "source": "reference",   // "sacct", "file dates", "reference" or "unknown"
                           "basis": "520 units left x 20.5 h (reference) to 36 h (job limit), 1 SU per hour"},
           "units": [                 // only units with something on disk
             {"model": "main", "ssp": "SSP3", "rcp": "rcp45", "iam": "low", "gcm": "CCSM4", "batch": null,

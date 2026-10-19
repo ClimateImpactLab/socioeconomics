@@ -408,8 +408,8 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .grid-table td.sc-cell { text-align: center; }
 .grid-table .sep-col { width: 4px; padding: 0; border-bottom: 0.5px solid var(--bd); }
 .sc-hdr { font-size: 10px; font-weight: 500; }
-.sc-hdr-rcp45 { border-bottom: 2px solid var(--blue) !important; background: rgba(106, 158, 200, 0.08); color: var(--rcp45-tx); }
-.sc-hdr-rcp85 { border-bottom: 2px solid var(--redline) !important; background: rgba(200, 112, 112, 0.08); color: var(--rcp85-tx); }
+.sc-hdr-rcp45 { border-bottom: 2px solid var(--blue) !important; background-image: linear-gradient(rgba(106, 158, 200, 0.08), rgba(106, 158, 200, 0.08)); color: var(--rcp45-tx); }
+.sc-hdr-rcp85 { border-bottom: 2px solid var(--redline) !important; background-image: linear-gradient(rgba(200, 112, 112, 0.08), rgba(200, 112, 112, 0.08)); color: var(--rcp85-tx); }
 .sc-hdr .sc-count { opacity: 0.6; font-weight: 400; font-size: 8px; }
 .edge-l45 { border-left: 0.5px solid rgba(106, 158, 200, 0.25); }
 .edge-r45 { border-right: 0.5px solid rgba(106, 158, 200, 0.25); }
@@ -534,8 +534,6 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .su-blocks > .ukey { margin-top: 4px; }
 .su-est .ukey.ukey-left { justify-content: flex-start; }
 .su-since { text-align: center; font-size: 10px; color: var(--tx3); }
-.ptag { font-size: 8.5px; color: var(--tx3); border: 0.5px solid var(--bd2); border-radius: 7px; padding: 0 4px; }
-.ptag.on { color: var(--st-pend); border-color: var(--st-pend); }
 @media (max-width: 900px) { .su-blocks { display: flex; } }
 /* Bar titles and the date line start from the left, like the user key. */
 .su-blocks .su-est-head { justify-content: flex-start; }
@@ -567,3 +565,34 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 #sector-tabs, #runtype-tabs { flex-wrap: wrap; gap: 4px; }
 #sector-tabs .run-opt, #runtype-tabs .run-opt { border-radius: 4px; }
 #sector-tabs .run-opt:not(:first-child), #runtype-tabs .run-opt:not(:first-child) { border-left-style: solid; border-left-width: 1.5px; }
+/* The grid scrolls inside its own box, so its headers (scenarios, IAMs,
+   batches) and row labels (climate models) stay in view. */
+.grid-wrap { overflow: auto; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
+.grid-table thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bg); box-shadow: inset 0 -1px 0 var(--bd); }
+.grid-table thead tr + tr th { top: var(--hdr1, 0px); }
+.grid-table thead th.model-th { left: 0; z-index: 3; }
+/* Row and column of the hovered or selected cell. */
+:root { --xh: color-mix(in srgb, var(--blue) 10%, var(--bg)); }
+.grid-table td.xh { background-color: var(--xh); }
+.grid-table thead th.xh { background-color: var(--xh); color: var(--tx); }
+.grid-table td.model-cell.xh { background-color: var(--xh); font-weight: 700; }
+.card-val-small { font-size: 11px; font-weight: 500; color: var(--tx2); }
+/* SSP tabs: small round badges, one color per SSP story. SSP2 middle of the
+   road, a neutral blue grey; SSP3 regional rivalry, a muted red; SSP4
+   inequality, a muted purple. Filled when selected, outlined otherwise. */
+:root { --ssp2: #5f7a99; --ssp3: #a8605a; --ssp4: #7d68a6; --ssp-on-tx: #ffffff; }
+:root[data-theme="dark"] { --ssp2: #93a8c2; --ssp3: #d08f88; --ssp4: #ab97d1; --ssp-on-tx: #1a1a1a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --ssp2: #93a8c2; --ssp3: #d08f88; --ssp4: #ab97d1; --ssp-on-tx: #1a1a1a; }
+}
+#ssp-tabs { flex-wrap: wrap; gap: 6px; }
+.ssp-SSP2 { --ssp-c: var(--ssp2); }
+.ssp-SSP3 { --ssp-c: var(--ssp3); }
+.ssp-SSP4 { --ssp-c: var(--ssp4); }
+#ssp-tabs .run-opt.ssp-tab { border: 1.5px solid var(--ssp-c, var(--bd2)) !important; border-radius: 999px !important;
+  background: transparent; color: var(--ssp-c, var(--tx2)); padding: 3px 11px; font-size: 10.5px; font-weight: 600; }
+#ssp-tabs .run-opt.ssp-tab .opt-count { color: inherit; opacity: 0.75; font-weight: 400; }
+#ssp-tabs .run-opt.ssp-tab.active { background: var(--ssp-c, var(--bg3)); color: var(--ssp-on-tx); }
+#ssp-tabs .run-opt.ssp-tab.active .opt-count { opacity: 0.85; }
+#ssp-tabs .run-opt.ssp-tab:hover:not(.active) { background: color-mix(in srgb, var(--ssp-c) 10%, transparent); }
+.res-row .info-wrap { margin-left: 2px; }

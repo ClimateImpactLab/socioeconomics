@@ -58,14 +58,18 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function fmtN(n) { return n == null ? "n/a" : Math.round(n).toLocaleString("en-US"); }
+// A complete percent is written "100%"; one that is not yet complete never
+// rounds up to it.
 function fmtPct2(p) {
   if (p == null || isNaN(p)) return "n/a";
-  if (p < 100 && p >= 99.995) return "99.99%";
+  if (p >= 100) return "100%";
+  if (p >= 99.995) return "99.99%";
   return `${p.toFixed(2)}%`;
 }
 function fmtPctShort(p) {
+  if (p >= 100) return "100%";
   if (p > 0 && p < 0.1) return "<0.1%";
-  return p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`;
+  return p < 10 ? `${p.toFixed(1)}%` : `${Math.min(99, Math.round(p))}%`;
 }
 function fmtMin(min) {
   if (min == null) return "";
@@ -374,12 +378,28 @@ function sectorSuEstimate(sec) {
   return { low, high };
 }
 
-function card(label, val, sub, bar) {
-  return `<div class="card"><div class="card-label">${label}</div><div class="card-val">${val}</div>` +
+function card(label, val, sub, bar, tip) {
+  return `<div class="card"${tip ? ` title="${esc(tip)}"` : ""}><div class="card-label">${label}</div><div class="card-val">${val}</div>` +
     (bar || "") + (sub ? `<div class="card-sub">${sub}</div>` : "") + `</div>`;
 }
 function pbar(pct, color) {
   return `<div class="pbar"><div class="pbar-fill" style="width:${Math.min(pct, 100).toFixed(2)}%;background:${color}"></div></div>`;
+}
+
+// Time to finish the projections only, with the pace used in the tooltip.
+const ETA_METHOD = {
+  writing: "Pace: units being written now, at the time per unit.",
+  recent: "Pace: projection units finished in the last 6 hours.",
+};
+function etaCard(rt, total) {
+  if (rt.eta_method === undefined) return card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : "");
+  const val = rt.eta_hours === 0 ? "done" : rt.eta_hours == null ? `<span class="card-val-small">not enough data yet</span>` : fmtEta(rt.eta_hours);
+  const ag = rt.aggregation || {};
+  const sub = ag.started ? `projection only; aggregation ${fmtN(ag.done)}/${fmtN(total)} units, not estimated`
+    : "projection only; aggregation not started";
+  const tip = [rt.eta_basis, ETA_METHOD[rt.eta_method], rt.eta_method === "writing" ? UNIT_SOURCE[rt.unit_time_source] : null,
+    sub[0].toUpperCase() + sub.slice(1)].filter(Boolean).join(". ");
+  return card("Time to finish", val, sub, "", tip);
 }
 
 function renderCards() {
@@ -395,14 +415,21 @@ function renderCards() {
     card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card("Aggregation", fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(rt.counts.running)}</span>`, rt.counts.failed ? `${fmtN(rt.counts.failed)} stopped` : "units being written") +
-    card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : (total && f.complete === total ? "All complete" : "")) +
+    etaCard(rt, total) +
     suCard(rt.su_estimate);
 }
 
+// Where the time per unit came from, for the tooltips.
+const UNIT_SOURCE = {
+  sacct: "Time per unit from sacct (elapsed time x billing of the run's tasks).",
+  "file dates": "Time per unit from file dates, plus the start up time measured from the singles.",
+  reference: "Time per unit from the reference in the manifest; not enough finished units yet.",
+};
 function suCard(e) {
   if (!e) return card("SUs to finish", "n/a", "");
-  const sub = e.basis ? `<span title="${esc(e.basis)}">${esc(e.basis)}</span>` : "";
-  return card("SUs to finish", e.su_low == null ? "not known yet" : suRange(e.su_low, e.su_high), sub);
+  const tip = [e.basis, UNIT_SOURCE[e.source]].filter(Boolean).join(". ");
+  const sub = e.basis ? esc(e.basis) : "";
+  return card("SUs to finish", e.su_low == null ? "not known yet" : suRange(e.su_low, e.su_high), sub, "", tip);
 }
 
 function renderSspTabs() {
@@ -419,7 +446,7 @@ function renderSspTabs() {
       exp += rt.dims.gcms[c.rcp].length * (rt.dims.batches || 1);
     }
     const n = paFiles(sec, rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)), exp, models);
-    return { key: ssp, label: ssp, active: view.ssps.includes(ssp), count: paText(n) };
+    return { key: ssp, label: ssp, active: view.ssps.includes(ssp), count: paText(n), cls: `ssp-tab ssp-${ssp}` };
   });
   selector($("ssp-tabs"), items, null, (k) => {
     if (multi) {
@@ -528,11 +555,13 @@ function renderGrid() {
     });
     body += `</tr>`;
   }
+  crossCells = [];
   $("grid").innerHTML = h1 + h2 + body + "</tbody>";
   fitGrid();
   if (view.selected) {
     const el = document.querySelector(`.batch[data-key="${CSS.escape(view.selected)}"]`);
     if (el) el.classList.add("selected");
+    crossHighlight(el);
   }
 }
 
@@ -542,6 +571,8 @@ const GRID_MIN_ZOOM = 0.6;
 function fitGrid() {
   const wrap = document.querySelector(".grid-wrap"), table = $("grid");
   table.style.zoom = "";
+  const head = table.tHead && table.tHead.rows[0];
+  if (head) table.style.setProperty("--hdr1", `${head.getBoundingClientRect().height}px`);
   const avail = wrap.clientWidth, natural = table.offsetWidth;
   if (!avail || !natural || natural <= avail) return;
   let z = Math.max(GRID_MIN_ZOOM, Math.floor((avail / natural) * 1000) / 1000);
@@ -551,6 +582,32 @@ function fitGrid() {
     z = Math.max(GRID_MIN_ZOOM, z - 0.01);
     table.style.zoom = z.toFixed(3);
   }
+}
+
+// Softly marks the row and column of a cell, with its row label and its
+// column and scenario headers.
+let crossCells = [];
+function crossHighlight(batch) {
+  crossCells.forEach((el) => el.classList.remove("xh"));
+  crossCells = [];
+  if (!batch) return;
+  const td = batch.closest("td"), tr = td.parentElement, table = $("grid");
+  const col = td.cellIndex;
+  crossCells.push(...tr.cells);
+  for (const row of table.tBodies[0].rows) if (row.cells[col]) crossCells.push(row.cells[col]);
+  const [h1, h2] = table.tHead.rows;
+  if (h2 && h2.cells[col]) crossCells.push(h2.cells[col]);
+  if (h1) {
+    let at = 0;
+    for (const th of h1.cells) {
+      if (col >= at && col < at + th.colSpan) { crossCells.push(th); break; }
+      at += th.colSpan;
+    }
+  }
+  crossCells.forEach((el) => el.classList.add("xh"));
+}
+function selectedBatch() {
+  return view.selected ? document.querySelector(`.batch[data-key="${CSS.escape(view.selected)}"]`) : null;
 }
 
 /* ---------- detail panel ---------- */
@@ -613,6 +670,7 @@ async function showDetail(key) {
   document.querySelectorAll(".batch.selected").forEach((e) => e.classList.remove("selected"));
   const el = document.querySelector(`.batch[data-key="${CSS.escape(key)}"]`);
   if (el) el.classList.add("selected");
+  crossHighlight(el);
 
   const sec = sector();
   const spec = specOf(sec, info.model);
@@ -663,6 +721,7 @@ function closeDetail() {
   $("info-bar").textContent = "Click or tap a cell to see its files";
   $("info-bar").title = "";
   document.querySelectorAll(".batch.selected").forEach((e) => e.classList.remove("selected"));
+  crossHighlight(null);
 }
 
 /* ---------- resources ---------- */
@@ -672,12 +731,12 @@ function barColor(pct) {
   return pct >= 90 ? "var(--red)" : pct >= 70 ? "var(--amber)" : "var(--green)";
 }
 
-function resRow(label, pct, counts, tip, countsOnly) {
+function resRow(label, pct, counts, tip, countsOnly, extra) {
   const col = barColor(pct);
   const p = Math.min(pct == null ? 0 : pct, 100);
   return `<div class="res-row"${tip ? ` title="${esc(tip)}"` : ""}><span class="res-label">${esc(label)}</span>` +
     `<span class="res-bar"><span class="fill" style="width:${p.toFixed(1)}%;background:${col}"></span><span class="ticks"></span></span>` +
-    (countsOnly ? `<span class="res-counts res-only">${esc(counts)}</span></div>` :
+    (countsOnly ? `<span class="res-counts res-only">${esc(counts)}</span>${extra || ""}</div>` :
       `<span class="res-pct" style="color:${col}">${fmtPct2(pct)}</span><span class="res-counts">${esc(counts)}</span></div>`);
 }
 
@@ -700,21 +759,23 @@ function renderResources() {
     `<div class="res-foot">${new Date(DATA.generated_at).toLocaleString()}</div>`;
 }
 
-// Official SUs come from RCC (rcchelp). Below it, two bars from sacct, one
-// colored segment per user and one textured part per partition inside it:
-// service units charged (only the partitions RCC charges) and compute used
-// (the same measure on every partition, charged or not).
+// Official SUs come from RCC (rcchelp). Below it, two bars per user since
+// the start of the cycle: service units counted the way RCC counts them
+// (sreport, every partition, running jobs included), and compute used from
+// sacct, with one textured part per partition inside each user's segment.
 function serviceUnitsHtml() {
   const a = DATA.account;
   const since = esc(fmtDate(a.su_since));
-  const charged = a.su_charged_partitions || [];
-  const computeParts = a.compute_partitions || a.su_billing_partitions || [];
+  const listed = a.compute_partitions || [];
 
   let html;
   if (a.allocation_status === "ok") {
     const pct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : null;
     html = resRow("Official (RCC)", pct, `${fmtN(a.used_su)} / ${fmtN(a.allocation_su)}`,
-      `Charged by RCC: ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`, true);
+      `Charged by RCC: ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`, true,
+      `<span class="info-wrap"><button class="info-btn" aria-expanded="false" title="About the official figure">i</button>` +
+      `<span class="su-pop hidden" role="dialog">RCC updates its balance about a day after jobs run, so it can show
+        less use (even 0) than the estimate below. The two catch up later.</span></span>`);
   } else {
     const note = a.allocation_status === "none" ? "no allocation listed" : "not read in this scan";
     html = `<div class="res-row"><span class="res-label">Official (RCC)</span>` +
@@ -724,35 +785,51 @@ function serviceUnitsHtml() {
   if (!DATA.users) return html + `<div class="res-note muted" style="margin-top:6px">Use by user not read in this scan</div>`;
 
   const byPart = (u) => u.compute_by_partition || u.su_by_partition || {};
-  const sum = (u, parts) => Object.entries(byPart(u)).filter(([p]) => parts.includes(p)).reduce((n, [, v]) => n + v, 0);
-  const users = (DATA.users || []).map((u) => ({ user: u.user, vals: byPart(u),
-    charged: sum(u, charged), compute: sum(u, computeParts), ran: !!(u.compute_used || u.su_used) }))
-    .sort((x, y) => y.compute - x.compute || x.user.localeCompare(y.user));
-  const info = `<span class="info-wrap"><button class="info-btn" id="su-info-btn" aria-expanded="false" aria-controls="su-info"
-      title="About these numbers">i</button><span class="su-pop hidden" id="su-info" role="dialog">SUs = elapsed hours &times; billing.
-      To check a job: <code>sacct -X -j &lt;jobid&gt; -n -P -o JobID,ElapsedRaw,Partition,AllocTRES</code></span></span>`;
-  html += `<div class="su-est su-blocks"><div class="su-since">Since ${since}</div>` +
-    usageBar("Service units charged", "SU", charged, users, info) +
-    usageBar("Compute used", "SU equivalent", computeParts, users, "");
+  const users = (DATA.users || []).map((u) => {
+    const vals = byPart(u);
+    return { user: u.user, vals, su: u.su_estimate, compute: Object.values(vals).reduce((n, v) => n + v, 0),
+      ran: !!(u.compute_used || u.su_estimate) };
+  }).sort((x, y) => y.compute - x.compute || x.user.localeCompare(y.user));
+  const seen = [...new Set(users.flatMap((u) => Object.keys(u.vals)))];
+  const parts = [...listed, ...seen.filter((p) => !listed.includes(p)).sort()];
+  const reported = a.su_estimate_total != null;
 
-  // One key for both bars: each user's SU charged and compute used, then
-  // the partition textures, marking the charged ones.
+  const info = `<span class="info-wrap"><button class="info-btn" aria-expanded="false"
+      title="About these numbers">i</button><span class="su-pop hidden" role="dialog">Counted the same way as RCC, which
+      updates about a day later.<br>This estimate counts amd as charged; RCC is not charging amd yet but plans to,
+      so the official count may be lower for now.<br>Compute used = elapsed hours &times; billing. To check a job:
+      <code>sacct -X -j &lt;jobid&gt; -n -P -o JobID,ElapsedRaw,Partition,AllocTRES</code></span></span>`;
+  html += `<div class="su-est su-blocks"><div class="su-since">Since ${since}</div>` +
+    (reported ? suBar(users, a.su_estimate_total, info)
+      : `<div class="su-bar-block"><div class="su-est-head">Service units, estimate <span class="lbl">not read in this scan</span>${info}</div></div>`) +
+    usageBar("Compute used", "SU equivalent", parts, users, "");
+
+  // One key for both bars: each user's service units and compute used, then
+  // the partition textures with their compute totals.
   const byName = [...users].sort((x, y) => x.user.localeCompare(y.user));
   html += `<div class="ukey ukey-left">` + byName.map((u) =>
     `<span class="ukey-item" data-user="${esc(u.user)}"><span class="udot" style="background:${userColor(u.user)}"></span>${userName(u.user)}
-      <span class="mono">${u.ran ? `${fmtN(u.charged)} SU charged, ${fmtN(u.compute)} compute` : "no jobs yet"}</span></span>`).join("") + `</div>`;
+      <span class="mono">${u.ran ? `${u.su != null ? fmtN(u.su) + " SU, " : ""}${fmtN(u.compute)} compute` : "no jobs yet"}</span></span>`).join("") + `</div>`;
   const partTotal = (p) => users.reduce((n, u) => n + (u.vals[p] || 0), 0);
-  const order = [...charged.filter((p) => computeParts.includes(p)), ...computeParts.filter((p) => !charged.includes(p))];
-  if (order.length) {
-    html += `<div class="ukey pkey">` + order.map((p) => {
+  if (parts.length) {
+    html += `<div class="ukey pkey">` + parts.map((p) => {
       const t = partTotal(p);
       return `<span class="ukey-item" data-part="${esc(p)}">${partSwatch(p)}${esc(p)}
-        <span class="ptag${charged.includes(p) ? " on" : ""}">${charged.includes(p) ? "charged" : "not charged"}</span>
         <span class="mono">${t ? fmtN(t) : "no use yet"}</span></span>`;
     }).join("") + `</div>`;
   }
   html += `</div>`;
   return html;
+}
+
+// Service units per user, the way RCC counts them: one plain segment each.
+function suBar(users, total, extra) {
+  const sum = users.reduce((n, u) => n + (u.su || 0), 0) || 1;
+  const bar = users.filter((u) => u.su > 0).sort((x, y) => y.su - x.su).map((u) =>
+    `<span class="seg" data-user="${esc(u.user)}" style="width:${((100 * u.su) / sum).toFixed(2)}%;background-color:${userColor(u.user)}"
+      title="${esc(u.user)}: ${fmtN(u.su)} SU"></span>`).join("");
+  return `<div class="su-bar-block"><div class="su-est-head">Service units, estimate <b>${fmtN(total)} SU</b>${extra}</div>
+    <div class="su-bar-all">${bar}</div></div>`;
 }
 
 // One bar of use by user and partition, on the given partitions.
@@ -781,7 +858,10 @@ function suSelection(el) {
 }
 function suHighlight(box, sel) {
   if (!box) return;
-  const hit = (el) => !!sel && (!sel.user || el.dataset.user === sel.user) && (!sel.part || el.dataset.part === sel.part);
+  // A service units segment has a user but no partition: it lights for its user only.
+  const hit = (el) => !!sel && (el.dataset.part
+    ? (!sel.user || el.dataset.user === sel.user) && (!sel.part || el.dataset.part === sel.part)
+    : !!sel.user && el.dataset.user === sel.user);
   box.classList.toggle("has-hl", !!sel);
   box.querySelectorAll(".seg").forEach((el) => el.classList.toggle("hl", hit(el)));
   box.querySelectorAll(".ukey-item[data-user]").forEach((el) => el.classList.toggle("hl", !!sel && el.dataset.user === sel.user));
@@ -1000,16 +1080,16 @@ function setup() {
     const t = e.target.closest(SU_TARGET);
     if (t && !t.contains(e.relatedTarget)) suHighlight(t.closest(".su-blocks"), suPicked);
   });
-  const closePop = () => {
-    const pop = $("su-info"), b = $("su-info-btn");
-    if (!pop || pop.classList.contains("hidden")) return;
-    pop.classList.add("hidden");
-    b.setAttribute("aria-expanded", "false");
-    b.classList.remove("on");
+  const closePop = (except) => {
+    document.querySelectorAll(".info-wrap").forEach((w) => {
+      const pop = w.querySelector(".su-pop"), b = w.querySelector(".info-btn");
+      if (w === except || !pop || pop.classList.contains("hidden")) return;
+      pop.classList.add("hidden");
+      b.setAttribute("aria-expanded", "false");
+      b.classList.remove("on");
+    });
   };
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest(".info-wrap")) closePop();
-  });
+  document.addEventListener("click", (e) => closePop(e.target.closest(".info-wrap")));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
   rc.addEventListener("click", (e) => {
     const t = e.target.closest(SU_TARGET);
@@ -1020,9 +1100,9 @@ function setup() {
       suHighlight(t.closest(".su-blocks"), suPicked);
       return;
     }
-    const b = e.target.closest("#su-info-btn");
+    const b = e.target.closest(".info-wrap > .info-btn");
     if (!b) return;
-    const pop = $("su-info");
+    const pop = b.parentElement.querySelector(".su-pop");
     if (!pop.classList.contains("hidden")) { closePop(); return; }
     pop.classList.remove("hidden");
     b.setAttribute("aria-expanded", "true");
@@ -1078,14 +1158,18 @@ function setup() {
   grid.addEventListener("mousemove", (e) => {
     if (touch) return;
     const b = e.target.closest(".batch");
-    if (!b) { tip.style.display = "none"; return; }
+    if (!b) { tip.style.display = "none"; crossHighlight(selectedBatch()); return; }
+    if (!crossCells.includes(b.closest("td"))) crossHighlight(b);
     const r = fillTip(b);
     let x = e.clientX + 12, y = e.clientY + 12;
     if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 12;
     if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 12;
     placeTip(x, y);
   });
-  grid.addEventListener("mouseleave", () => { if (!touch) tip.style.display = "none"; });
+  grid.addEventListener("mouseleave", () => {
+    if (!touch) tip.style.display = "none";
+    crossHighlight(selectedBatch());
+  });
   const hideTip = () => { if (Date.now() > quietUntil) tip.style.display = "none"; };
   addEventListener("scroll", hideTip, { passive: true });
   document.querySelector(".grid-wrap").addEventListener("scroll", hideTip, { passive: true });

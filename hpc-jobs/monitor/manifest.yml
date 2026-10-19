@@ -5,20 +5,19 @@
 
 account:
   name: cil
-  su_since: "2026-10-14"   # the day the allocation started; nothing before it was charged
-  # Compute used = ElapsedRaw / 3600 x billing, with billing read from each
-  # job's AllocTRES (the RCC formula for SUs on non GPU jobs). It is counted
-  # on these partitions, whether RCC charges them or not.
+  # Start of the allocation cycle. RCC counts use from here, on every
+  # partition, including the time so far of jobs still running.
+  su_since: "2026-10-01"
+  # Partitions always listed in the key under the use bars, even with no
+  # use yet. Use on any other partition is counted and listed too.
   compute_partitions: [cil, amd, caslake, amd-hm]
-  # The partitions RCC actually charges SUs for. Moving a partition between
-  # charged and not charged only needs a change here.
-  su_charged_partitions: [caslake, amd-hm]
-  # bigmem and GPU jobs (and any partition not listed above) use other
-  # formulas: they are listed as flagged, with their hours, not counted.
   # Cluster users always listed in Resources, even with no jobs yet.
   always_show_users: [silacetiner, dtadeo]
   # Shown in black instead of a palette color.
   highlight_user: cadavidsanchez
+  # Job names that never count as projection tasks (aggregation, post
+  # processing, costs and the monitor itself), case does not matter.
+  job_names_exclude: ["*agg*", "*post*", "*cost*", "amel-monitor"]
   # Jobs that ended badly (timeout, out of memory, failed, cancelled) are
   # listed under SLURM jobs for this many days.
   ended_badly_days: 3
@@ -117,9 +116,12 @@ gcms:
 # enabled: false leaves a run type out of the dashboard entirely (no tab,
 # and not in any count, percent, card or SU estimate). Set it back to true,
 # or remove the line, to show it again.
+# one_unit_per_task: each Slurm task does one unit, so the time per unit
+# comes straight from sacct (elapsed x billing of the finished tasks).
 run_types:
   quick_test:
     enabled: false
+    one_unit_per_task: true
     cells:
       ssps: [SSP3]
       rcps: [rcp45]
@@ -132,6 +134,7 @@ run_types:
     gcms: [CCSM4]
     batches: null
     subdir: null
+    one_unit_per_task: true
   median:
     cells: all
     gcms: per_rcp
@@ -147,6 +150,16 @@ run_types:
 # folders, built from {run_type}, {model} and {subdir} (empty parts are
 # dropped); the default is "{run_type}/{model}/{subdir}". Batch folders
 # come right after it.
+# job_names: Slurm job name patterns of the projection tasks of each run
+# type, used to take the time per unit from sacct. * matches anything and
+# case does not matter, so "*energy*med*" matches cil2-energy-med and
+# energy-median. Each pattern comes in both word orders so names from
+# people's own scripts still match. A task that matches several run types
+# goes to the most specific one: montecarlo, then median, then quick_test,
+# then single. Names matching job_names_exclude (below) never count.
+# Only tasks that started since the run's start count: run_started when set
+# (local cluster time), or else the run's first projection file less the
+# job time limit.
 # models are the sub-models that each get their own full grid
 # (crops for agriculture, fuels for energy; "main" means no sub-model).
 # stages are the pipeline steps a unit needs before it counts as done.
@@ -168,6 +181,10 @@ sectors:
       billing: 1
       time_limit_hours: 36
     output_root: /project/cil/gcp/outputs_newsocioeconomics/mortality
+    job_names:
+      single: [cil2wpp-mort-gen, "*mort*single*", "*single*mort*", "*mort*gen*"]
+      median: ["*mort*med*", "*med*mort*"]
+      montecarlo: [mort-mc-*, "*mort*mc*", "*mc*mort*", "*mort*monte*", "*monte*mort*"]
 
   agriculture:
     label: Agriculture
@@ -184,6 +201,10 @@ sectors:
       billing: 1
       time_limit_hours: 12
     output_root: /project/cil/gcp/outputs_newsocioeconomics/agriculture
+    job_names:
+      single: [cil2wpp-ag-gen, "*agri*single*", "*single*agri*", "*-ag-*single*", "*ag-gen*"]
+      median: ["*agri*med*", "*med*agri*", "*-ag-*med*", "ag-med*"]
+      montecarlo: ["*agri*mc*", "*mc*agri*", "*-ag-*mc*", "ag-mc*", "*agri*monte*"]
 
   energy:
     label: Energy
@@ -202,6 +223,12 @@ sectors:
     # Energy keeps each fuel first, then the run type, with no extra median
     # folder: energy/electricity/median/rcp45/...
     layout: "{model}/{run_type}"
+    job_names:
+      quick_test: [energy-quick-test, cil2wpp-energy-smoke, "*energy*quick*", "*energy*smoke*", "*energy*test*"]
+      single: [energy-single, cil2wpp-energy-gen, "*energy*single*", "*single*energy*", "*energy*gen*"]
+      median: [cil2-energy-med, "*energy*med*", "*med*energy*"]
+    run_started:
+      median: "2026-10-15T16:30:00"
 
   labor:
     label: Labor
@@ -217,6 +244,10 @@ sectors:
       billing: 1
       time_limit_hours: 36
     output_root: /project/cil/gcp/outputs_newsocioeconomics/labor
+    job_names:
+      single: [cil2wpp-labor-gen, "*labo*single*", "*single*labo*", "*labo*gen*"]
+      median: ["*labo*med*", "*med*labo*"]
+      montecarlo: ["*labo*mc*", "*mc*labo*", "*labo*monte*", "*monte*labo*"]
 
 # Expected output files per unit of work, taken from the official
 # production outputs under /project/cil/gcp/outputs (not the cil2 test runs).

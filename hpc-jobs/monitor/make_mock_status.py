@@ -56,7 +56,7 @@ MOCK_JOB_NAMES = [
 
 
 
-def mock_usage(rng, scale, charged):
+def mock_usage(rng, scale):
     """Compute used and core hours on the compute partitions, and a few flagged jobs."""
     core, su = {}, {}
     for p, share in zip(["cil", "amd", "caslake", "amd-hm"], [0.4, 0.3, 0.22, 0.08]):
@@ -69,7 +69,7 @@ def mock_usage(rng, scale, charged):
                              "reason": "bigmem partition"}
     order = lambda d: {k: v for k, v in sorted(d.items(), key=lambda x: -x[1]) if v > 0}
     return {"compute_used": round(sum(su.values()), 2), "compute_by_partition": order(su),
-            "su_charged": round(sum(v for p, v in su.items() if p in charged), 2),
+            "su_estimate": round(sum(su.values()) * rng.uniform(0.97, 1.03), 2),
             "core_hours": round(sum(core.values()), 2), "core_hours_by_partition": order(core),
             "su_flagged": flagged}
 
@@ -287,17 +287,20 @@ def make_unit(stages, unit, state, rng, now):
 
 
 def eta_for(counts, stages, rng):
-    """Plausible estimate in the collector's terms: stage steps left over
-    the pace of the last 24 hours."""
-    left_units = counts["not_started"] + counts["running"] + counts["partial"] + counts["failed"]
-    if left_units == 0:
-        return None, None
+    """Plausible estimate in the collector's terms: projection units left at
+    the pace of the units being written now, and aggregation apart."""
+    left = counts["not_started"] + counts["running"] + counts["failed"]
+    agg = {"started": counts["done"] > 0, "done": counts["done"]}
+    if left == 0:
+        return {"hours": 0, "method": None, "basis": "all projections done"}, agg
     if counts["running"] == 0:
-        return None, "nothing finished in the last 24 h"
-    steps_left = left_units * len(stages)
-    recent = max(1, round(counts["running"] * rng.uniform(1.5, 4)))
-    return round(steps_left / (recent / 24), 1), \
-        f"{steps_left} stage steps left, {recent} finished in the last 24 h"
+        return {"hours": None, "method": None,
+                "basis": f"{left} projection units left; not enough data yet"}, agg
+    per_unit = round(rng.uniform(2, 24), 1)
+    pace = counts["running"] / per_unit
+    return {"hours": round(left / pace, 1), "method": "writing",
+            "basis": f"{left} projection units left; {counts['running']} being written now at "
+                     f"{per_unit} h per unit (sacct), so {pace:.1f} units per hour"}, agg
 
 
 def main():
@@ -343,7 +346,7 @@ def main():
                         details.setdefault((made["model"], made["batch"]), {})[key] = detail
             counts["total"] = len(all_units)
 
-            eta_hours, eta_basis = eta_for(counts, sector["stages"], rng)
+            eta, agg = eta_for(counts, sector["stages"], rng)
             run_types_out[run_type] = {
                 "dims": {
                     "models": sector["models"],
@@ -353,8 +356,11 @@ def main():
                 },
                 "model_dirs": {m: model_dir_for(sector, run_type, rt_cfg, m) for m in sector["models"]},
                 "counts": counts,
-                "eta_hours": eta_hours,
-                "eta_basis": eta_basis,
+                "eta_hours": eta["hours"],
+                "eta_method": eta["method"],
+                "eta_basis": eta["basis"],
+                "aggregation": agg,
+                "unit_time_source": "sacct" if eta["method"] == "writing" else None,
                 "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type),
                 "last_projection_write": (now - datetime.timedelta(hours=rng.uniform(1, 12))).strftime("%Y-%m-%dT%H:%M:%SZ")
                     if counts["running"] else None,
@@ -377,22 +383,21 @@ def main():
     # Placeholder usernames: the mock never shows real accounts.
     users = []
     acct = manifest["account"]
-    charged = acct.get("su_charged_partitions", [])
     for i in range(1, 10):
-        users.append({"user": f"user{i:02d}", **mock_usage(rng, 40_000 * rng.uniform(0.1, 2.0), charged),
+        users.append({"user": f"user{i:02d}", **mock_usage(rng, 40_000 * rng.uniform(0.1, 2.0)),
                       "active_jobs": mock_active_jobs(rng)})
     if acct.get("highlight_user"):
-        users.append({"user": acct["highlight_user"], **mock_usage(rng, 30_000, charged),
+        users.append({"user": acct["highlight_user"], **mock_usage(rng, 30_000),
                       "active_jobs": mock_active_jobs(rng)})
     for name in acct.get("always_show_users", []):
-        users.append({"user": name, "compute_used": 0, "compute_by_partition": {}, "su_charged": 0,
+        users.append({"user": name, "compute_used": 0, "compute_by_partition": {}, "su_estimate": 0,
                       "core_hours": 0, "core_hours_by_partition": {}, "su_flagged": {}, "active_jobs": []})
     users.sort(key=lambda r: -r["compute_used"])
 
-    total_su = round(sum(u["su_charged"] for u in users), 2)
+    total_su = round(sum(u["su_estimate"] for u in users), 2)
     allocation = 1_200_000
     status = {
-        "schema_version": 4,
+        "schema_version": 5,
         "source": "mock",
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 1,
@@ -400,18 +405,17 @@ def main():
             "name": manifest["account"]["name"],
             "allocation_status": "ok",
             "allocation_su": allocation,
-            "used_su": round(total_su),
-            "balance_su": allocation - round(total_su),
+            "used_su": round(total_su * 0.92),
+            "balance_su": allocation - round(total_su * 0.92),
             "su_since": manifest["account"]["su_since"],
             "compute_total": round(sum(u["compute_used"] for u in users), 2),
-            "su_charged_total": total_su,
+            "su_estimate_total": total_su,
             "su_stale_records": [
                 {"job_id": "53282084_1", "user": "user03", "state": "RUNNING", "partition": "caslake", "hours": 1580.2},
                 {"job_id": "50096159", "user": "user05", "state": "RUNNING", "partition": "amd", "hours": 1610.7},
             ],
             "highlight_user": manifest["account"].get("highlight_user"),
             "compute_partitions": acct["compute_partitions"],
-            "su_charged_partitions": charged,
             "storage": [
                 {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5},
                 {"label": "cil /cds3", "used": "61.2T", "quota": "125.0T", "used_pct": 49.0},
