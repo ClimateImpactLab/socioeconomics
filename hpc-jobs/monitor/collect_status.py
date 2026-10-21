@@ -25,6 +25,7 @@ Useful flags:
 """
 
 import argparse
+import collections
 import datetime
 import fnmatch
 import json
@@ -204,6 +205,20 @@ def other_scenarios(patterns, main, rcp, leaf_files):
     return found
 
 
+def extra_files(leaf_files, expected, patterns, rcp):
+    """.nc4 files in a leaf that are not expected and not another scenario's
+    aggregation file, as [[name, size, mtime]], by name. Listed only, never counted."""
+    want = {n.replace("{rcp}", rcp) for n in expected if not n.startswith("winsorized/")}
+    out = []
+    for name, hit in sorted(leaf_files.items()):
+        if not name.endswith(".nc4") or name in want or not hit or hit[0] <= 0:
+            continue
+        if any(re.match(pat.pattern.replace("{rcp}", re.escape(rcp)), name) for _, pat in patterns):
+            continue
+        out.append([name, hit[0], hit[1]])
+    return out
+
+
 def leaf_path(root, *parts):
     return os.path.join(root, *[p for p in parts if p])
 
@@ -379,6 +394,9 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     if any(hits.values()):
                         details.setdefault((model, batch_num), {})[key] = \
                             [list(hits[n]) if hits[n] else 0 for n in names]
+                    extra = extra_files(leaf_files, names, patterns, cell["rcp"])
+                    if extra:
+                        details.setdefault((model, batch_num), {})[f"extra#{key}"] = extra
 
     counts["total"] = sum(len(rcp_gcms[c["rcp"]]) for c in cells) * len(batch_list) * len(models)
 
@@ -447,40 +465,54 @@ def plural(n, word):
     return f"{n:,} {word}" if n == 1 else f"{n:,} {word}s"
 
 
-def estimate_sus(remaining, ut, sector, rt_name):
-    """Lower and upper SUs to finish the units whose projections are not done.
+def estimate_sus(remaining, ut, sector, rt_name, req, rate):
+    """Compute hours and RCC SUs to finish the units whose projections are not done.
 
-    With a time per unit (see unit_time): remaining units x its low and high
-    SUs per unit. Without one, the manifest reference time is the lower
-    bound, and its longest reference time (or the job time limit) the upper
-    one. A sector with no reference time is "not known yet".
+    Hours per unit: from the run's time per unit (see unit_time), median (low)
+    to longest (high); without one, the manifest reference time and its
+    longest reference time (or the job time limit). Compute hours = units
+    left x hours x billing, as Slurm counts them. SUs = units left x hours x
+    RCC's rate for the run's request (see rcc_rate). A sector with no
+    reference time is "not known yet".
     """
     ref = sector.get("reference") or {}
     billing = ref.get("billing", 1)
     limit = ref.get("time_limit_hours")
     if isinstance(limit, dict):
         limit = limit.get(rt_name)
+    base = {"request": req, "rate": None if rate is None else round(rate, 3)}
     if remaining <= 0:
-        return {"remaining": 0, "su_low": 0, "su_high": 0, "basis": "nothing left to run"}
+        return {**base, "remaining": 0, "compute_low": 0, "compute_high": 0, "su_low": 0, "su_high": 0,
+                "basis": "nothing left to run"}
     if ut:
-        lo, hi = ut["su_low"], max(ut["su_high"], ut["su_low"])
-        per = f"{lo:.1f} SU" if round(lo, 1) == round(hi, 1) else f"{lo:.1f} to {hi:.1f} SU"
-        return {"remaining": remaining, "hours_low": round(ut["low_h"], 2), "hours_high": round(ut["high_h"], 2),
-                "su_low": round(remaining * lo), "su_high": round(remaining * hi),
-                "source": ut["source"],
-                "basis": f"{plural(remaining, 'unit')} left × {per} per unit ({ut['basis']})"}
-    low_h = ref.get("hours_per_unit")
-    if low_h is None:
-        return {"remaining": remaining, "su_low": None, "su_high": None,
-                "source": "unknown", "basis": "not known yet: no reference time per unit"}
-    ref_max = ref.get("hours_per_unit_max")
-    high_h = max(ref_max or limit or low_h, low_h)
-    what = "longest reference" if ref_max else "job limit"
-    return {"remaining": remaining, "hours_low": round(low_h, 2), "hours_high": round(high_h, 2),
-            "su_low": round(remaining * low_h * billing), "su_high": round(remaining * high_h * billing),
-            "source": "reference",
-            "basis": (f"{plural(remaining, 'unit')} left × {low_h:g} h (reference) to {high_h:g} h ({what}), "
-                      f"{billing:g} SU per hour")}
+        low_h, high_h = ut["low_h"], max(ut["high_h"], ut["low_h"])
+        c_lo, c_hi = ut["su_low"], max(ut["su_high"], ut["su_low"])
+        source, why = ut["source"], ut["basis"]
+    else:
+        low_h = ref.get("hours_per_unit")
+        if low_h is None:
+            return {**base, "remaining": remaining, "compute_low": None, "compute_high": None,
+                    "su_low": None, "su_high": None, "source": "unknown",
+                    "basis": "not known yet: no reference time per unit"}
+        ref_max = ref.get("hours_per_unit_max")
+        high_h = max(ref_max or limit or low_h, low_h)
+        c_lo, c_hi = low_h * billing, high_h * billing
+        source = "reference"
+        why = f"reference {low_h:g} h to {high_h:g} h ({'longest reference' if ref_max else 'job limit'})"
+    hours = f"{low_h:.1f} h" if round(low_h, 1) == round(high_h, 1) else f"{low_h:.1f} to {high_h:.1f} h"
+    if rate is None:
+        billed = "request not known"
+    elif rate == 0:
+        billed = f"{req['partition']} is not billed by RCC"
+    else:
+        billed = (f"{req['partition']}, {req['cpus']:g} core and {req['mem_gb']:g} GB "
+                  f"({req['source']}), {rate:g} SU per hour")
+    return {**base, "remaining": remaining, "hours_low": round(low_h, 2), "hours_high": round(high_h, 2),
+            "compute_low": round(remaining * c_lo), "compute_high": round(remaining * c_hi),
+            "su_low": None if rate is None else round(remaining * low_h * rate),
+            "su_high": None if rate is None else round(remaining * high_h * rate),
+            "source": source,
+            "basis": f"{plural(remaining, 'unit')} left × {hours} per unit ({why}); {billed}"}
 
 
 # ---------- time per unit ----------
@@ -497,20 +529,55 @@ def sacct_time(text):
         return None
 
 
+def tres_mem_gb(tres):
+    """Memory in GB from an AllocTRES string such as 'cpu=1,mem=45G'."""
+    m = re.search(r"(?:^|,)mem=([\d.]+)([KMGT]?)", tres or "")
+    if not m:
+        return None
+    return float(m.group(1)) * {"K": 1 / 1024 ** 2, "M": 1 / 1024, "": 1 / 1024, "G": 1, "T": 1024}[m.group(2)]
+
+
+def run_request(sector, rt_name, tasks):
+    """Partition, cores and memory a run's tasks ask for: the most common
+    among its matched tasks, or else the reference in the manifest."""
+    seen = [(t["partition"], t["cpus"], t["mem_gb"]) for t in tasks if t.get("cpus") and t.get("mem_gb")]
+    if seen:
+        (part, cpus, mem), _ = collections.Counter(seen).most_common(1)[0]
+        return {"partition": part, "cpus": cpus, "mem_gb": round(mem, 2), "source": "sacct"}
+    req = dict((sector.get("reference") or {}).get("request") or {})
+    req.update((req.pop("by_run_type", None) or {}).get(rt_name) or {})
+    if not req:
+        return None
+    return {"partition": req.get("partition"), "cpus": req.get("cpus", 1), "mem_gb": req.get("mem_gb"),
+            "source": "manifest"}
+
+
+def rcc_rate(req, rcc):
+    """SUs RCC bills per hour of one task: max(cores, memory / RAM per core) on
+    a billed partition, 0 elsewhere. None when the request is not known."""
+    if not req:
+        return None
+    if req["partition"] not in rcc.get("billed_partitions", []):
+        return 0.0
+    ram = (rcc.get("ram_per_core_gb") or {}).get(req["partition"])
+    cpus = req["cpus"] or 1
+    return max(cpus, req["mem_gb"] / ram) if ram and req.get("mem_gb") else float(cpus)
+
+
 def run_tasks(account, since_ts):
     """Tasks on the account that started since since_ts: name, state, start,
     elapsed hours and billing. None if sacct failed."""
     since = datetime.datetime.fromtimestamp(since_ts).strftime("%Y-%m-%dT%H:%M:%S")
     out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account, "--starttime", since,
-                   "--endtime", "now", "--format=JobID,JobName,State,ElapsedRaw,AllocTRES,Start"])
+                   "--endtime", "now", "--format=JobID,JobName,State,ElapsedRaw,AllocTRES,Start,Partition"])
     if out is None:
         return None
     tasks = []
     for line in out.splitlines():
         parts = line.strip().split("|")
-        if len(parts) != 6:
+        if len(parts) != 7:
             continue
-        job, name, state, elapsed, tres, start = parts
+        job, name, state, elapsed, tres, start, partition = parts
         start_ts = sacct_time(start)
         billing = tres_value(tres, "billing")
         try:
@@ -520,7 +587,9 @@ def run_tasks(account, since_ts):
         if start_ts is None or billing is None or hours <= 0:
             continue
         tasks.append({"job": job, "name": name, "state": (state.split() or [""])[0],
-                      "start": start_ts, "hours": hours, "billing": billing})
+                      "start": start_ts, "hours": hours, "billing": billing,
+                      "partition": partition.split(",")[0], "cpus": tres_value(tres, "cpu"),
+                      "mem_gb": tres_mem_gb(tres)})
     return tasks
 
 
@@ -648,7 +717,9 @@ def finish_estimates(manifest, sectors_out, all_tasks):
             eta = projection_eta(timing["left"], timing["recent"], timing["running"], ut)
             out["eta_hours"], out["eta_method"], out["eta_basis"] = eta["hours"], eta["method"], eta["basis"]
             out["unit_time_source"] = ut["source"] if ut else None
-            out["su_estimate"] = estimate_sus(timing["left"], ut, sector, rt)
+            req = run_request(sector, rt, matched[rt])
+            out["su_estimate"] = estimate_sus(timing["left"], ut, sector, rt, req,
+                                              rcc_rate(req, manifest["account"].get("rcc_billing") or {}))
             log(f"{name}/{rt}: time per unit {ut['basis'] + ', ' + format(ut['su_low'], '.1f') + ' SU' if ut else 'not known'}")
 
 

@@ -73,6 +73,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   - the cell details list the aggregation files of the picked scenario
     only (all 8 for energy, price014 by default), with their sizes and
     dates.
+- Other files: the cell details also list, under the projection files,
+  any `.nc4` file in the folder that is not expected and is not another
+  scenario's aggregation file (for energy: `-global.nc4`,
+  `-global-histclim.nc4`, `-incadapt-histclim.nc4` and
+  `-noadapt-histclim.nc4`), in a grey group "Other files (not counted)"
+  with sizes and dates. They never count toward the progress.
   Other scenarios never count toward the progress, the cards, the tab and
   column counts or the camel, whatever the selector shows. It works for any
   sector whose aggregation file names carry a scenario: set
@@ -273,8 +279,24 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   With less data than that it shows "not enough data yet". A unit's finish
   time is its status marker, or else its newest projection file.
 - SUs to finish, per sector and run type, for the units whose projections
-  are not done yet: remaining units x the SUs per unit, low to high.
-  Aggregation is not included; it is much shorter than the projection.
+  are not done yet, as two numbers:
+  - compute hours: units left x hours per unit x billing, as Slurm counts
+    them;
+  - SUs, with RCC's billing formula: units left x hours per unit x
+    max(cores requested, RAM requested / RAM per core), on the partitions
+    RCC bills (`account.rcc_billing.billed_partitions`, now only caslake);
+    other partitions count 0 SUs. RAM per core is set per partition in
+    `account.rcc_billing.ram_per_core_gb`: 3.75 GB for caslake, which
+    matches RCC's bills exactly (1 core and 15G billed 4 SUs per hour, 1
+    core and 45G billed 12). The partition, cores and memory come from the
+    run's matched jobs in sacct, which take priority, or else from the
+    sector's `request` in the manifest, from the jobs in use: agriculture
+    amd, 1 core, 28G; labor amd, 1 core, 60G; energy single amd, 1 core,
+    15G; energy median caslake, 1 core, 15G; mortality caslake, 1 core, 45G.
+    The amd ones count 0 SUs while amd is not billed.
+  The card shows the SUs, with the compute hours under it, and a small "i"
+  with the formula. Aggregation is not included; it is much shorter than
+  the projection. The time to finish is not affected.
 - The allocation and balance come from `rcchelp balance -a cil`, the
   billed use from `rcchelp usage -a cil -byuser` and `-bypartition`, and
   storage from `rcchelp quota` (group filesets of the cil account). Every
@@ -340,8 +362,12 @@ The contract between the collector and the page; the mock follows it.
           "eta_basis": "178 projection units left; 146 being written now, ...",
           "aggregation": {"started": false, "done": 0},   // units with aggregation done
           "unit_time_source": "sacct",  // where the time per unit came from; null when not known
-          "su_estimate": {"remaining": 520, "hours_low": 20.5, "hours_high": 36, "su_low": 10660,
-                          "su_high": 18720, "source": "reference",   // "sacct", "file dates", "reference" or "unknown"
+          "su_estimate": {"remaining": 520, "hours_low": 20.5, "hours_high": 36,
+                          "compute_low": 10660, "compute_high": 18720,   // compute hours to finish
+                          "su_low": 127920, "su_high": 224640,           // RCC's formula; null when the request is not known
+                          "request": {"partition": "caslake", "cpus": 1, "mem_gb": 45, "source": "manifest"},   // or "sacct"
+                          "rate": 12.0,                                  // SUs per hour of one task
+                          "source": "reference",   // "sacct", "file dates", "reference" or "unknown"
                           "basis": "520 units left x 20.5 h (reference) to 36 h (job limit), 1 SU per hour"},
           "units": [                 // only units with something on disk
             {"model": "main", "ssp": "SSP3", "rcp": "rcp45", "iam": "low", "gcm": "CCSM4", "batch": null,
@@ -367,6 +393,8 @@ The contract between the collector and the page; the mock follows it.
 order: `[size in bytes, written time in Unix seconds]`, or `0` if missing.
 Aggregation files under another scenario use the key
 `"<scenario>#<SSP>|<rcp>|<iam>|<GCM>"`, one entry per aggregation file.
+Files that are not expected use `"extra#<SSP>|<rcp>|<iam>|<GCM>"`, a list of
+`[name, size in bytes, written time in Unix seconds]`.
 
 ## Automatic updates
 

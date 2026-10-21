@@ -71,26 +71,41 @@ def mock_ended_badly(rng, users, now):
     return rows
 
 
-def mock_su_estimate(counts, stages, sector, rt_name):
-    """Same rules as the collector: reference time and job limit, since the
-    mock has no file dates."""
+def mock_su_estimate(counts, stages, sector, rt_name, rcc):
+    """Same rules as the collector, from the reference time and the reference
+    request in the manifest, since the mock has no jobs or file dates."""
     ref = sector.get("reference") or {}
     limit = ref.get("time_limit_hours")
     if isinstance(limit, dict):
         limit = limit.get(rt_name)
+    req = dict(ref.get("request") or {})
+    req.update((req.pop("by_run_type", None) or {}).get(rt_name) or {})
+    req = {"partition": req.get("partition"), "cpus": req.get("cpus", 1), "mem_gb": req.get("mem_gb"),
+           "source": "manifest"} if req else None
+    rate = None
+    if req:
+        ram = (rcc.get("ram_per_core_gb") or {}).get(req["partition"])
+        rate = 0.0 if req["partition"] not in rcc.get("billed_partitions", []) else \
+            (max(req["cpus"], req["mem_gb"] / ram) if ram and req["mem_gb"] else float(req["cpus"]))
+    base = {"request": req, "rate": rate}
     remaining = counts["total"] - counts["done"] - counts["partial"]
     if remaining <= 0:
-        return {"remaining": 0, "su_low": 0, "su_high": 0, "basis": "nothing left to run"}
+        return {**base, "remaining": 0, "compute_low": 0, "compute_high": 0, "su_low": 0, "su_high": 0,
+                "basis": "nothing left to run"}
     low, billing = ref.get("hours_per_unit"), ref.get("billing", 1)
     if low is None:
-        return {"remaining": remaining, "su_low": None, "su_high": None, "source": "unknown",
+        return {**base, "remaining": remaining, "compute_low": None, "compute_high": None,
+                "su_low": None, "su_high": None, "source": "unknown",
                 "basis": "not known yet: no reference time per unit"}
-    high = ref.get("hours_per_unit_max") or limit or low
-    what = "longest reference" if ref.get("hours_per_unit_max") else "job limit"
-    return {"remaining": remaining, "hours_low": low, "hours_high": high,
-            "su_low": round(remaining * low * billing), "su_high": round(remaining * high * billing),
+    high = max(ref.get("hours_per_unit_max") or limit or low, low)
+    billed = "request not known" if rate is None else (f"{req['partition']} is not billed by RCC" if rate == 0 else
+        f"{req['partition']}, {req['cpus']:g} core and {req['mem_gb']:g} GB (manifest), {rate:g} SU per hour")
+    return {**base, "remaining": remaining, "hours_low": low, "hours_high": high,
+            "compute_low": round(remaining * low * billing), "compute_high": round(remaining * high * billing),
+            "su_low": None if rate is None else round(remaining * low * rate),
+            "su_high": None if rate is None else round(remaining * high * rate),
             "source": "reference",
-            "basis": f"{remaining:,} units left × {low:g} h (reference) to {high:g} h ({what}), {billing:g} SU per hour"}
+            "basis": f"{remaining:,} units left × {low:g} to {high:g} h per unit (reference); {billed}"}
 
 
 def mock_active_jobs(rng, now):
@@ -336,6 +351,13 @@ def main():
                         details.setdefault((made["model"], made["batch"]), {})[key] = detail
                     spec_m = files_spec[made["model"]]
                     n_proj = len(spec_m["projection"])
+                    # Energy folders also hold files that are not expected; the
+                    # collector lists them apart, never counted.
+                    if alt_scen and made["bits"][:n_proj] == "1" * n_proj:
+                        base = spec_m["projection"][0][:-len(".nc4")]
+                        details.setdefault((made["model"], made["batch"]), {})[f"extra#{key}"] = [
+                            [f"{base}{v}.nc4", int(rng.uniform(12, 14) * 1e6), int(now.timestamp()) - rng.randint(0, 86400)]
+                            for v in ["-global-histclim", "-global", "-incadapt-histclim", "-noadapt-histclim"]]
                     n_agg = len(made["bits"]) - n_proj
                     if alt_scen and n_agg and made["bits"][:n_proj] == "1" * n_proj and rng.random() < 0.6:
                         # Half of these have both scenarios complete; the rest a
@@ -375,7 +397,7 @@ def main():
                 "eta_basis": eta["basis"],
                 "aggregation": agg,
                 "unit_time_source": "sacct" if eta["method"] == "writing" else None,
-                "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type),
+                "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type, manifest["account"].get("rcc_billing") or {}),
                 "last_projection_write": (now - datetime.timedelta(hours=rng.uniform(1, 12))).strftime("%Y-%m-%dT%H:%M:%SZ")
                     if counts["running"] else None,
                 "units": listed,

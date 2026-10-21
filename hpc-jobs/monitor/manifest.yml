@@ -12,6 +12,15 @@ account:
   # Job names that never count as projection tasks (aggregation, post
   # processing, costs and the monitor itself), case does not matter.
   job_names_exclude: ["*agg*", "*post*", "*cost*", "amel-monitor"]
+  # RCC's billing formula, as RCC gave it:
+  #   SUs = hours x max(cores requested, RAM requested / RAM per core)
+  # Only the billed partitions count; the others are 0 SUs. For caslake,
+  # 3.75 GB per core matches RCC's bills exactly (1 core and 15G billed 4 SUs
+  # per hour, 1 core and 45G billed 12).
+  rcc_billing:
+    billed_partitions: [caslake]
+    ram_per_core_gb:
+      caslake: 3.75
   # Jobs that ended badly (timeout, out of memory, failed, cancelled) are
   # listed under SLURM jobs for this many days.
   ended_badly_days: 3
@@ -174,6 +183,9 @@ sectors:
       hours_per_unit_max: 23.7   # longest of the 8 cil2 single tasks
       billing: 1
       time_limit_hours: 36
+      # What the tasks ask for, from the jobs in use; used for the SUs only
+      # when the run's jobs cannot be matched in sacct. Mortality montecarlo.
+      request: {partition: caslake, cpus: 1, mem_gb: 45}
     output_root: /project/cil/gcp/outputs_newsocioeconomics/mortality
     job_names:
       single: [cil2wpp-mort-gen, "*mort*single*", "*single*mort*", "*mort*gen*"]
@@ -194,6 +206,7 @@ sectors:
       hours_per_unit: null
       billing: 1
       time_limit_hours: 12
+      request: {partition: amd, cpus: 1, mem_gb: 28}   # hpc-jobs/agriculture single
     output_root: /project/cil/gcp/outputs_newsocioeconomics/agriculture
     job_names:
       single: [cil2wpp-ag-gen, "*agri*single*", "*single*agri*", "*-ag-*single*", "*ag-gen*"]
@@ -213,6 +226,12 @@ sectors:
       hours_per_unit: 6.5
       billing: 1
       time_limit_hours: {quick_test: 12, single: 12, median: 36}
+      request:
+        partition: amd           # hpc-jobs/energy single
+        cpus: 1
+        mem_gb: 15
+        by_run_type:
+          median: {partition: caslake}   # the median that ran on caslake, also 15G
     output_root: /project/cil/gcp/outputs_newsocioeconomics/energy
     # Energy keeps each fuel first, then the run type, with no extra median
     # folder: energy/electricity/median/rcp45/...
@@ -241,6 +260,7 @@ sectors:
       hours_per_unit_max: 1.42   # longest of the 8 cil2 single tasks
       billing: 1
       time_limit_hours: 36
+      request: {partition: amd, cpus: 1, mem_gb: 60}   # hpc-jobs/labor single
     output_root: /project/cil/gcp/outputs_newsocioeconomics/labor
     job_names:
       single: [cil2wpp-labor-gen, "*labo*single*", "*single*labo*", "*labo*gen*"]

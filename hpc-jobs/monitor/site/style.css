@@ -608,3 +608,9 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .agg-sep { color: var(--bd2); }
 body.no-sector #agg-tabs, body.no-model #agg-tabs { display: none !important; }
 @media (max-width: 600px) and (orientation: portrait) { #agg-tabs { display: none !important; } }
+/* Files in a cell's folder that are not expected: grey, not counted. */
+.dot.oth { background: var(--tx3); }
+.fd-row.oth { background: transparent; color: var(--tx2); }
+.fd-sub-other { color: var(--tx3); }
+.card .card-label { display: flex; align-items: center; gap: 2px; }
+.card .info-btn { width: 13px; height: 13px; font-size: 8px; margin-left: 3px; }

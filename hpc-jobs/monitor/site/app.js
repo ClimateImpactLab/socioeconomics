@@ -11,7 +11,7 @@
 const GROUPS = ["projection", "costs", "levels", "aggregated"];
 const AGG_GROUPS = ["costs", "levels", "aggregated"];
 const SQ_CLASS = { projection: "base", costs: "cost", levels: "lvl", aggregated: "agr" };
-const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr" };
+const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr", other: "oth" };
 // Partitions are told apart by texture and users by color, so a segment of
 // the SU bar shows both who and where. The textures live in the stylesheet
 // (.ptex-*) and are the same in badges, bars and keys.
@@ -58,16 +58,18 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 function fmtN(n) { return n == null ? "n/a" : Math.round(n).toLocaleString("en-US"); }
-// A complete percent is written "100%"; one that is not yet complete never
-// rounds up to it.
+// A complete percent is written "100%" and nothing done "0%"; one in between
+// never rounds to either.
 function fmtPct2(p) {
   if (p == null || isNaN(p)) return "n/a";
   if (p >= 100) return "100%";
+  if (p <= 0) return "0%";
   if (p >= 99.995) return "99.99%";
   return `${p.toFixed(2)}%`;
 }
 function fmtPctShort(p) {
   if (p >= 100) return "100%";
+  if (!(p > 0)) return "0%";
   if (p > 0 && p < 0.1) return "<0.1%";
   return p < 10 ? `${p.toFixed(1)}%` : `${Math.min(99, Math.round(p))}%`;
 }
@@ -469,11 +471,20 @@ const UNIT_SOURCE = {
   "file dates": "Time per unit from file dates, plus the start up time measured from the singles.",
   reference: "Time per unit from the reference in the manifest; not enough finished units yet.",
 };
+// SUs to finish with RCC's billing formula, and the compute hours under it.
 function suCard(e) {
-  if (!e) return card("SUs to finish", "n/a", "");
+  const info = infoPop("About the SUs", "SUs = hours × max(cores requested, RAM requested ÷ RAM per core), " +
+    "on the partitions RCC bills (now caslake, 3.75 GB per core); other partitions are 0 SUs.");
+  const label = `SUs to finish${info}`;
+  if (!e) return card(label, "n/a", "");
   const tip = [e.basis, UNIT_SOURCE[e.source]].filter(Boolean).join(". ");
-  const sub = e.basis ? esc(e.basis) : "";
-  return card("SUs to finish", e.su_low == null ? "not known yet" : suRange(e.su_low, e.su_high), sub, "", tip);
+  const compute = e.compute_low == null ? "compute hours not known yet" : `${hRange(e.compute_low, e.compute_high)} compute`;
+  const val = e.su_low == null ? (e.compute_low == null ? "not known yet" : "request not known") : suRange(e.su_low, e.su_high);
+  return card(label, val, esc(compute), "", tip);
+}
+function hRange(low, high) {
+  const f = (n) => fmtSU(n).replace(/ SU$/, "");
+  return low === high ? `${f(low)} h` : `${f(low)} to ${f(high)} h`;
 }
 
 function renderSspTabs() {
@@ -749,7 +760,12 @@ async function showDetail(key) {
       | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>
       <span class="state">${esc(state)}${reason}</span>${scen ? ` <span class="state">aggregation: ${esc(scen.replace("{rcp}", info.rcp))}, not counted</span>` : ""}
       <button class="fd-close" id="fd-close">[close]</button></div>`;
-  html += section("fd-proj", "Projections", `${found("projection")}/${spec.projection.length}`, rows("projection"), true);
+  // Files in the folder that are not expected: listed under the projection
+  // files, never counted.
+  const extra = details[`extra#${cellKey}`] || [];
+  const extraHtml = extra.length ? `<div class="fd-sub fd-sub-other">Other files (not counted) (${extra.length})</div>` +
+    extra.map(([name, size, mtime]) => fileRow("other", name, [size, mtime])).join("") : "";
+  html += section("fd-proj", "Projections", `${found("projection")}/${spec.projection.length}`, rows("projection") + extraHtml, true);
   const aggParts = ["levels", "aggregated"].filter((g) => spec[g].length);
   if (aggParts.length) {
     const sub = aggParts.map((g) => `<div class="fd-sub" style="color:var(--agg-${g === "levels" ? "lvl" : "agg"})">` +
@@ -1126,15 +1142,8 @@ function setup() {
   };
   document.addEventListener("click", (e) => closePop(e.target.closest(".info-wrap")));
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
-  rc.addEventListener("click", (e) => {
-    const t = e.target.closest(SU_TARGET);
-    if (t) {
-      const sel = suSelection(t), box = t.closest(".su-blocks"), pick = suPicked[box.dataset.box];
-      const same = pick && pick.user === sel.user && pick.part === sel.part;
-      suPicked[box.dataset.box] = same ? null : sel;
-      suHighlight(box, suPicked[box.dataset.box]);
-      return;
-    }
+  // Any "i" on the page opens the box next to it.
+  document.addEventListener("click", (e) => {
     const b = e.target.closest(".info-wrap > .info-btn");
     if (!b) return;
     e.preventDefault();   // an "i" inside a summary must not open or close it
@@ -1147,6 +1156,17 @@ function setup() {
     pop.style.left = "";
     const r = pop.getBoundingClientRect();
     if (r.right > innerWidth - 8) pop.style.left = `${Math.round(innerWidth - 8 - r.right)}px`;
+  });
+
+  rc.addEventListener("click", (e) => {
+    const t = e.target.closest(SU_TARGET);
+    if (t) {
+      const sel = suSelection(t), box = t.closest(".su-blocks"), pick = suPicked[box.dataset.box];
+      const same = pick && pick.user === sel.user && pick.part === sel.part;
+      suPicked[box.dataset.box] = same ? null : sel;
+      suHighlight(box, suPicked[box.dataset.box]);
+      return;
+    }
   });
   $("jobs-content").addEventListener("click", (e) => {
     const h = e.target.closest(".grp-header");
