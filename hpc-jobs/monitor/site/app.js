@@ -158,7 +158,7 @@ const STATE_NAMES = {
 
 // Files present and expected for a run type, from its units.
 function filesOf(sec, rt, scen) {
-  const out = { proj: 0, projExp: 0, agg: 0, aggExp: 0, complete: 0, partial: 0, started: 0 };
+  const out = { proj: 0, projExp: 0, agg: 0, aggExp: 0, complete: 0, partial: 0, started: 0, running: 0, failed: 0 };
   const perModel = rt.counts.total / rt.dims.models.length;
   for (const m of rt.dims.models) {
     const s = specOf(sec, m);
@@ -169,6 +169,8 @@ function filesOf(sec, rt, scen) {
     const c = unitCounts(u, specOf(sec, u.model), scen);
     out.proj += c.proj;
     out.agg += c.agg;
+    if (u.state === "running") out.running += 1;
+    if (u.state === "failed") out.failed += 1;
     if (c.proj + c.agg === 0) continue;
     out.started += 1;
     if (c.proj >= c.projTotal && c.agg >= c.aggTotal) out.complete += 1;
@@ -226,7 +228,6 @@ function sectorRunning(sec) {
     rt.units.some((u) => u.stages.generate && u.stages.generate.state === "running"));
 }
 
-// Units with all projection files, and with all aggregation files.
 // Projection (P) and aggregation (A) files present out of expected, for a
 // set of units; expUnits is the number of expected units per sub-model.
 function paFiles(sec, units, expUnits, models, scen) {
@@ -244,8 +245,11 @@ function paFiles(sec, units, expUnits, models, scen) {
   return out;
 }
 
-function paText(n) {
-  return `P ${fmtN(n.p)}/${fmtN(n.pExp)}, A ${fmtN(n.a)}/${fmtN(n.aExp)}`;
+// "P 54% (4,174/7,680), A 0% (0/17,280)", or with short set the percents
+// only, for narrow columns.
+function paText(n, short) {
+  const part = (name, a, exp) => `${name} ${fmtPctShort(pctOf(a, exp))}` + (short ? "" : ` (${fmtN(a)}/${fmtN(exp)})`);
+  return `${part("P", n.p, n.pExp)}, ${part("A", n.a, n.aExp)}`;
 }
 
 function gridKind(rt) {
@@ -537,12 +541,12 @@ function renderCards() {
   const pp = pctOf(f.proj, f.projExp), ap = pctOf(f.agg, f.aggExp);
   $("cards").innerHTML =
     card("Expected", fmtN(total), "units of work") +
-    card("Complete", `<span style="color:var(--st-done)">${fmtN(f.complete)}</span>`, "all files present") +
-    card("Partial", `<span style="color:var(--progress)">${fmtN(f.partial)}</span>`, "some files present") +
-    card("Not started", `<span style="color:var(--st-none)">${fmtN(total - f.started)}</span>`, "no files yet") +
+    card(`Complete${mainMark()}`, `<span style="color:var(--st-done)">${fmtN(f.complete)}</span>`, "all files present") +
+    card(`Partial${mainMark()}`, `<span style="color:var(--progress)">${fmtN(f.partial)}</span>`, "some files present") +
+    card(`Not started${mainMark()}`, `<span style="color:var(--st-none)">${fmtN(total - f.started)}</span>`, "no files yet") +
     card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card(`Aggregation${mainMark()}`, fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
-    card("Writing", `<span style="color:var(--st-run)">${fmtN(rt.counts.running)}</span>`, rt.counts.failed ? `${fmtN(rt.counts.failed)} stopped` : "units being written") +
+    card("Writing", `<span style="color:var(--st-run)">${fmtN(f.running)}</span>`, f.failed ? `${fmtN(f.failed)} stopped` : "units being written") +
     etaCard(rt, total) +
     suCard(rt.su_estimate);
 }
@@ -619,7 +623,8 @@ function renderSspTabs() {
     box.dataset.sig = sig;
     const cls = { ssp: (v) => `ssp-${v}`, rcp: (v) => `sb-${v}`, iam: (v) => `sb-iam sb-iam-${v}` };
     box.innerHTML = ["ssp", "rcp", "iam"].map((f) => `<div class="sb-row">` + all[f].map((v) =>
-      `<button class="sb ${cls[f](v)}" data-f="${f}" data-v="${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("") + `</div>`).join("");
+      `<button class="sb ${cls[f](v)}" data-f="${f}" data-v="${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("") + `</div>`).join("") +
+      `<div class="sb-note">Select a combination to filter the progress grid.</div>`;
   }
   for (const b of box.querySelectorAll(".sb")) {
     const on = view.picks[b.dataset.f].includes(b.dataset.v);
@@ -634,20 +639,28 @@ const HIGHLIGHTS = [["all", "All"], ["incomplete", "Incomplete"], ["complete", "
   ["writing", "Being written"], ["failed", "Failed"], ["notstarted", "Not started"],
   ["projdone", "Projection complete"], ["projmiss", "Projection incomplete"]];
 // The last two look at the projection files only, whatever the aggregation.
-function cellMatches(hl, unit, cls, cnt) {
-  if (hl === "all") return true;
-  if (hl === "projdone") return cnt.projTotal > 0 && cnt.proj >= cnt.projTotal;
-  if (hl === "projmiss") return cnt.proj < cnt.projTotal;
-  if (hl === "complete") return cls === "bst-done";
-  if (hl === "writing") return cls.includes("bst-active");
-  if (hl === "failed") return !!unit && unit.state === "failed";
-  if (hl === "notstarted") return cls === "bst-empty";
-  return cls !== "bst-done" && cls !== "bst-empty";   // incomplete: started, not all files
+// Units are counted by their files, the same way as the summary cards:
+// complete, incomplete and not started add up to all, and so do the two
+// projection options. Being written and failed follow the unit's state.
+function cellMatches(hl, unit, cnt) {
+  const started = cnt.proj + cnt.agg > 0;
+  const done = started && cnt.proj >= cnt.projTotal && cnt.agg >= cnt.aggTotal;
+  switch (hl) {
+    case "all": return true;
+    case "complete": return done;
+    case "incomplete": return started && !done;
+    case "notstarted": return !started;
+    case "writing": return !!unit && unit.state === "running";
+    case "failed": return !!unit && unit.state === "failed";
+    case "projdone": return cnt.projTotal > 0 && cnt.proj >= cnt.projTotal;
+    case "projmiss": return cnt.proj < cnt.projTotal;
+  }
+  return false;
 }
 function renderHighlight(counts) {
   $("hl-tabs").innerHTML = `<span class="lbl">Highlight:</span> ` + HIGHLIGHTS.map(([k, label]) =>
     `<button class="hl-opt${view.hl === k ? " active" : ""}" data-hl="${k}">${label}` +
-    (k === "all" ? "" : ` <span class="muted">${fmtN(counts[k] || 0)}</span>`) + `</button>`).join("");
+    ` <span class="muted">${fmtN(counts[k] || 0)}</span></button>`).join("");
 }
 
 // Aggregation types a sector actually has, in a fixed order.
@@ -703,7 +716,7 @@ function squares(pres, groups) {
 function cellHtml(key, unit, spec, hlCounts) {
   const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
-  const states = HIGHLIGHTS.map(([k]) => k).filter((k) => k !== "all" && cellMatches(k, unit, cls, cnt));
+  const states = HIGHLIGHTS.map(([k]) => k).filter((k) => cellMatches(k, unit, cnt));
   if (hlCounts) for (const k of states) hlCounts[k] = (hlCounts[k] || 0) + 1;
   let html = `<div class="batch ${cls}" data-key="${esc(key)}" data-st="${states.join(" ")}">`;
   html += `<div class="batch-row">${squares(cnt.pres, ["projection"])}` +
@@ -746,7 +759,8 @@ function renderGrid() {
     h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}" data-c="${k}"><span class="hb-row">` +
       `<span class="sb on hb ssp-${esc(c.ssp)}">${esc(c.ssp)}</span><span class="sb on hb sb-${esc(c.rcp)}">${esc(c.rcp)}</span>` +
       `<span class="sb on hb sb-iam sb-iam-${esc(c.iam)}">${esc(c.iam)}</span></span>` +
-      `<span class="sc-count">${paText(n)}</span></th>`;
+      // Columns of one or two cells are too narrow for the counts: they go in the tooltip.
+      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3)}</span></th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
@@ -935,11 +949,15 @@ async function showDetail(key) {
 
   const state = STATE_NAMES[cellState(info.unit, cnt)];
   const reason = info.unit && info.unit.fail_reason ? `, ${esc(info.unit.fail_reason)}` : "";
-  let html = `<div class="fd-root">${esc(path)}</div>
-    <div class="fd-head">${esc(cellTitle(info))}: ${cnt.proj}/${cnt.projTotal} projection
+  // The arrow folds the panel; the red button closes it.
+  let html = `<div class="fd-head">
+      <span class="fd-title">${esc(cellTitle(info))}: ${cnt.proj}/${cnt.projTotal} projection
       | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>
-      <span class="state">${esc(state)}${reason}</span>${scen ? ` <span class="state">aggregation: ${esc(scen.replace("{rcp}", info.rcp))}, not counted</span>` : ""}
-      <button class="fd-close" id="fd-close">[close]</button></div>`;
+      <span class="state">${esc(state)}${reason}</span>${scen ? ` <span class="state">aggregation: ${esc(scen.replace("{rcp}", info.rcp))}, not counted</span>` : ""}</span>
+      <button class="fd-fold" id="fd-fold" aria-expanded="${!fdFolded}" aria-label="Fold" title="Fold or open"><span class="panel-arrow">&gt;</span></button>
+      <button class="fd-close" id="fd-close" aria-label="Close" title="Close (Esc)">` +
+      `<svg viewBox="0 0 12 12" width="6" height="6" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="fd-root">${esc(path)}</div>`;
   // Files in the folder that are not expected: listed under the projection
   // files, never counted.
   const extra = details[`extra#${cellKey}`] || [];
@@ -957,7 +975,18 @@ async function showDetail(key) {
     html += section("fd-costs", "Costs", `${found("costs")}/${spec.costs.length}`, rows("costs"), false);
   }
   box.innerHTML = html;
+  box.classList.toggle("fd-folded", fdFolded);
   $("fd-close").onclick = closeDetail;
+  $("fd-fold").onclick = foldDetail;
+}
+
+// Folded or open, kept while other cells are picked.
+let fdFolded = false;
+function foldDetail() {
+  fdFolded = !fdFolded;
+  $("file-detail").classList.toggle("fd-folded", fdFolded);
+  const b = $("fd-fold");
+  if (b) b.setAttribute("aria-expanded", String(!fdFolded));
 }
 
 function closeDetail() {
@@ -1394,7 +1423,12 @@ function setup() {
     });
   };
   document.addEventListener("click", (e) => closePop(e.target.closest(".info-wrap")));
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
+  // Escape closes an open "i" box first, then the cell details.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (document.querySelector(".info-wrap .su-pop:not(.hidden)")) closePop();
+    else if (view.selected) closeDetail();
+  });
   // Any "i" on the page opens the box next to it.
   document.addEventListener("click", (e) => {
     const b = e.target.closest(".info-wrap > .info-btn");

@@ -117,6 +117,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   `-global-histclim.nc4`, `-incadapt-histclim.nc4` and
   `-noadapt-histclim.nc4`), in a grey group "Other files (not counted)"
   with sizes and dates. They never count toward the progress.
+- Cell details panel: the arrow at the right of its header folds it to
+  the header line or opens it again, like the other panels' arrows, and
+  stays that way for the next cells picked. The round red button next to
+  it, which shows a small x on hover, or Escape, closes it (Escape closes
+  an open "i" box first). The folder path sits under the header.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: not in the tree, and not in any count,
@@ -153,7 +158,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   counts (the grid headers show them). SSP badges keep their soft colors
   (SSP2 #86BDE0, SSP3 #CC956B, SSP4 #A6B990), RCP badges the grid's blue
   and red, and IAM badges are white with blue text for low and red for
-  high. Each badge turns on or off on its own, and the grid shows the
+  high, with a grey line below: "Select a combination to filter the
+  progress grid." Each badge turns on or off on its own, and the grid shows the
   columns whose SSP, RCP and IAM are all on. A run type starts with every SSP, RCP and IAM on. On
   phones the badges are in the menu with the tree.
 - Speed: the grid's grouped counts are added up once per scan, run type,
@@ -165,12 +171,24 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   about 0.03 to 0.13 s.
 - Highlight: a row above the grid, "Highlight: All | Incomplete | Complete
   | Being written | Failed | Not started | Projection complete | Projection
-  incomplete", each with its count of cells in the columns shown. The last
-  two look at the projection files only, whatever the aggregation:
-  projection complete means all of them are there, projection incomplete
-  means some are still missing. The grid stays whole; cells of other states are shown
-  blank (the page background), so the matching ones stand out. It combines
-  with the SSP, RCP and IAM picks. All is the default.
+  incomplete", each with its count of units in the columns shown, All
+  included. Units are counted by their files, the same way as the summary
+  cards: complete has every file, incomplete has some, not started has
+  none, so the three add up to All. Projection complete has every
+  projection file whatever the aggregation, projection incomplete is
+  missing some, and the two also add up to All. Being written and failed
+  follow the unit's state. The grid stays whole; cells of other states are
+  shown blank (the page background), so the matching ones stand out. It
+  combines with the SSP, RCP and IAM picks. All is the default.
+- With every SSP, RCP and IAM on, the counts agree across the page: All
+  with Expected, the filters with the Complete, Partial, Not started and
+  Writing cards, the column headers with the Projection and Aggregation
+  cards, and those with the tree and the table next to the camel. The
+  Writing card counts the units being written, as the filter does. While
+  another aggregation scenario is picked, the grid follows it and the
+  overall cards (Complete, Partial, Not started, Aggregation) say they
+  count the main one. For sectors with sub-models the grid shows one
+  sub-model and the cards the whole run.
 - Cells with projection and aggregation complete have their green border
   and a soft green inside, like cells being written have their colored
   border and soft fill.
@@ -178,8 +196,10 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   RCP and IAM as small copies of the badges, in the same colors, wrapping
   to a second line in narrow columns. Below them it shows P, projection
   files present out of expected, and A, aggregation files present out of
-  expected, for example "P 917/4,160, A 0/4,160"; the key under the tree
-  says so. Each cell has one small square per
+  expected, each as a percent with its counts, for example "P 54%
+  (4,174/7,680), A 0% (0/17,280)" (0% and 100% have no decimals, as
+  elsewhere); the key under the tree says so. Columns of one or two cells
+  show the percents only, and the counts are in the tooltip. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
   then a thin line, then the aggregation squares colored by type (costs
   orange, levels purple, aggregated blue). The border gives the state:
