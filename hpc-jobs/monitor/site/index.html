@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>CIL | Projections - New Socioeconomics</title>
 <link rel="icon" type="image/svg+xml" href="camel/favicon.svg">
-<link rel="stylesheet" href="style.css?v=202610211453">
+<link rel="stylesheet" href="style.css?v=202610211613">
 </head>
 <body>
 
@@ -53,7 +53,6 @@
 <div class="top-bar">
   <div class="ssp-col">
     <div class="ssp-row">
-      <div id="ssp-tabs" class="run-selector"></div>
       <button class="info-btn" id="pa-info-btn" aria-expanded="false" aria-controls="pa-info" title="What P and A mean">i</button>
     </div>
   </div>
@@ -64,6 +63,7 @@
   <p>A: aggregation files present, out of expected.</p>
 </div>
 
+<div class="hl-tabs" id="hl-tabs"></div>
 <div class="info-bar" id="info-bar">Click or tap a cell to see its files</div>
 <div id="file-detail"></div>
 
@@ -76,11 +76,13 @@
   <div class="rotate-text">Turn your phone sideways to see the grid</div>
   <div class="rotate-sub">The grid needs the full width of the screen.</div>
 </div>
+<div class="scen-graph" id="scen-graph" aria-label="SSP, RCP and IAM"></div>
+<div class="grid-empty hidden" id="grid-empty">Turn on an SSP with at least one RCP and IAM under it to see columns.</div>
 <div class="grid-wrap"><table class="grid-table" id="grid"></table></div>
 
 <div id="global-tip"></div>
 
 
-<script src="app.js?v=202610211453"></script>
+<script src="app.js?v=202610211613"></script>
 </body>
 </html>

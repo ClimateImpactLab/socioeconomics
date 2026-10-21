@@ -35,8 +35,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     types from the same estimate as the cards (when one of
     them has no estimate it reads "no data").
   Below the rows, a thin line and a total row: the sum of the SUs to finish
-  over all sectors with an estimate, and "of X available" with X RCC's
-  remaining balance. A short grey note says that
+  over all sectors with an estimate, with "of X available" (X being RCC's
+  remaining balance) on its own line below. A short grey note says that
   percents refer to each sector's main run (montecarlo; median for energy).
   Coastal reads "not tracked (yet)" across its row. On phones the counts go
   under each percent, the table scrolls sideways in its own box, and the
@@ -148,16 +148,34 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   finish, and SUs to finish. Time to finish covers the projection only;
   aggregation shows as "not started" (or its units done) and is not
   added in. Its tooltip gives the numbers and the pace used.
-- SSP tabs, the legend, and the grid. The SSP tabs are small round
-  badges, each with its own soft color: SSP2 #86BDE0, SSP3 #CC956B, SSP4
-  #A6B990. The selected one is filled with its color at low opacity (40%,
-  34% in dark mode), the others outlined in it (70%, 60% in dark mode),
-  with the text in the page's neutral colors so it stays readable. Each SSP tab and each scenario
-  column shows P, projection files present out of expected, and A,
-  aggregation files present out of expected, for example
-  "P 917/4,160, A 0/4,160"; a small "i" next to the SSP tabs says so. Energy shows every SSP at
-  once, with all its SSP tabs selected; the other sectors show one SSP at a
-  time, SSP2 by default. Each cell has one small square per
+- SSP, RCP and IAM badges under the sector list, for the run type
+  picked: three rows of round badges, SSPs, then RCPs, then IAMs, with no
+  counts (the grid headers show them). SSP badges keep their soft colors
+  (SSP2 #86BDE0, SSP3 #CC956B, SSP4 #A6B990), RCP badges the grid's blue
+  and red, and IAM badges are white with blue text for low and red for
+  high. Each badge turns on or off on its own, and the grid shows the
+  columns whose SSP, RCP and IAM are all on, with the same headers as
+  before. A run type starts with SSP2, both RCPs and both IAMs on. On
+  phones the badges are in the menu with the tree.
+- Speed: the grid's grouped counts are added up once per scan, run type,
+  sub-model and aggregation scenario. The grid is built once per run with
+  every column, each cell's file squares drawn as one small cached picture,
+  so turning a badge on or off only rewrites one style rule that shows or
+  hides columns, and a highlight only sets an attribute on the grid. On the
+  largest grid (mortality montecarlo, about 6,000 cells) a click takes
+  about 0.03 to 0.13 s.
+- Highlight: a row above the grid, "Highlight: All | Incomplete | Complete
+  | Being written | Failed | Not started", each with its count of cells in
+  the columns shown. The grid stays whole; cells of other states are shown
+  blank (the page background), so the matching ones stand out. It combines
+  with the SSP, RCP and IAM picks. All is the default.
+- Cells with projection and aggregation complete have their green border
+  and a soft green inside, like cells being written have their colored
+  border and soft fill.
+- The legend and the grid. Each scenario column header shows P,
+  projection files present out of expected, and A, aggregation files
+  present out of expected, for example "P 917/4,160, A 0/4,160"; a small
+  "i" next to the flow diagram says so. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
   then a thin line, then the aggregation squares colored by type (costs
   orange, levels purple, aggregated blue). The border gives the state:

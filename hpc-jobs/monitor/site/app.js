@@ -46,7 +46,8 @@ const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeco
 let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
 
 let DATA = null;
-const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], selected: null, aggScen: null };
+const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], picks: null,
+  selected: null, aggScen: null, hl: "all" };
 const detailCache = new Map();
 let cellIndex = new Map();
 
@@ -346,6 +347,7 @@ function buildTreeLayout() {
   const key = document.createElement("div");
   key.className = "tree-key";
   key.innerHTML = "<b>P</b> projection files present | <b>A</b> aggregation files present, out of expected.";
+  $("tree-menu").appendChild($("scen-graph"));
   $("tree-menu").appendChild(key);
   // The note where the grid would be, until a run type (and sub-model) is picked.
   const note = document.createElement("div");
@@ -392,7 +394,8 @@ function treePick(act, key) {
       view.ssps = [];
     } else {
       view.runType = key;
-      view.ssps = defaultSsps(runType());
+      view.picks = null;
+      view.hl = "all";
     }
   } else if (act === "model") {
     view.modelOff = key === view.model;
@@ -575,34 +578,82 @@ function hRange(low, high) {
   return low === high ? `${f(low)} h` : `${f(low)} to ${f(high)} h`;
 }
 
+// P and A per scenario cell (SSP, RCP, IAM), added up in one pass over the
+// run's units and kept until the next scan, sub-model or aggregation pick.
+const statsCache = new Map();
+function cellStats(rt, sec, models, scen) {
+  const sig = [view.sector, view.runType, models.join(","), scen || "", DATA.generated_at].join("#");
+  if (statsCache.has(sig)) return statsCache.get(sig);
+  const out = new Map();
+  const per = rt.dims.batches || 1;
+  for (const c of rt.dims.cells) {
+    let pExp = 0, aExp = 0;
+    for (const m of models) {
+      const spec = specOf(sec, m);
+      pExp += rt.dims.gcms[c.rcp].length * per * spec.projection.length;
+      aExp += rt.dims.gcms[c.rcp].length * per * groupTotal(spec, AGG_GROUPS);
+    }
+    out.set(`${c.ssp}|${c.rcp}|${c.iam}`, { p: 0, pExp, a: 0, aExp });
+  }
+  for (const u of rt.units) {
+    if (!models.includes(u.model)) continue;
+    const t = out.get(`${u.ssp}|${u.rcp}|${u.iam}`);
+    if (!t) continue;
+    const c = unitCounts(u, specOf(sec, u.model), scen);
+    t.p += c.proj;
+    t.a += c.agg;
+  }
+  statsCache.set(sig, out);
+  return out;
+}
+// SSP, RCP and IAM badges in three rows under the sector list. Each badge
+// turns on or off on its own; the grid shows the columns whose SSP, RCP and
+// IAM are all on. Built once per run; a click only switches the badge and
+// the grid's columns.
+function cellOn(c) {
+  const p = view.picks;
+  return !!p && p.ssp.includes(c.ssp) && p.rcp.includes(c.rcp) && p.iam.includes(c.iam);
+}
+
 function renderSspTabs() {
   const rt = runType();
-  const sec = sector();
-  const models = gridKind(rt) === "gcms" ? [view.model || rt.dims.models[0]] : rt.dims.models;
-  const all = sspsOf(rt);
-  view.ssps = view.ssps.filter((x) => all.includes(x));
-  if (!view.ssps.length) view.ssps = defaultSsps(rt);
-  const multi = view.sector === "energy";
-  const items = all.map((ssp) => {
-    let exp = 0;
-    for (const c of rt.dims.cells.filter((c) => c.ssp === ssp)) {
-      exp += rt.dims.gcms[c.rcp].length * (rt.dims.batches || 1);
-    }
-    const n = paFiles(sec, rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)), exp, models, curScen());
-    return { key: ssp, label: ssp, active: view.ssps.includes(ssp), count: paText(n), cls: `ssp-tab ssp-${ssp}` };
-  });
-  selector($("ssp-tabs"), items, null, (k) => {
-    if (multi) {
-      const on = view.ssps.includes(k);
-      if (on && view.ssps.length > 1) view.ssps = view.ssps.filter((x) => x !== k);
-      else if (!on) view.ssps = all.filter((x) => x === k || view.ssps.includes(x));
-    } else {
-      view.ssps = [k];
-    }
-    closeDetail();
-    renderSspTabs();
-    renderGrid();
-  });
+  const uniq = (f) => [...new Set(rt.dims.cells.map((c) => c[f]))];
+  const all = { ssp: uniq("ssp"), rcp: uniq("rcp"), iam: uniq("iam") };
+  if (!view.picks) {
+    view.picks = { ssp: [all.ssp.includes("SSP2") ? "SSP2" : all.ssp[0]], rcp: all.rcp.slice(), iam: all.iam.slice() };
+  }
+  view.ssps = view.picks.ssp.slice();
+  const box = $("scen-graph");
+  const sig = [view.sector, view.runType, DATA.generated_at].join("#");
+  if (box.dataset.sig !== sig) {
+    box.dataset.sig = sig;
+    const cls = { ssp: (v) => `ssp-${v}`, rcp: (v) => `sb-${v}`, iam: (v) => `sb-iam sb-iam-${v}` };
+    box.innerHTML = ["ssp", "rcp", "iam"].map((f) => `<div class="sb-row">` + all[f].map((v) =>
+      `<button class="sb ${cls[f](v)}" data-f="${f}" data-v="${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("") + `</div>`).join("");
+  }
+  for (const b of box.querySelectorAll(".sb")) {
+    const on = view.picks[b.dataset.f].includes(b.dataset.v);
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+}
+
+// Highlight by state: the grid stays whole, and cells of other states are
+// shown blank so the matching ones stand out.
+const HIGHLIGHTS = [["all", "All"], ["incomplete", "Incomplete"], ["complete", "Complete"],
+  ["writing", "Being written"], ["failed", "Failed"], ["notstarted", "Not started"]];
+function cellMatches(hl, unit, cls) {
+  if (hl === "all") return true;
+  if (hl === "complete") return cls === "bst-done";
+  if (hl === "writing") return cls.includes("bst-active");
+  if (hl === "failed") return !!unit && unit.state === "failed";
+  if (hl === "notstarted") return cls === "bst-empty";
+  return cls !== "bst-done" && cls !== "bst-empty";   // incomplete: started, not all files
+}
+function renderHighlight(counts) {
+  $("hl-tabs").innerHTML = `<span class="lbl">Highlight:</span> ` + HIGHLIGHTS.map(([k, label]) =>
+    `<button class="hl-opt${view.hl === k ? " active" : ""}" data-hl="${k}">${label}` +
+    (k === "all" ? "" : ` <span class="muted">${fmtN(counts[k] || 0)}</span>`) + `</button>`).join("");
 }
 
 // Aggregation types a sector actually has, in a fixed order.
@@ -622,59 +673,86 @@ function renderLegend() {
      <div class="leg-item" title="Files changed in the last 6 hours">${box("border:1.5px solid var(--st-run);background:var(--st-run-bg);animation:pulse-writing 2.5s ease-in-out infinite")} Writing</div>
      <div class="leg-item" title="All projection files present, aggregation not started">${box("border:1.5px solid var(--complete)")} Projection complete</div>
      <div class="leg-item" title="Projection complete, aggregation started but not finished">${box("border:2px solid var(--failed);background:var(--failed-bg)")} Aggregation incomplete</div>
-     <div class="leg-item" title="All projection and aggregation files present">${box("border:1.5px solid color-mix(in srgb, var(--st-done) 55%, transparent)")} Aggregation complete</div>
+     <div class="leg-item" title="All projection and aggregation files present">${box("border:1.5px solid color-mix(in srgb, var(--st-done) 55%, transparent);background:var(--st-done-bg)")} Aggregation complete</div>
      <span class="leg-sep">|</span>
      <span style="font-weight:500">Aggregation:</span>
      ${aggTypes(sector()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}`;
 }
 
+// A cell's file squares as one small picture instead of one element per file,
+// cached by pattern and theme: most cells share the same few patterns, and
+// the grid stays light enough to show and hide columns quickly.
+const SQ = { size: 4, gap: 0.5, cols: 4 };
+const sqCache = new Map();
+let sqColors = null;
 function squares(pres, groups) {
-  let html = "";
-  for (const g of groups) {
-    for (const on of pres[g]) html += `<div class="fsq${on ? " " + SQ_CLASS[g] : ""}"></div>`;
+  if (!sqColors) {
+    const css = getComputedStyle(document.documentElement);
+    const v = (name) => css.getPropertyValue(name).trim();
+    sqColors = { miss: v("--miss"), projection: v("--base"), costs: v("--agg-cost"), levels: v("--agg-lvl"), aggregated: v("--agg-agg") };
   }
-  return html;
+  const fills = groups.flatMap((g) => pres[g].map((on) => (on ? sqColors[g] : sqColors.miss)));
+  const key = fills.join(",");
+  let img = sqCache.get(key);
+  if (!img) {
+    const rows = Math.ceil(fills.length / SQ.cols), step = SQ.size + SQ.gap;
+    const w = SQ.cols * step - SQ.gap, h = rows * step - SQ.gap;
+    const rects = fills.map((f, i) => `<rect x="${(i % SQ.cols) * step}" y="${Math.floor(i / SQ.cols) * step}" width="${SQ.size}" ` +
+      `height="${SQ.size}" rx="0.5" fill="${f}"/>`).join("");
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${rects}</svg>`;
+    img = `<i class="sq-img" style="width:${w}px;height:${h}px;background-image:url('data:image/svg+xml,${encodeURIComponent(svg)}')"></i>`;
+    sqCache.set(key, img);
+  }
+  return img;
 }
 
-function cellHtml(key, unit, spec) {
+function cellHtml(key, unit, spec, hlCounts) {
   const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
-  let html = `<div class="batch ${cls}" data-key="${esc(key)}">`;
-  html += `<div class="batch-row"><div class="sq-grid">${squares(cnt.pres, ["projection"])}</div>` +
+  const states = HIGHLIGHTS.map(([k]) => k).filter((k) => k !== "all" && cellMatches(k, unit, cls));
+  if (hlCounts) for (const k of states) hlCounts[k] = (hlCounts[k] || 0) + 1;
+  let html = `<div class="batch ${cls}" data-key="${esc(key)}" data-st="${states.join(" ")}">`;
+  html += `<div class="batch-row">${squares(cnt.pres, ["projection"])}` +
     (cnt.proj ? `<span class="row-count proj">${cnt.proj}/${cnt.projTotal}</span>` : "") + `</div>`;
   if (cnt.aggTotal) {
-    html += `<div class="batch-sep"></div><div class="batch-row"><div class="sq-grid">${squares(cnt.pres, AGG_GROUPS)}</div>` +
+    html += `<div class="batch-sep"></div><div class="batch-row">${squares(cnt.pres, AGG_GROUPS)}` +
       (cnt.agg ? `<span class="row-count agg">${cnt.agg}/${cnt.aggTotal}</span>` : "") + `</div>`;
   }
   return html + `</div>`;
 }
 
+// The grid is built once per run with every scenario column. Turning cards
+// on and off only rewrites one style rule that hides columns, and a
+// highlight only sets an attribute on the table.
+let gridCols = { keys: [], hl: new Map() };
 function renderGrid() {
   const sec = sector(), rt = runType();
   const kind = gridKind(rt);
   const batches = rt.dims.batches ? [...Array(rt.dims.batches).keys()] : [null];
-  const cells = rt.dims.cells.filter((c) => view.ssps.includes(c.ssp));
-  const showSsp = view.ssps.length > 1;
+  const cells = rt.dims.cells;
   const byKey = new Map(rt.units.map((u) => [[u.model, u.ssp, u.rcp, u.iam, u.gcm, u.batch ?? ""].join("|"), u]));
   cellIndex = new Map();
 
   const rows = kind === "gcms" ? gcmUnion(rt.dims.gcms) : rt.dims.models;
   const fixedModel = kind === "gcms" ? (view.model || rt.dims.models[0]) : null;
+  const stats = cellStats(rt, sec, fixedModel ? [fixedModel] : rt.dims.models, curScen());
   const edge = (rcp, i, n) => {
     const t = rcp === "rcp45" ? "45" : "85";
     return (i === 0 ? ` edge-l${t}` : "") + (i === n - 1 ? ` edge-r${t}` : "");
   };
+  const ck = (c) => `${c.ssp}|${c.rcp}|${c.iam}`;
+  gridCols = { keys: cells.map(ck), hl: new Map(cells.map((c) => [ck(c), {}])) };
 
   let h1 = `<thead><tr><th class="model-th">${kind === "gcms" ? "Climate model" : "Sub-model"}</th>`;
   let h2 = `<tr><th class="model-th sub">${batches[0] != null ? "batch" : ""}</th>`;
-  cells.forEach((c, i) => {
-    if (i) { h1 += `<th class="sep-col"></th>`; h2 += `<th class="sep-col"></th>`; }
-    const models = fixedModel ? [fixedModel] : rt.dims.models;
-    const n = paFiles(sec, rt.units.filter((u) => u.ssp === c.ssp && u.rcp === c.rcp && u.iam === c.iam && models.includes(u.model)),
-      rt.dims.gcms[c.rcp].length * batches.length, models, curScen());
-    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}">${showSsp ? c.ssp + " " : ""}${c.rcp}-${c.iam}<br><span class="sc-count">${paText(n)}</span></th>`;
+  cells.forEach((c) => {
+    const k = esc(ck(c));
+    h1 += `<th class="sep-col" data-c="${k}"></th>`; h2 += `<th class="sep-col" data-c="${k}"></th>`;
+    const n = stats.get(ck(c));
+    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}" data-c="${k}"><span class="sc-ssp">${c.ssp} </span>${c.rcp}-${c.iam}` +
+      `<br><span class="sc-count">${paText(n)}</span></th>`;
     batches.forEach((b, bi) => {
-      h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
+      h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
   });
   h1 += `</tr>`; h2 += `</tr></thead>`;
@@ -683,29 +761,52 @@ function renderGrid() {
   for (const row of rows) {
     const label = kind === "gcms" ? row.replace("surrogate_", "surr_") : row;
     body += `<tr><td class="model-cell" title="${esc(row)}">${esc(label)}</td>`;
-    cells.forEach((c, i) => {
-      if (i) body += `<td class="sep-col"></td>`;
+    cells.forEach((c) => {
+      const k = ck(c);
+      body += `<td class="sep-col" data-c="${esc(k)}"></td>`;
       batches.forEach((b, bi) => {
         const model = fixedModel || row;
         const gcm = kind === "gcms" ? row : rt.dims.gcms[c.rcp][0];
         const cls = `sc-cell${edge(c.rcp, bi, batches.length)}`;
-        if (!rt.dims.gcms[c.rcp].includes(gcm)) { body += `<td class="${cls}"></td>`; return; }
+        if (!rt.dims.gcms[c.rcp].includes(gcm)) { body += `<td class="${cls}" data-c="${esc(k)}"></td>`; return; }
         const key = [model, c.ssp, c.rcp, c.iam, gcm, b ?? ""].join("|");
         const unit = byKey.get(key) || null;
         cellIndex.set(key, { unit, model, ssp: c.ssp, rcp: c.rcp, iam: c.iam, gcm, batch: b });
-        body += `<td class="${cls}">${cellHtml(key, unit, specOf(sec, model))}</td>`;
+        body += `<td class="${cls}" data-c="${esc(k)}">${cellHtml(key, unit, specOf(sec, model), gridCols.hl.get(k))}</td>`;
       });
     });
     body += `</tr>`;
   }
   crossCells = [];
   $("grid").innerHTML = h1 + h2 + body + "</tbody>";
-  fitGrid();
+  $("grid").dataset.hl = view.hl;
+  applyColumns();
   if (view.selected) {
     const el = document.querySelector(`.batch[data-key="${CSS.escape(view.selected)}"]`);
     if (el) el.classList.add("selected");
     crossHighlight(el);
   }
+}
+
+// Shows the columns whose SSP, RCP and IAM are on, by one style rule, and
+// updates the highlight counts for them.
+function applyColumns() {
+  let style = $("col-style");
+  if (!style) { style = document.createElement("style"); style.id = "col-style"; document.head.appendChild(style); }
+  const cells = runType().dims.cells;
+  const shown = cells.filter(cellOn).map((c) => `${c.ssp}|${c.rcp}|${c.iam}`);
+  const hidden = gridCols.keys.filter((k) => !shown.includes(k));
+  style.textContent = hidden.map((k) => `#grid [data-c="${CSS.escape(k)}"]`).join(",") + (hidden.length ? "{display:none}" : "");
+  // The first shown column needs no separator before it.
+  if (shown.length) style.textContent += `#grid .sep-col[data-c="${CSS.escape(shown[0])}"]{display:none}`;
+  const grid = $("grid");
+  grid.classList.toggle("one-ssp", new Set(shown.map((k) => k.split("|")[0])).size <= 1);
+  grid.classList.toggle("no-cols", !shown.length);
+  $("grid-empty").classList.toggle("hidden", !!shown.length);
+  const counts = {};
+  for (const k of shown) for (const [st, n] of Object.entries(gridCols.hl.get(k) || {})) counts[st] = (counts[st] || 0) + n;
+  renderHighlight(counts);
+  fitGrid();
 }
 
 // The grid shrinks to fit the screen width, down to GRID_MIN_ZOOM; wider
@@ -718,13 +819,9 @@ function fitGrid() {
   if (head) table.style.setProperty("--hdr1", `${head.getBoundingClientRect().height}px`);
   const avail = wrap.clientWidth, natural = table.offsetWidth;
   if (!avail || !natural || natural <= avail) return;
-  let z = Math.max(GRID_MIN_ZOOM, Math.floor((avail / natural) * 1000) / 1000);
-  table.style.zoom = String(z);
-  // Thin borders do not shrink with the zoom, so step down until it fits.
-  while (z > GRID_MIN_ZOOM && wrap.scrollWidth > wrap.clientWidth) {
-    z = Math.max(GRID_MIN_ZOOM, z - 0.01);
-    table.style.zoom = z.toFixed(3);
-  }
+  // One measure and one zoom: thin borders do not shrink with the zoom, so
+  // leave a little room for them instead of stepping down in a loop.
+  table.style.zoom = String(Math.max(GRID_MIN_ZOOM, Math.floor((avail / natural) * 985) / 1000));
 }
 
 // Softly marks the row and column of a cell, with its row label and its
@@ -1212,7 +1309,7 @@ function renderCamel() {
   $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th></th><th>Projection</th>
       <th>Aggregation${mainMark()}</th><th class="ck-sym">Single</th><th class="ck-sym">Median</th><th class="ck-sym">Montecarlo</th>
       <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>Total</td><td colspan="5"></td><td class="ck-su"><div class="ck-over">${suShort(totals.low, totals.high)}${avail}</div></td></tr></tfoot>
+    <tfoot><tr><td>Total</td><td colspan="5"></td><td class="ck-su">${suShort(totals.low, totals.high)}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
     </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${avail}</div>
     <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median for energy).</div>`;
 }
@@ -1258,6 +1355,24 @@ function suShort(low, high) {
 function setup() {
   document.querySelectorAll(".panel-header").forEach((h) => {
     h.onclick = () => $(h.dataset.panel).classList.toggle("open");
+  });
+  $("scen-graph").addEventListener("click", (e) => {
+    const b = e.target.closest(".sb");
+    if (!b) return;
+    const list = view.picks[b.dataset.f], v = b.dataset.v;
+    const order = [...$("scen-graph").querySelectorAll(`.sb[data-f="${b.dataset.f}"]`)].map((x) => x.dataset.v);
+    view.picks[b.dataset.f] = list.includes(v) ? list.filter((x) => x !== v) : order.filter((x) => x === v || list.includes(x));
+    view.ssps = view.picks.ssp.slice();
+    b.classList.toggle("on");
+    b.setAttribute("aria-pressed", String(b.classList.contains("on")));
+    applyColumns();
+  });
+  $("hl-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest(".hl-opt");
+    if (!b) return;
+    view.hl = b.dataset.hl;
+    $("grid").dataset.hl = view.hl;
+    for (const o of document.querySelectorAll(".hl-opt")) o.classList.toggle("active", o.dataset.hl === view.hl);
   });
   $("pa-info-btn").addEventListener("click", () => {
     const open = $("pa-info").classList.toggle("hidden") === false;
@@ -1384,6 +1499,10 @@ function setup() {
     const next = getComputedStyle(root).colorScheme.includes("dark") ? "light" : "dark";
     root.dataset.theme = next;
     try { localStorage.setItem("amel-theme", next); } catch (e) { /* storage may be blocked */ }
+    // The file squares are pictures in the theme's colors: redraw them.
+    sqCache.clear();
+    sqColors = null;
+    if (view.sector && view.runType && !document.body.classList.contains("no-model")) renderGrid();
   };
 }
 
