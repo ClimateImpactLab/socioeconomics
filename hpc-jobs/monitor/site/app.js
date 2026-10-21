@@ -749,8 +749,10 @@ function renderGrid() {
     const k = esc(ck(c));
     h1 += `<th class="sep-col" data-c="${k}"></th>`; h2 += `<th class="sep-col" data-c="${k}"></th>`;
     const n = stats.get(ck(c));
-    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}" data-c="${k}"><span class="sc-ssp">${c.ssp} </span>${c.rcp}-${c.iam}` +
-      `<br><span class="sc-count">${paText(n)}</span></th>`;
+    h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}" data-c="${k}"><span class="hb-row">` +
+      `<span class="sb on hb ssp-${esc(c.ssp)}">${esc(c.ssp)}</span><span class="sb on hb sb-${esc(c.rcp)}">${esc(c.rcp)}</span>` +
+      `<span class="sb on hb sb-iam sb-iam-${esc(c.iam)}">${esc(c.iam)}</span></span>` +
+      `<span class="sc-count">${paText(n)}</span></th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
@@ -800,7 +802,6 @@ function applyColumns() {
   // The first shown column needs no separator before it.
   if (shown.length) style.textContent += `#grid .sep-col[data-c="${CSS.escape(shown[0])}"]{display:none}`;
   const grid = $("grid");
-  grid.classList.toggle("one-ssp", new Set(shown.map((k) => k.split("|")[0])).size <= 1);
   grid.classList.toggle("no-cols", !shown.length);
   $("grid-empty").classList.toggle("hidden", !!shown.length);
   const counts = {};

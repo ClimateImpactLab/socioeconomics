@@ -154,8 +154,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   (SSP2 #86BDE0, SSP3 #CC956B, SSP4 #A6B990), RCP badges the grid's blue
   and red, and IAM badges are white with blue text for low and red for
   high. Each badge turns on or off on its own, and the grid shows the
-  columns whose SSP, RCP and IAM are all on, with the same headers as
-  before. A run type starts with SSP2, both RCPs and both IAMs on. On
+  columns whose SSP, RCP and IAM are all on. A run type starts with SSP2, both RCPs and both IAMs on. On
   phones the badges are in the menu with the tree.
 - Speed: the grid's grouped counts are added up once per scan, run type,
   sub-model and aggregation scenario. The grid is built once per run with
@@ -172,10 +171,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Cells with projection and aggregation complete have their green border
   and a soft green inside, like cells being written have their colored
   border and soft fill.
-- The legend and the grid. Each scenario column header shows P,
-  projection files present out of expected, and A, aggregation files
-  present out of expected, for example "P 917/4,160, A 0/4,160"; a small
-  "i" next to the flow diagram says so. Each cell has one small square per
+- The legend and the grid. Each scenario column header shows its SSP,
+  RCP and IAM as small copies of the badges, in the same colors, wrapping
+  to a second line in narrow columns. Below them it shows P, projection
+  files present out of expected, and A, aggregation files present out of
+  expected, for example "P 917/4,160, A 0/4,160"; the key under the tree
+  says so. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
   then a thin line, then the aggregation squares colored by type (costs
   orange, levels purple, aggregated blue). The border gives the state:

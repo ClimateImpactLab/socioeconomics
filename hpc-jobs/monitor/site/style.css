@@ -691,7 +691,10 @@ body.no-sector #scen-graph, body.no-model #scen-graph { display: none; }
 #grid[data-hl="failed"] .batch:not([data-st~="failed"]) > *,
 #grid[data-hl="notstarted"] .batch:not([data-st~="notstarted"]) > * { visibility: hidden; }
 /* One SSP shown: the headers leave out its name, as before. */
-#grid.one-ssp .sc-ssp { display: none; }
+/* Small copies of the badges in the grid column headers. */
+.hb-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; margin-bottom: 2px; }
+.sb.hb { font-size: 8px; padding: 2px 5px; cursor: default; opacity: 1; }
+.sc-hdr .sc-count { display: block; }
 #grid.no-cols { display: none; }
 #grid-empty { padding: 18px 8px; color: var(--tx3); font-size: 11px; }
 body.no-model #grid-empty { display: none; }
