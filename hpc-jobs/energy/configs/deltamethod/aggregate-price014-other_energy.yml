@@ -1,0 +1,16 @@
+# Price014 levels and aggregated files for the other_energy delta method median,
+# as in the earlier official _dm aggregation configs. The aggregation finds
+# the delta method files by their vcv variable and writes variances and
+# gradients; no deltamethod key is needed. Population comes from the new
+# panel. Run after the delta method median has finished.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/other_energy/deltamethod
+levels-weighting: population * social/baselines/energy/IEA_Price_FIN_Clean_gr014_GLOBAL_COMPILE.dta:country:year:other_energycompile_price
+levels-unit: dollar
+aggregated-unit: dollar
+aggregate-weighting-numerator: population * social/baselines/energy/IEA_Price_FIN_Clean_gr014_GLOBAL_COMPILE.dta:country:year:other_energycompile_price
+aggregate-weighting-denominator: sum-to-1
+infix: price014
+only-farmers: ['', 'histclim']
+# A folder takes about 1 h; claims older than this many hours are taken over.
+timeout: 6
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/

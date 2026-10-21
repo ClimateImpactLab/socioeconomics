@@ -1,0 +1,28 @@
+# Energy delta method median (other_energy, rcp85): the same point estimate as the
+# normal median, over all rcp85 GCMs, for SSP2, SSP3 and SSP4 and both IAMs,
+# with deltamethod on. Each file then holds the variance of the impact
+# (main variables) and its gradient by coefficient (<name>_bcde), with the
+# coefficient covariance (vcv). Full adaptation and its histclim only
+# (do_farmers false): the delta method code has no global variant, so
+# 'always' would fail, and later steps only use these two.
+# Median mode appends its own median/ level: results land under
+# <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/, apart from the normal median.
+import: "../hddcddspline_OTHERIND_other_energy.yml"
+mode: median
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/other_energy/deltamethod
+deltamethod: yes
+do_farmers: false
+do_historical: true
+only-rcp: rcp85
+only-ssp: [SSP2, SSP3, SSP4]
+econcovar:
+   class: mean
+   length: 15
+climcovar:
+   class: mean
+   length: 30
+loggdppc-delta: 7.713
+# A folder takes about 9.5 h (two passes): claims older than this many hours
+# are taken over by other workers, so keep it well above that.
+timeout: 20
+socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/
