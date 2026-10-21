@@ -180,9 +180,14 @@ function filesOf(sec, rt, scen) {
 // or median where there is no montecarlo); singles and tests do not count.
 // "Projection 100% (64/64), Aggregation 0% (0/496)"; a part with no
 // expected files is left out.
+// While another aggregation scenario is picked, the overall figures say they
+// count the main one.
 function progressText(f) {
   const part = (name, n, exp) => exp ? `${name} ${fmtPctShort(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)})` : null;
-  return [part("Projection", f.proj, f.projExp), part("Aggregation", f.agg, f.aggExp)].filter(Boolean).join(", ");
+  return [part("Projection", f.proj, f.projExp), part(`Aggregation${mainMark()}`, f.agg, f.aggExp)].filter(Boolean).join(", ");
+}
+function mainMark() {
+  return view.sector && view.runType && curScen() ? " (main)" : "";
 }
 
 // The aggregation scenario picked for the current run type, or null for the main one.
@@ -291,6 +296,7 @@ function renderAll() {
   // Nothing below the sector tabs shows until a sector is picked, and the
   // grid waits for a sub-model when the sector has several (crops, fuels).
   document.body.classList.toggle("no-sector", !view.sector);
+  if (DATA) renderCamel();
   renderTabs();
   const needModel = !!view.sector && gridKind(runType()) === "gcms" && runType().dims.models.length > 1 && !view.model;
   document.body.classList.toggle("no-model", needModel);
@@ -394,7 +400,7 @@ function renderTabs() {
   if (!view.model && !view.modelOff) view.model = rt.dims.models[0];
   const perModel = rt.counts.total / rt.dims.models.length;
   selector($("model-tabs"), rt.dims.models.map((m) => ({ key: m, label: m,
-    count: paText(paFiles(sec, rt.units.filter((u) => u.model === m), perModel, [m])) })), view.model, (k) => {
+    count: paText(paFiles(sec, rt.units.filter((u) => u.model === m), perModel, [m], curScen())) })), view.model, (k) => {
     // Clicking the selected sub-model again clears it and hides its grid.
     view.modelOff = k === view.model;
     view.model = view.modelOff ? null : k;
@@ -467,7 +473,7 @@ function renderCards() {
     card("Partial", `<span style="color:var(--progress)">${fmtN(f.partial)}</span>`, "some files present") +
     card("Not started", `<span style="color:var(--st-none)">${fmtN(total - f.started)}</span>`, "no files yet") +
     card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
-    card("Aggregation", fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
+    card(`Aggregation${mainMark()}`, fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(rt.counts.running)}</span>`, rt.counts.failed ? `${fmtN(rt.counts.failed)} stopped` : "units being written") +
     etaCard(rt, total) +
     suCard(rt.su_estimate);
@@ -508,7 +514,7 @@ function renderSspTabs() {
     for (const c of rt.dims.cells.filter((c) => c.ssp === ssp)) {
       exp += rt.dims.gcms[c.rcp].length * (rt.dims.batches || 1);
     }
-    const n = paFiles(sec, rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)), exp, models);
+    const n = paFiles(sec, rt.units.filter((u) => u.ssp === ssp && models.includes(u.model)), exp, models, curScen());
     return { key: ssp, label: ssp, active: view.ssps.includes(ssp), count: paText(n), cls: `ssp-tab ssp-${ssp}` };
   });
   selector($("ssp-tabs"), items, null, (k) => {
@@ -591,7 +597,7 @@ function renderGrid() {
     if (i) { h1 += `<th class="sep-col"></th>`; h2 += `<th class="sep-col"></th>`; }
     const models = fixedModel ? [fixedModel] : rt.dims.models;
     const n = paFiles(sec, rt.units.filter((u) => u.ssp === c.ssp && u.rcp === c.rcp && u.iam === c.iam && models.includes(u.model)),
-      rt.dims.gcms[c.rcp].length * batches.length, models);
+      rt.dims.gcms[c.rcp].length * batches.length, models, curScen());
     h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}">${showSsp ? c.ssp + " " : ""}${c.rcp}-${c.iam}<br><span class="sc-count">${paText(n)}</span></th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
@@ -1118,6 +1124,7 @@ function setup() {
     if (!b) return;
     view.aggScen = b.dataset.scen || null;
     closeDetail();
+    renderCamel();
     renderCards();
     renderTabs();
     renderSspTabs();

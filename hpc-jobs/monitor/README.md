@@ -73,23 +73,24 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     aggregation files of any scenario, only the main one when there are no
     others. For sectors whose file names carry no scenario (such as
     mortality) it reads "Aggregation: -" while there are no aggregation
-    files, and "Aggregation: main" once some exist. It switches
-    which aggregation files the grid cells and the cell details show; the
-    hover summary adds the picked scenario's count, and the cell details
-    name the picked scenario, both marked "not counted";
-  - the cell details list the aggregation files of the picked scenario
-    only (all 8 for energy, price014 by default), with their sizes and
-    dates.
+    files, and "Aggregation: main" once some exist.
+  - What follows the picked scenario: the grid cells, the column header
+    counts, the SSP badge counts, the sub-model tab counts, the hover
+    summary and the cell details (which list the picked scenario's
+    aggregation files only, all 8 for energy, with sizes and dates, and
+    name it, marked "not counted").
+  - What always counts the main scenario: the overall progress, that is
+    the summary cards, the sector tabs, the run type tabs and the camel.
+    While another scenario is picked, their aggregation figure reads
+    "Aggregation (main)".
+  It works for any sector whose aggregation file names carry a scenario:
+  set `aggregation_scenario` for it.
 - Other files: the cell details also list, under the projection files,
   any `.nc4` file in the folder that is not expected and is not another
   scenario's aggregation file (for energy: `-global.nc4`,
   `-global-histclim.nc4`, `-incadapt-histclim.nc4` and
   `-noadapt-histclim.nc4`), in a grey group "Other files (not counted)"
   with sizes and dates. They never count toward the progress.
-  Other scenarios never count toward the progress, the cards, the tab and
-  column counts or the camel, whatever the selector shows. It works for any
-  sector whose aggregation file names carry a scenario: set
-  `aggregation_scenario` for it.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: no tab, and it is not in any count,
