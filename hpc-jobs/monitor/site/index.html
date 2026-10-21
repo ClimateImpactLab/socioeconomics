@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>CIL | Projections, new socioeconomics</title>
 <link rel="icon" type="image/svg+xml" href="camel/favicon.svg">
-<link rel="stylesheet" href="style.css?v=202610210303">
+<link rel="stylesheet" href="style.css?v=202610210353">
 </head>
 <body>
 
@@ -58,8 +58,13 @@
   else file dates plus start up time, else the reference time.</div>
 
 <div class="top-bar">
-  <div id="ssp-tabs" class="run-selector"></div>
-  <button class="info-btn" id="pa-info-btn" aria-expanded="false" aria-controls="pa-info" title="What P and A mean">i</button>
+  <div class="ssp-col">
+    <div class="ssp-row">
+      <div id="ssp-tabs" class="run-selector"></div>
+      <button class="info-btn" id="pa-info-btn" aria-expanded="false" aria-controls="pa-info" title="What P and A mean">i</button>
+    </div>
+    <div class="agg-tabs" id="agg-tabs"></div>
+  </div>
   <div class="legend" id="legend"></div>
 </div>
 <div class="su-info pa-info hidden" id="pa-info">
@@ -67,7 +72,6 @@
   <p>A: aggregation files present, out of expected.</p>
 </div>
 
-<div class="agg-tabs hidden" id="agg-tabs"></div>
 <div class="info-bar" id="info-bar">Click or tap a cell to see its files</div>
 <div id="file-detail"></div>
 
@@ -85,6 +89,6 @@
 <div id="global-tip"></div>
 
 
-<script src="app.js?v=202610210303"></script>
+<script src="app.js?v=202610210353"></script>
 </body>
 </html>

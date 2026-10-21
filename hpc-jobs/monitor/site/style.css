@@ -575,24 +575,25 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .grid-table thead th.xh { background-color: var(--xh); color: var(--tx); }
 .grid-table td.model-cell.xh { background-color: var(--xh); font-weight: 700; }
 .card-val-small { font-size: 11px; font-weight: 500; color: var(--tx2); }
-/* SSP tabs: small round badges, one color per SSP story. SSP2 middle of the
-   road, a neutral blue grey; SSP3 regional rivalry, a muted red; SSP4
-   inequality, a muted purple. Filled when selected, outlined otherwise. */
-:root { --ssp2: #5f7a99; --ssp3: #a8605a; --ssp4: #7d68a6; --ssp-on-tx: #ffffff; }
-:root[data-theme="dark"] { --ssp2: #93a8c2; --ssp3: #d08f88; --ssp4: #ab97d1; --ssp-on-tx: #1a1a1a; }
+/* SSP tabs: small round badges, one soft color per SSP: SSP2 a light blue,
+   SSP3 a warm clay, SSP4 a sage green. The selected one is filled with its
+   color at low opacity, the others outlined in it; the text stays in the
+   page's neutral colors so it reads well in both themes. */
+:root { --ssp2: #86BDE0; --ssp3: #CC956B; --ssp4: #A6B990; --ssp-fill: 40%; --ssp-line: 70%; }
+:root[data-theme="dark"] { --ssp2: #86BDE0; --ssp3: #CC956B; --ssp4: #A6B990; --ssp-fill: 34%; --ssp-line: 60%; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --ssp2: #93a8c2; --ssp3: #d08f88; --ssp4: #ab97d1; --ssp-on-tx: #1a1a1a; }
+  :root:not([data-theme="light"]) { --ssp-fill: 34%; --ssp-line: 60%; }
 }
 #ssp-tabs { flex-wrap: wrap; gap: 6px; }
 .ssp-SSP2 { --ssp-c: var(--ssp2); }
 .ssp-SSP3 { --ssp-c: var(--ssp3); }
 .ssp-SSP4 { --ssp-c: var(--ssp4); }
-#ssp-tabs .run-opt.ssp-tab { border: 1.5px solid var(--ssp-c, var(--bd2)) !important; border-radius: 999px !important;
-  background: transparent; color: var(--ssp-c, var(--tx2)); padding: 3px 11px; font-size: 10.5px; font-weight: 600; }
-#ssp-tabs .run-opt.ssp-tab .opt-count { color: inherit; opacity: 0.75; font-weight: 400; }
-#ssp-tabs .run-opt.ssp-tab.active { background: var(--ssp-c, var(--bg3)); color: var(--ssp-on-tx); }
-#ssp-tabs .run-opt.ssp-tab.active .opt-count { opacity: 0.85; }
-#ssp-tabs .run-opt.ssp-tab:hover:not(.active) { background: color-mix(in srgb, var(--ssp-c) 10%, transparent); }
+#ssp-tabs .run-opt.ssp-tab { border: 1.5px solid color-mix(in srgb, var(--ssp-c, var(--bd2)) var(--ssp-line), transparent) !important;
+  border-radius: 999px !important; background: transparent; color: var(--tx2); padding: 3px 11px; font-size: 10.5px; font-weight: 600; }
+#ssp-tabs .run-opt.ssp-tab .opt-count { color: var(--tx3); font-weight: 400; }
+#ssp-tabs .run-opt.ssp-tab.active { background: color-mix(in srgb, var(--ssp-c, var(--bg3)) var(--ssp-fill), transparent); color: var(--tx); }
+#ssp-tabs .run-opt.ssp-tab.active .opt-count { color: var(--tx2); }
+#ssp-tabs .run-opt.ssp-tab:hover:not(.active) { background: color-mix(in srgb, var(--ssp-c) 12%, transparent); }
 .res-row .info-wrap { margin-left: 2px; }
 /* Billed per partition: textures over one calm grey, like the swatches. */
 .su-bar-all .pbar-seg { background-color: var(--tx3); }
@@ -600,12 +601,7 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 /* Service units: total, per user and per partition, stacked. */
 .res-sec .su-blocks { display: flex; margin-top: 10px; }
 /* Aggregation scenario selector above the grid. */
-.agg-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 10.5px; color: var(--tx2); margin: -2px 0 8px; }
-.agg-opt { font: inherit; background: none; border: none; padding: 1px 2px; color: var(--tx2); cursor: pointer; border-bottom: 1.5px solid transparent; }
-.agg-opt .muted { color: var(--tx3); }
-.agg-opt.active { color: var(--tx); font-weight: 600; border-bottom-color: var(--agg); }
-.agg-opt:hover:not(.active) { color: var(--tx); }
-.agg-sep { color: var(--bd2); }
+.agg-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 10.5px; color: var(--tx2); }
 body.no-sector #agg-tabs, body.no-model #agg-tabs { display: none !important; }
 @media (max-width: 600px) and (orientation: portrait) { #agg-tabs { display: none !important; } }
 /* Files in a cell's folder that are not expected: grey, not counted. */
@@ -614,3 +610,23 @@ body.no-sector #agg-tabs, body.no-model #agg-tabs { display: none !important; }
 .fd-sub-other { color: var(--tx3); }
 .card .card-label { display: flex; align-items: center; gap: 2px; }
 .card .info-btn { width: 13px; height: 13px; font-size: 8px; margin-left: 3px; }
+/* The SSP badges with the aggregation selector right below them. */
+.ssp-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.ssp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.agg-tabs .muted { color: var(--tx3); }
+/* Aggregation scenario options: small round badges like the SSP ones, in a
+   soft bone, the selected one in a light grey; text in the page's neutrals. */
+:root { --agg-badge: #F4EFE4; --agg-badge-line: #E2DACA; --agg-badge-on: #DEDDD8; --agg-badge-on-line: #C8C6BF; }
+:root[data-theme="dark"] { --agg-badge: #34322B; --agg-badge-line: #48453B; --agg-badge-on: #4A4A46; --agg-badge-on-line: #605F59; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --agg-badge: #34322B; --agg-badge-line: #48453B; --agg-badge-on: #4A4A46; --agg-badge-on-line: #605F59; }
+}
+.agg-tabs { gap: 6px; }
+.agg-opt { font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; padding: 3px 11px; border-radius: 999px;
+  background: var(--agg-badge); border: 1.5px solid var(--agg-badge-line); color: var(--tx2); }
+.agg-opt .muted { color: var(--tx3); font-weight: 400; }
+.agg-opt.active { background: var(--agg-badge-on); border-color: var(--agg-badge-on-line); color: var(--tx); }
+.agg-opt.active .muted { color: var(--tx2); }
+.agg-opt:hover:not(.active) { border-color: var(--agg-badge-on-line); color: var(--tx); }
+.agg-opt:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.agg-sep { display: none; }

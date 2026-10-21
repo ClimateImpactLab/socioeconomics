@@ -190,10 +190,10 @@ function curScen() {
   const sc = runType() && runType().agg_scenarios;
   return view.aggScen && sc && sc.others.includes(view.aggScen) ? view.aggScen : null;
 }
-// "MERGEETL60_{rcp}" reads "MERGEETL60_rcp45/rcp85": each column uses its own RCP.
-function scenLabel(sc, rt) {
-  const rcps = [...new Set(rt.dims.cells.map((c) => c.rcp))];
-  return sc.replace("{rcp}", rcps.join("/"));
+// A scenario that changes with the RCP is shown by its name only:
+// "MERGEETL60_{rcp}" reads "MERGEETL60". File names keep the full form.
+function scenLabel(sc) {
+  return sc.replace(/[_-]?\{rcp\}/, "");
 }
 // An aggregation file name under the picked scenario, for one column's RCP.
 function scenName(name, info, sc) {
@@ -305,17 +305,25 @@ function renderAll() {
 }
 
 // "Aggregation: price014 (main) | MERGEETL60_rcp45/rcp85": which aggregation
-// files the grid, counts and cell details use. Shown only with more than one.
+// files the grid cells and cell details show. Always shown: "none yet" when
+// the run has no aggregation files of any scenario.
 function renderAggTabs() {
-  const rt = runType(), sc = rt && rt.agg_scenarios;
-  const el = $("agg-tabs");
-  if (!sc || !sc.others.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  const rt = runType(), sec = sector(), el = $("agg-tabs");
+  if (!rt) { el.innerHTML = ""; return; }
   el.classList.remove("hidden");
+  const sc = rt.agg_scenarios || { main: null, others: [] };
+  const anyAgg = rt.units.some((u) => {
+    const spec = specOf(sec, u.model), n = spec.projection.length;
+    return u.bits.slice(n).includes("1") || Object.values(u.alt_bits || {}).some((b) => b.includes("1"));
+  });
+  // No files yet: "none yet" for a sector with scenarios in its file names,
+  // "-" for one without.
+  if (!anyAgg) { el.innerHTML = `<span class="lbl">Aggregation:</span> <span class="muted">${sc.main ? "none yet" : "-"}</span>`; return; }
   const cur = curScen();
-  el.innerHTML = `<span class="lbl">Aggregation:</span> ` + [
-    `<button class="agg-opt${cur ? "" : " active"}" data-scen="">${esc(sc.main)} <span class="muted">(main)</span></button>`,
-    ...sc.others.map((o) => `<button class="agg-opt${cur === o ? " active" : ""}" data-scen="${esc(o)}">${esc(scenLabel(o, rt))}
-      <span class="muted">(additional)</span></button>`),
+  const main = `<button class="agg-opt${cur ? "" : " active"}" data-scen="">` +
+    (sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main") + `</button>`;
+  el.innerHTML = `<span class="lbl">Aggregation:</span> ` + [main,
+    ...sc.others.map((o) => `<button class="agg-opt${cur === o ? " active" : ""}" data-scen="${esc(o)}">${esc(scenLabel(o, rt))}</button>`),
   ].join(`<span class="agg-sep">|</span>`);
 }
 

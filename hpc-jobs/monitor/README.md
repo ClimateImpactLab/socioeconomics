@@ -62,11 +62,18 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   files per unit: levels and aggregated for the main variant, histclim,
   global and global-histclim. When the collector finds aggregation files
   of other scenarios in the same folders (such as MERGEETL60_rcp45 in rcp45
-  folders and MERGEETL60_rcp85 in rcp85 ones, kept as one scenario,
-  MERGEETL60_rcp45/rcp85):
-  - a small selector above the grid reads "Aggregation: price014 (main) |
-    MERGEETL60_rcp45/rcp85 (additional)", shown only when there is more
-    than one scenario and always starting on the main one. It switches
+  folders and MERGEETL60_rcp85 in rcp85 ones, kept as one scenario and
+  shown by its name only, MERGEETL60; the cell details keep the full file
+  names):
+  - a small selector right below the SSP badges reads "Aggregation: price014 (main) |
+    MERGEETL60", its options shown as small round
+    badges like the SSP ones, in a soft bone with the selected one in a
+    light grey (darker shades in dark mode). It is always shown and always
+    starts on the main one: "Aggregation: none yet" when the run has no
+    aggregation files of any scenario, only the main one when there are no
+    others. For sectors whose file names carry no scenario (such as
+    mortality) it reads "Aggregation: -" while there are no aggregation
+    files, and "Aggregation: main" once some exist. It switches
     which aggregation files the grid cells and the cell details show; the
     hover summary adds the picked scenario's count, and the cell details
     name the picked scenario, both marked "not counted";
@@ -115,11 +122,10 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   aggregation shows as "not started" (or its units done) and is not
   added in. Its tooltip gives the numbers and the pace used.
 - SSP tabs, the legend, and the grid. The SSP tabs are small round
-  badges, each with its own color from a palette apart from the sector,
-  user and state colors, following each SSP's story: SSP2 (middle of the
-  road) a neutral blue grey, SSP3 (regional rivalry) a muted red, SSP4
-  (inequality) a muted purple. The selected one is filled, the others
-  outlined. Each SSP tab and each scenario
+  badges, each with its own soft color: SSP2 #86BDE0, SSP3 #CC956B, SSP4
+  #A6B990. The selected one is filled with its color at low opacity (40%,
+  34% in dark mode), the others outlined in it (70%, 60% in dark mode),
+  with the text in the page's neutral colors so it stays readable. Each SSP tab and each scenario
   column shows P, projection files present out of expected, and A,
   aggregation files present out of expected, for example
   "P 917/4,160, A 0/4,160"; a small "i" next to the SSP tabs says so. Energy shows every SSP at
