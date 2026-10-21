@@ -307,11 +307,17 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
 
 - It walks `<output_root>/<layout>/[batch<N>/]<rcp>/<GCM>/<iam>/<SSP>/`,
   where `layout` comes from each sector in the manifest. The default is
-  `{run_type}/{model}/{subdir}`: mortality, agriculture and labor, where
-  the median runs write under an extra `median/` level (`subdir: median`).
-  Energy uses `{model}/{run_type}`, each fuel first and no extra median
-  level: `energy/electricity/single/rcp45/...` and
-  `energy/electricity/median/rcp45/...`.
+  `{run_type}/{model}/{subdir}`: mortality and labor, where the median
+  runs write under an extra `median/` level (`subdir: median`). Energy and
+  agriculture use `{model}/{run_type}`, each fuel or crop first and no
+  extra median level: `energy/electricity/single/rcp45/...`,
+  `agriculture/corn/single/rcp45/...` and
+  `agriculture/corn/montecarlo/batch0/rcp45/...`. For agriculture,
+  `wheat_combined` and the winsorized twin folders follow the same rule:
+  `agriculture/wheat_combined/single/...` and
+  `agriculture/corn-1pct_winsorization/single/...`. The global variants
+  the agriculture singles also write are listed as other files, not
+  counted.
 - Scenarios: SSP2, SSP3 and SSP4, each with rcp45 and rcp85 and both IAMs
   (12 scenarios), as in the original specifications.
 - A file counts as present only if it exists and is not empty.

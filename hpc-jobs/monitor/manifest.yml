@@ -208,6 +208,13 @@ sectors:
       time_limit_hours: 12
       request: {partition: amd, cpus: 1, mem_gb: 28}   # hpc-jobs/agriculture single
     output_root: /project/cil/gcp/outputs_newsocioeconomics/agriculture
+    # Agriculture keeps each crop first, then the run type, as energy does:
+    # agriculture/corn/single/rcp45/... wheat_combined (built by the post
+    # stage) and the winsorized twin folders follow the same rule:
+    # agriculture/wheat_combined/single/... and
+    # agriculture/corn-1pct_winsorization/single/... The global variants the
+    # singles also write are listed as other files, not counted.
+    layout: "{model}/{run_type}"
     job_names:
       single: [cil2wpp-ag-gen, "*agri*single*", "*single*agri*", "*-ag-*single*", "*ag-gen*"]
       median: ["*agri*med*", "*med*agri*", "*-ag-*med*", "ag-med*"]
@@ -273,7 +280,8 @@ sectors:
 # generate), and the aggregation files split by type: costs, levels and
 # aggregated. A file counts only if it exists and is not empty.
 # Names starting with winsorized/ live in the sub-model's
-# -1pct_winsorization twin folder (agriculture post stage).
+# -1pct_winsorization twin folder (agriculture post stage), found with the
+# sector's layout: <crop>-1pct_winsorization/<run type>/...
 files:
   # mortality/impacts-darwin, counted as in the old monitor: 16 projection,
   # 36 aggregation (4 costs, 16 levels, 16 aggregated). polymins .csv not counted.
