@@ -18,14 +18,29 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   for now (`CAMEL_WALK` in app.js); when on, the camel walks only while
   projection files are being written in the output folders, the same
   signal as the grid's "writing" state.
-- Next to the camel, under the title, a small table: one row per sector in
-  camel order with its color mark, and two columns, Projection and
-  Aggregation, each cell with the percent and the file counts ("100%
-  (64/64)") for the sector's main run. The mark pulses softly in the
-  sector color while the sector is being computed (jobs running or files
-  written in the last day) and is still and dim otherwise. Coastal reads
-  "not tracked (yet)" across its row. On phones the counts go under the
-  percent.
+- Next to the camel, under the title, a compact table: one row per sector
+  in camel order with its color mark, which pulses softly in the sector
+  color while the sector is active (jobs running or projection files
+  written in the last day) and is still and dim otherwise. Columns:
+  - Projection and Aggregation: percent and file counts for the sector's
+    main run ("100% (64/64)");
+  - Single, Median and Montecarlo: a line symbol per run type, a check when
+    its projection is complete, an x when it is not (started or not), a
+    dash when the run type does not apply (montecarlo for energy), and a
+    small circle in the sector color that turns slowly while the run type
+    is being computed (projection files written in the last day or a unit
+    being written now; still for people who ask for reduced motion); the
+    tooltip gives the percents;
+  - SUs to finish: the low to high range, summed over the sector's run
+    types from the same estimate as the cards (when one of
+    them has no estimate it reads "no data").
+  Below the rows, a thin line and a total row: the sum of the SUs to finish
+  over all sectors with an estimate, and "of X available" with X RCC's
+  remaining balance. A short grey note says that
+  percents refer to each sector's main run (montecarlo; median for energy).
+  Coastal reads "not tracked (yet)" across its row. On phones the counts go
+  under each percent, the table scrolls sideways in its own box, and the
+  total is a line under it.
 - The CIL logo at the top right (site/cil-logo.svg), inverted and
   desaturated in dark mode, following the same light and dark switch. The tab icon is
   the kit's color favicon in the same five colors (site/camel/).

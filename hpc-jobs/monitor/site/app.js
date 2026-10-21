@@ -1178,20 +1178,79 @@ function renderCamel() {
       `${s.label}: ${fmtPctShort(s.proj)} of projection files` : `${s.label}: not tracked (yet)`).join("; ") + ".";
   }
 
-  // A small table: one row per sector in camel order, its mark on the left
+  // A compact table: one row per sector in camel order, its mark on the left
   // (softly pulsing in its color while the sector is being computed, still
-  // and dim when idle), then projection and aggregation.
+  // and dim when idle); its main run's projection and aggregation; a symbol
+  // per run type; the run types being written now; and the SUs to finish.
   const cell = (n, exp) => exp
     ? `<span class="ck-pct">${fmtPctShort(pctOf(n, exp))}</span> <span class="ck-n">(${fmtN(n)}/${fmtN(exp)})</span>` : "";
-  $("camel-key").innerHTML = `<table class="ck-table"><thead><tr><th></th><th>Projection</th><th>Aggregation${mainMark()}</th></tr></thead><tbody>` +
-    prog.map((s) => {
-      const on = s.tracked && sectorActive(DATA.sectors[s.key]);
-      const tip = `${s.part}${on ? ", active: jobs running or files written in the last day" : ""}`;
-      const name = `<td class="ck-name"><span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
-      const rest = !s.tracked ? `<td colspan="2" class="ck-none">not tracked (yet)</td>`
-        : `<td>${cell(s.files.proj, s.files.projExp)}</td><td>${cell(s.files.agg, s.files.aggExp)}</td>`;
-      return `<tr title="${esc(tip)}">${name}${rest}</tr>`;
-    }).join("") + `</tbody></table>`;
+  const totals = { low: 0, high: 0 };
+  const rows = prog.map((s) => {
+    const sec = DATA.sectors[s.key];
+    const on = s.tracked && sectorActive(sec);
+    const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">` +
+      `<span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
+    if (!s.tracked) return `<tr>${mark}<td colspan="6" class="ck-none">not tracked (yet)</td></tr>`;
+    const runs = RUN_TYPE_ORDER.map((k) => {
+      const rt = sec.run_types[k];
+      if (!rt) return `<td class="ck-sym" title="${esc(k)}: does not apply">${ICON.na}</td>`;
+      const f = filesOf(sec, rt);
+      const done = f.projExp > 0 && f.proj >= f.projExp;
+      const live = runActive(rt);
+      const tip = `${k}: projection ${fmtPctShort(pctOf(f.proj, f.projExp))}` +
+        (f.aggExp ? `, aggregation ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : "") + (live ? ", being computed now" : "");
+      const icon = live ? ICON.busy.replace("{c}", `var(--sec-${s.key})`) : done ? ICON.yes : ICON.no;
+      return `<td class="ck-sym" title="${esc(tip)}">${icon}</td>`;
+    }).join("");
+    const su = sectorSUs(sec);
+    if (su) { totals.low += su.low; totals.high += su.high; }
+    return `<tr>${mark}<td>${cell(s.files.proj, s.files.projExp)}</td><td>${cell(s.files.agg, s.files.aggExp)}</td>${runs}` +
+      `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
+  }).join("");
+  const a = DATA.account;
+  const avail = a.allocation_status === "ok" && a.balance_su != null ? ` <span class="ck-n">of ${fmtN(a.balance_su)} available</span>` : "";
+  $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th></th><th>Projection</th>
+      <th>Aggregation${mainMark()}</th><th class="ck-sym">Single</th><th class="ck-sym">Median</th><th class="ck-sym">Montecarlo</th>
+      <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
+    <tfoot><tr><td>Total</td><td colspan="5"></td><td class="ck-su"><div class="ck-over">${suShort(totals.low, totals.high)}${avail}</div></td></tr></tfoot>
+    </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${avail}</div>
+    <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median for energy).</div>`;
+}
+
+// Line symbols for the run type columns: complete, not complete, does not
+// apply, and a slowly spinning circle in the sector color while being computed.
+const ICON = {
+  busy: `<svg class="ck-ico ck-busy" viewBox="0 0 12 12" aria-label="being computed" style="color:{c}">` +
+    `<circle cx="6" cy="6" r="3.8" class="ck-busy-track"/><path d="M6 2.2a3.8 3.8 0 0 1 3.8 3.8"/></svg>`,
+  yes: `<svg class="ck-ico ck-yes" viewBox="0 0 12 12" aria-label="complete"><path d="M2.6 6.4l2.3 2.3 4.5-5"/></svg>`,
+  no: `<svg class="ck-ico ck-no" viewBox="0 0 12 12" aria-label="not complete"><path d="M3.6 3.6l4.8 4.8M8.4 3.6l-4.8 4.8"/></svg>`,
+  na: `<svg class="ck-ico ck-na" viewBox="0 0 12 12" aria-label="does not apply"><path d="M3.5 6h5"/></svg>`,
+};
+
+// A run type is active when its projection files were written in the last
+// day or a unit is being written now (the same signal as the pulsing mark).
+function runActive(rt) {
+  const scan = new Date(DATA.generated_at).getTime();
+  return rt.units.some((u) => u.stages.generate && u.stages.generate.state === "running") ||
+    (rt.last_projection_write && scan - new Date(rt.last_projection_write).getTime() < 24 * 3.6e6);
+}
+
+// SUs to finish a sector, summed over its run types; null when one of them
+// with units left has no estimate yet.
+function sectorSUs(sec) {
+  let low = 0, high = 0;
+  for (const rt of Object.values(sec.run_types)) {
+    const e = rt.su_estimate;
+    if (!e || !e.remaining) continue;
+    if (e.su_low == null) return null;
+    low += e.su_low;
+    high += e.su_high;
+  }
+  return { low, high };
+}
+function suShort(low, high) {
+  if (!high) return "0";
+  return low === high ? fmtSU(low) : `${fmtSU(low)} to ${fmtSU(high)}`;
 }
 
 /* ---------- interactions and boot ---------- */

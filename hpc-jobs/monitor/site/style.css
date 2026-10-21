@@ -589,14 +589,24 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 }
 /* Phones: sector key badges may wrap their progress text. */
 body.no-run #cards, body.no-run .tab-note { display: none !important; }
-/* Sector key: a small table under the title. */
+/* Sector table under the title: compact, one row per sector. */
+.ck-wrap { overflow-x: auto; max-width: 100%; }
 .ck-table { border-collapse: collapse; font-size: 10px; color: var(--tx2); }
-.ck-table th { font-weight: 500; font-size: 9px; color: var(--tx3); text-align: left; padding: 0 14px 2px 0; }
-.ck-table td { padding: 1px 14px 1px 0; white-space: nowrap; line-height: 1.35; }
+.ck-table th { font-weight: 500; font-size: 9px; color: var(--tx3); text-align: left; padding: 0 12px 2px 0; white-space: nowrap; }
+.ck-table td { padding: 1px 12px 1px 0; white-space: nowrap; line-height: 1.4; vertical-align: middle; }
 .ck-table td.ck-name { color: var(--tx); font-weight: 500; }
 .ck-table .ck-pct { font-family: var(--mono); color: var(--tx); }
 .ck-table .ck-n { font-family: var(--mono); color: var(--tx3); font-size: 9px; }
 .ck-table td.ck-none { color: var(--tx3); }
+.ck-table .ck-sym { text-align: center; padding-right: 10px; }
+.ck-ico { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -1.5px; }
+.ck-yes { color: var(--st-done); }
+.ck-no { color: var(--tx3); }
+.ck-na { color: var(--tx3); opacity: 0.6; }
+.ck-table .ck-su { font-family: var(--mono); color: var(--tx); text-align: left; }
+.ck-table th.ck-su { font-family: inherit; color: var(--tx3); }
+.ck-table tfoot td { border-top: 0.5px solid var(--bd2); padding-top: 3px; color: var(--tx2); font-weight: 500; }
+.ck-foot { font-size: 9px; color: var(--tx3); margin-top: 3px; }
 /* The mark: still and dim when idle, softly pulsing in the sector color
    while the sector is being computed. */
 .ck-mark { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 6px; vertical-align: -0.5px;
@@ -606,10 +616,15 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mk) 55%, transparent); opacity: 1; }
   50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk) 0%, transparent); opacity: 0.6; }
 }
-/* Phones: the file counts go under the percent. */
-@media (max-width: 600px) {
-  .ck-table td { padding-right: 10px; }
-  .ck-table .ck-n { display: block; }
+/* Phones: the counts go under each percent, the table scrolls sideways in
+   its own box, and the total is a line under it. */
+.ck-total-phone { display: none; font-size: 10px; color: var(--tx2); margin-top: 4px; }
+.ck-total-phone b { font-family: var(--mono); color: var(--tx); font-weight: 600; }
+@media (max-width: 600px), (max-height: 500px) {
+  .ck-table td, .ck-table th { padding-right: 9px; }
+  .ck-table tbody .ck-n { display: block; }
+  .ck-table tfoot { display: none; }
+  .ck-total-phone { display: block; }
 }
 .tree-key { font-size: 10px; color: var(--tx3); margin: 8px 0 0; line-height: 1.5; }
 .tree-key b { color: var(--tx2); font-family: var(--mono); font-weight: 600; }
@@ -620,3 +635,11 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
 body.no-model .main-note { display: block; }
 body.no-sector .main-note { display: none; }
 @media (max-width: 600px), (max-height: 500px) { .tree-menu .tree-key { padding: 0 12px 10px; margin-top: 0; } }
+/* The total's text runs past its column instead of widening it. */
+.ck-table .ck-over { width: 0; white-space: nowrap; overflow: visible; }
+.ck-wrap { padding-right: 2px; }
+/* A run type being computed: a thin circle that turns slowly. */
+.ck-busy { animation: ck-spin 1.6s linear infinite; transform-origin: 50% 50%; }
+.ck-busy .ck-busy-track { opacity: 0.25; }
+@keyframes ck-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ck-busy { animation: none; } }
