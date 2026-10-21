@@ -274,16 +274,6 @@ function defaultRunType(sec) {
   return rts[0];
 }
 
-function sspsOf(rt) {
-  return [...new Set(rt.dims.cells.map((c) => c.ssp))];
-}
-
-function defaultSsps(rt) {
-  const ssps = sspsOf(rt);
-  if (view.sector === "energy") return ssps;
-  return [ssps.includes("SSP2") ? "SSP2" : ssps[0]];
-}
-
 /* ---------- render ---------- */
 
 function renderAll() {
@@ -342,13 +332,14 @@ function buildTreeLayout() {
     main.appendChild(el);
     el = next;
   }
-  // The "pick a sector" note and the P and A key sit right below the list.
+  // The "pick a sector" note sits right below the list, then the P and A
+  // key, then the SSP, RCP and IAM badges.
   $("tree-side").appendChild($("pick-note"));
   const key = document.createElement("div");
   key.className = "tree-key";
   key.innerHTML = "<b>P</b> projection files present | <b>A</b> aggregation files present, out of expected.";
-  $("tree-menu").appendChild($("scen-graph"));
   $("tree-menu").appendChild(key);
+  $("tree-menu").appendChild($("scen-graph"));
   // The note where the grid would be, until a run type (and sub-model) is picked.
   const note = document.createElement("div");
   note.className = "main-note";
@@ -619,9 +610,8 @@ function renderSspTabs() {
   const rt = runType();
   const uniq = (f) => [...new Set(rt.dims.cells.map((c) => c[f]))];
   const all = { ssp: uniq("ssp"), rcp: uniq("rcp"), iam: uniq("iam") };
-  if (!view.picks) {
-    view.picks = { ssp: [all.ssp.includes("SSP2") ? "SSP2" : all.ssp[0]], rcp: all.rcp.slice(), iam: all.iam.slice() };
-  }
+  // A newly picked run type starts with every SSP, RCP and IAM on.
+  if (!view.picks) view.picks = { ssp: all.ssp.slice(), rcp: all.rcp.slice(), iam: all.iam.slice() };
   view.ssps = view.picks.ssp.slice();
   const box = $("scen-graph");
   const sig = [view.sector, view.runType, DATA.generated_at].join("#");
@@ -641,9 +631,13 @@ function renderSspTabs() {
 // Highlight by state: the grid stays whole, and cells of other states are
 // shown blank so the matching ones stand out.
 const HIGHLIGHTS = [["all", "All"], ["incomplete", "Incomplete"], ["complete", "Complete"],
-  ["writing", "Being written"], ["failed", "Failed"], ["notstarted", "Not started"]];
-function cellMatches(hl, unit, cls) {
+  ["writing", "Being written"], ["failed", "Failed"], ["notstarted", "Not started"],
+  ["projdone", "Projection complete"], ["projmiss", "Projection incomplete"]];
+// The last two look at the projection files only, whatever the aggregation.
+function cellMatches(hl, unit, cls, cnt) {
   if (hl === "all") return true;
+  if (hl === "projdone") return cnt.projTotal > 0 && cnt.proj >= cnt.projTotal;
+  if (hl === "projmiss") return cnt.proj < cnt.projTotal;
   if (hl === "complete") return cls === "bst-done";
   if (hl === "writing") return cls.includes("bst-active");
   if (hl === "failed") return !!unit && unit.state === "failed";
@@ -709,7 +703,7 @@ function squares(pres, groups) {
 function cellHtml(key, unit, spec, hlCounts) {
   const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
-  const states = HIGHLIGHTS.map(([k]) => k).filter((k) => k !== "all" && cellMatches(k, unit, cls));
+  const states = HIGHLIGHTS.map(([k]) => k).filter((k) => k !== "all" && cellMatches(k, unit, cls, cnt));
   if (hlCounts) for (const k of states) hlCounts[k] = (hlCounts[k] || 0) + 1;
   let html = `<div class="batch ${cls}" data-key="${esc(key)}" data-st="${states.join(" ")}">`;
   html += `<div class="batch-row">${squares(cnt.pres, ["projection"])}` +

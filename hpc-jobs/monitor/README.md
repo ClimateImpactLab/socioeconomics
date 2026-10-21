@@ -154,7 +154,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   (SSP2 #86BDE0, SSP3 #CC956B, SSP4 #A6B990), RCP badges the grid's blue
   and red, and IAM badges are white with blue text for low and red for
   high. Each badge turns on or off on its own, and the grid shows the
-  columns whose SSP, RCP and IAM are all on. A run type starts with SSP2, both RCPs and both IAMs on. On
+  columns whose SSP, RCP and IAM are all on. A run type starts with every SSP, RCP and IAM on. On
   phones the badges are in the menu with the tree.
 - Speed: the grid's grouped counts are added up once per scan, run type,
   sub-model and aggregation scenario. The grid is built once per run with
@@ -164,8 +164,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   largest grid (mortality montecarlo, about 6,000 cells) a click takes
   about 0.03 to 0.13 s.
 - Highlight: a row above the grid, "Highlight: All | Incomplete | Complete
-  | Being written | Failed | Not started", each with its count of cells in
-  the columns shown. The grid stays whole; cells of other states are shown
+  | Being written | Failed | Not started | Projection complete | Projection
+  incomplete", each with its count of cells in the columns shown. The last
+  two look at the projection files only, whatever the aggregation:
+  projection complete means all of them are there, projection incomplete
+  means some are still missing. The grid stays whole; cells of other states are shown
   blank (the page background), so the matching ones stand out. It combines
   with the SSP, RCP and IAM picks. All is the default.
 - Cells with projection and aggregation complete have their green border

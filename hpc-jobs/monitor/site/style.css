@@ -634,7 +634,7 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
   border: 1px dashed var(--bd2); border-radius: 8px; margin-bottom: 8px; }
 body.no-model .main-note { display: block; }
 body.no-sector .main-note { display: none; }
-@media (max-width: 600px), (max-height: 500px) { .tree-menu .tree-key { padding: 0 12px 10px; margin-top: 0; } }
+@media (max-width: 600px), (max-height: 500px) { .tree-menu .tree-key { padding: 0 12px; margin-top: 0; } .tree-menu .scen-graph { padding: 0 12px 12px; } }
 /* The total's text runs past its column instead of widening it. */
 .ck-table .ck-over { width: 0; white-space: nowrap; overflow: visible; }
 .ck-wrap { padding-right: 2px; }
@@ -683,14 +683,17 @@ body.no-sector #scen-graph, body.no-model #scen-graph { display: none; }
 #grid[data-hl="complete"] .batch:not([data-st~="complete"]),
 #grid[data-hl="writing"] .batch:not([data-st~="writing"]),
 #grid[data-hl="failed"] .batch:not([data-st~="failed"]),
-#grid[data-hl="notstarted"] .batch:not([data-st~="notstarted"]) {
+#grid[data-hl="notstarted"] .batch:not([data-st~="notstarted"]),
+#grid[data-hl="projdone"] .batch:not([data-st~="projdone"]),
+#grid[data-hl="projmiss"] .batch:not([data-st~="projmiss"]) {
   border-color: transparent !important; background: var(--bg) !important; animation: none !important; opacity: 1 !important; }
 #grid[data-hl="incomplete"] .batch:not([data-st~="incomplete"]) > *,
 #grid[data-hl="complete"] .batch:not([data-st~="complete"]) > *,
 #grid[data-hl="writing"] .batch:not([data-st~="writing"]) > *,
 #grid[data-hl="failed"] .batch:not([data-st~="failed"]) > *,
-#grid[data-hl="notstarted"] .batch:not([data-st~="notstarted"]) > * { visibility: hidden; }
-/* One SSP shown: the headers leave out its name, as before. */
+#grid[data-hl="notstarted"] .batch:not([data-st~="notstarted"]) > *,
+#grid[data-hl="projdone"] .batch:not([data-st~="projdone"]) > *,
+#grid[data-hl="projmiss"] .batch:not([data-st~="projmiss"]) > * { visibility: hidden; }
 /* Small copies of the badges in the grid column headers. */
 .hb-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px; margin-bottom: 2px; }
 .sb.hb { font-size: 8px; padding: 2px 5px; cursor: default; opacity: 1; }
