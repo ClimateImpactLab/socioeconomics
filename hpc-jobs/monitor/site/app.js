@@ -718,9 +718,9 @@ async function showDetail(key) {
 
   const sec = sector();
   const spec = specOf(sec, info.model);
-  const cnt = unitCounts(info.unit, spec);
-  const others = (runType().agg_scenarios || {}).others || [];
-  const hasOther = others.some((sc) => info.unit && info.unit.alt_bits && info.unit.alt_bits[sc]);
+  // The aggregation files shown are those of the scenario picked in the selector.
+  const scen = curScen();
+  const cnt = unitCounts(info.unit, spec, scen);
   const path = cellPath(info);
   $("info-bar").textContent = `${cellTitle(info)}  ${cnt.proj}/${cnt.projTotal} projection, ${cnt.agg}/${cnt.aggTotal} aggregation`;
   $("info-bar").title = path;
@@ -728,13 +728,17 @@ async function showDetail(key) {
   const box = $("file-detail");
   box.className = "file-detail";
   box.innerHTML = `<div class="fd-note">Loading file sizes and dates</div>`;
-  const details = cnt.proj + cnt.agg || hasOther ? await loadDetails(info.model, info.batch) : {};
+  const details = cnt.proj + cnt.agg ? await loadDetails(info.model, info.batch) : {};
   if (view.selected !== key) return;
   const cellKey = [info.ssp, info.rcp, info.iam, info.gcm].join("|");
-  const recs = details[cellKey] || [];
+  let recs = details[cellKey] || [];
+  if (scen) {
+    const nProj = spec.projection.length;
+    recs = [...(recs.length ? recs.slice(0, nProj) : new Array(nProj).fill(0)), ...(details[`${scen}#${cellKey}`] || [])];
+  }
   let i = 0;
   const byGroup = {};
-  for (const g of GROUPS) byGroup[g] = spec[g].map((n) => ({ name: n, rec: recs[i++] || null }));
+  for (const g of GROUPS) byGroup[g] = spec[g].map((n) => ({ name: g === "projection" ? n : scenName(n, info, scen), rec: recs[i++] || null }));
   const rows = (g) => byGroup[g].map((f) => fileRow(g, f.name, f.rec)).join("");
   const found = (g) => byGroup[g].filter((f) => f.rec).length;
 
@@ -743,7 +747,7 @@ async function showDetail(key) {
   let html = `<div class="fd-root">${esc(path)}</div>
     <div class="fd-head">${esc(cellTitle(info))}: ${cnt.proj}/${cnt.projTotal} projection
       | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>
-      <span class="state">${esc(state)}${reason}</span>
+      <span class="state">${esc(state)}${reason}</span>${scen ? ` <span class="state">aggregation: ${esc(scen.replace("{rcp}", info.rcp))}, not counted</span>` : ""}
       <button class="fd-close" id="fd-close">[close]</button></div>`;
   html += section("fd-proj", "Projections", `${found("projection")}/${spec.projection.length}`, rows("projection"), true);
   const aggParts = ["levels", "aggregated"].filter((g) => spec[g].length);
@@ -755,29 +759,6 @@ async function showDetail(key) {
   }
   if (spec.costs.length) {
     html += section("fd-costs", "Costs", `${found("costs")}/${spec.costs.length}`, rows("costs"), false);
-  }
-  // Aggregation files of other scenarios found for this unit: listed apart,
-  // never counted.
-  const extra = others.filter((sc) => details[`${sc}#${cellKey}`]);
-  if (extra.length) {
-    const aggNames = AGG_GROUPS.flatMap((g) => spec[g].map((name) => ({ g, name })));
-    let total = 0, have = 0;
-    const body = extra.map((sc) => {
-      const altRecs = details[`${sc}#${cellKey}`];
-      const listed = aggNames.map((f, j) => ({ ...f, rec: altRecs[j] || null }));
-      const parts = ["costs", "levels", "aggregated"].map((g) => {
-        const fs = listed.filter((f) => f.g === g && f.name !== scenName(f.name, info, sc));
-        if (!fs.length) return "";
-        return `<div class="fd-sub" style="color:var(--agg-${g === "levels" ? "lvl" : g === "costs" ? "cost" : "agg"})">` +
-          `${g === "levels" ? "Levels" : g === "costs" ? "Costs" : "Aggregated"} (${fs.filter((f) => f.rec).length}/${fs.length})</div>` +
-          fs.map((f) => fileRow(g, scenName(f.name, info, sc), f.rec)).join("");
-      }).join("");
-      const n = listed.filter((f) => f.rec && f.name !== scenName(f.name, info, sc)).length;
-      const t = listed.filter((f) => f.name !== scenName(f.name, info, sc)).length;
-      total += t; have += n;
-      return `<div class="fd-scen">${esc(sc.replace("{rcp}", info.rcp))} <span class="cnt">${n}/${t}</span></div>${parts}`;
-    }).join("");
-    html += section("fd-extra", "Additional scenarios (not counted)", `${have}/${total}`, body, true);
   }
   box.innerHTML = html;
   $("fd-close").onclick = closeDetail;

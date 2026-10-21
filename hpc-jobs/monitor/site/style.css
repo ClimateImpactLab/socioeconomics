@@ -608,5 +608,3 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .agg-sep { color: var(--bd2); }
 body.no-sector #agg-tabs, body.no-model #agg-tabs { display: none !important; }
 @media (max-width: 600px) and (orientation: portrait) { #agg-tabs { display: none !important; } }
-.fd-scen { font-family: var(--font); font-size: 10.5px; font-weight: 600; color: var(--tx2); margin: 6px 0 1px; }
-.fd-scen .cnt { font-weight: 400; color: var(--tx3); margin-left: 4px; }

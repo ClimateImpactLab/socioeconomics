@@ -67,11 +67,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   - a small selector above the grid reads "Aggregation: price014 (main) |
     MERGEETL60_rcp45/rcp85 (additional)", shown only when there is more
     than one scenario and always starting on the main one. It switches
-    which aggregation files the grid cells show; the hover summary adds the
-    picked scenario's count, marked "not counted";
-  - the cell details always list the main files (all 8 for energy), and
-    below them a group "Additional scenarios (not counted)" with each other
-    scenario's files, sizes and dates.
+    which aggregation files the grid cells and the cell details show; the
+    hover summary adds the picked scenario's count, and the cell details
+    name the picked scenario, both marked "not counted";
+  - the cell details list the aggregation files of the picked scenario
+    only (all 8 for energy, price014 by default), with their sizes and
+    dates.
   Other scenarios never count toward the progress, the cards, the tab and
   column counts or the camel, whatever the selector shows. It works for any
   sector whose aggregation file names carry a scenario: set
