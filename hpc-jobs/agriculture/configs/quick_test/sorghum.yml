@@ -1,11 +1,12 @@
 # Agriculture quick test (sorghum): one run (rcp45 / CCSM4 / low / SSP3)
-# with the new socioeconomic panel, with full adaptation, noadapt, incadapt,
-# and histclim. Flat output layout (singledir '').
+# with the new socioeconomic panel, writing full adaptation, noadapt,
+# incadapt and global, each also with historical climate (histclim). Results
+# land under <outputdir>/quick_test/rcp45/CCSM4/low/SSP3/.
 import: "../sorghum-160221.yml"
 mode: single
-singledir: ''
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/quick_test/sorghum
-do_farmers: true
+singledir: quick_test
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/sorghum
+do_farmers: 'always'
 do_historical: true
 only-rcp: rcp45
 only-models: [CCSM4]

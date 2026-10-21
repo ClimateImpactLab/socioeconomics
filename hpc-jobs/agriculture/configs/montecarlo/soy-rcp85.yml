@@ -1,11 +1,12 @@
 # Agriculture montecarlo (soy, rcp85): one batch of draws over all rcp85
-# GCMs for every SSP and IAM, with full adaptation, noadapt, incadapt, and
-# histclim. The batch number is not set here: montecarlo.sbatch passes it on
-# the command line (--only-batch-number). Results land under
+# GCMs for every SSP and IAM the projection system finds, writing full
+# adaptation, noadapt, incadapt and histclim. The batch number is not set
+# here: montecarlo.sbatch passes it on the command line
+# (--only-batch-number). Results land under
 # <outputdir>/batch<N>/<rcp>/<GCM>/<iam>/<ssp>/.
 import: "../soy-160221.yml"
 mode: montecarlo
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/montecarlo/soy
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/soy/montecarlo
 timeout: 12
 do_farmers: true
 do_historical: true

@@ -6,23 +6,21 @@
 #SBATCH --partition=amd
 #SBATCH --ntasks=1
 #SBATCH --mem=28G
-#SBATCH --time=12:00:00
-#SBATCH --array=0-111
+#SBATCH --time=24:00:00
+#SBATCH --array=0-83
 
 # Submit from hpc-jobs/ : config and log paths resolve against the
-# submission directory. One task per crop x scenario cell (7 x 16).
+# submission directory. One task per crop x scenario cell (7 x 12).
 export PYTHONUNBUFFERED=1
 
 CROPS=(cassava corn rice sorghum soy wheat_spring wheat_winter)
 CELLS=(
-    "ssp1-rcp45-low" "ssp1-rcp45-high"
     "ssp2-rcp45-low" "ssp2-rcp45-high" "ssp2-rcp85-low" "ssp2-rcp85-high"
     "ssp3-rcp45-low" "ssp3-rcp45-high" "ssp3-rcp85-low" "ssp3-rcp85-high"
     "ssp4-rcp45-low" "ssp4-rcp45-high" "ssp4-rcp85-low" "ssp4-rcp85-high"
-    "ssp5-rcp85-low" "ssp5-rcp85-high"
 )
-CROP=${CROPS[$((SLURM_ARRAY_TASK_ID / 16))]}
-CELL=${CELLS[$((SLURM_ARRAY_TASK_ID % 16))]}
+CROP=${CROPS[$((SLURM_ARRAY_TASK_ID / 12))]}
+CELL=${CELLS[$((SLURM_ARRAY_TASK_ID % 12))]}
 CONFIG="$SLURM_SUBMIT_DIR/agriculture/configs/single/${CROP}-${CELL}.yml"
 
 module load python

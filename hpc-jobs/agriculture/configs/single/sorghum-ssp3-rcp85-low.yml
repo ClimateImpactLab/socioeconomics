@@ -1,11 +1,11 @@
 # Agriculture single (sorghum): one run (rcp85 / CCSM4 / low / SSP3) with
-# the new socioeconomic panel, with full adaptation, noadapt, incadapt, and
-# histclim. Flat output layout (singledir '').
+# the new socioeconomic panel, writing full adaptation, noadapt, incadapt
+# and global, each also with historical climate (histclim). Results land
+# under <outputdir>/single/<rcp>/CCSM4/<iam>/<ssp>/.
 import: "../sorghum-160221.yml"
 mode: single
-singledir: ''
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/single/sorghum
-do_farmers: true
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/sorghum
+do_farmers: 'always'
 do_historical: true
 only-rcp: rcp85
 only-models: [CCSM4]

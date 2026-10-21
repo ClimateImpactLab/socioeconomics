@@ -1,11 +1,11 @@
 # Agriculture single (wheat_winter): one run (rcp85 / CCSM4 / high / SSP2)
-# with the new socioeconomic panel, with full adaptation, noadapt, incadapt,
-# and histclim. Flat output layout (singledir '').
+# with the new socioeconomic panel, writing full adaptation, noadapt,
+# incadapt and global, each also with historical climate (histclim). Results
+# land under <outputdir>/single/<rcp>/CCSM4/<iam>/<ssp>/.
 import: "../wheat_winter_pbarspline.yml"
 mode: single
-singledir: ''
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/single/wheat_winter
-do_farmers: true
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/wheat_winter
+do_farmers: 'always'
 do_historical: true
 only-rcp: rcp85
 only-models: [CCSM4]

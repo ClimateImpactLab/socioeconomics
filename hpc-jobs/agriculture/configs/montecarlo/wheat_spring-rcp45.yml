@@ -1,11 +1,12 @@
 # Agriculture montecarlo (wheat_spring, rcp45): one batch of draws over all
-# rcp45 GCMs for every SSP and IAM, with full adaptation, noadapt, incadapt,
-# and histclim. The batch number is not set here: montecarlo.sbatch passes
-# it on the command line (--only-batch-number). Results land under
+# rcp45 GCMs for every SSP and IAM the projection system finds, writing full
+# adaptation, noadapt, incadapt and histclim. The batch number is not set
+# here: montecarlo.sbatch passes it on the command line
+# (--only-batch-number). Results land under
 # <outputdir>/batch<N>/<rcp>/<GCM>/<iam>/<ssp>/.
 import: "../wheat_spring_pbarspline.yml"
 mode: montecarlo
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/montecarlo/wheat_spring
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/wheat_spring/montecarlo
 timeout: 12
 do_farmers: true
 do_historical: true

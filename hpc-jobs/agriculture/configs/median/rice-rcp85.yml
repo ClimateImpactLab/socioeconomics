@@ -1,11 +1,11 @@
 # Agriculture median (rice, rcp85): point estimate over all rcp85 GCMs for
-# every SSP and IAM the projection system knows (no only-ssp or only-iam
-# filter), with full adaptation, noadapt, incadapt, and histclim. Median
+# every SSP and IAM the projection system finds (no only-ssp or only-iam
+# filter), writing full adaptation, noadapt, incadapt and histclim. Median
 # mode adds its own median/ level: results land under
 # <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/.
 import: "../rice-160221.yml"
 mode: median
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/median/rice
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/rice
 timeout: 12
 do_farmers: true
 do_historical: true

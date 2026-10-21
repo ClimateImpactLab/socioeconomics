@@ -25,5 +25,7 @@ sbatch --export=ALL,BATCH=0 agriculture/jobs/montecarlo.sbatch
 ```
 
 Outputs go to
-`/project/cil/gcp/outputs_newsocioeconomics/agriculture/<run type>/<crop>/`.
+`/project/cil/gcp/outputs_newsocioeconomics/agriculture/<crop>/<run type>/`
+(`quick_test/`, `single/`, `median/` or `montecarlo/`; the projection system
+adds the first three itself).
 Logs go to `logs/agriculture/<run type>/`.
