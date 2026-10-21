@@ -40,36 +40,42 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   aggregated) and Costs, each with a small dot, the file size and the date
   it was written.
 - Resources: storage of the cil account as thin bars, then service units,
-  all since the start of the allocation cycle (`su_since`, 2026-10-01):
-  - Official (RCC): from `rcchelp balance -a cil`, shown as used out of
-    allocation, such as "0 / 1,200,000". RCC counts every partition,
-    including the time so far of running jobs, and updates about a day
-    later; a small "i" next to the bar says so.
-  - Service units, estimate: one plain segment per user, from
-    `sreport cluster AccountUtilizationByUser account=cil start=2026-10-01 end=now -t hours`,
-    the same count as RCC's (checked on the cluster), so its total lands
-    close to the official one apart from RCC's delay. RCC gives no use per
-    user (`rcchelp usage -a cil --byuser` returns nothing), so sreport gives
-    the split.
-  - Compute used: from sacct, elapsed hours x billing (in SU equivalent)
-    on every partition, including the time so far of running jobs, with
-    one colored segment per user and, inside it, one textured part per
-    partition (cil lines, amd stripes, caslake dots, amd-hm solid).
-    Records sacct shows as running but squeue does not have are left out,
-    since those jobs do not exist.
-  The start date shows once, above both bars. One key below both bars,
-  from the left and in alphabetical order, gives each user's color with
-  service units and compute used side by side, and one texture key gives
-  each partition's compute total. Users in `account.always_show_users` and
-  the partitions in `account.compute_partitions` are always listed, even
-  with no use yet, and `account.highlight_user` shows in charcoal.
-  Highlighting works both ways: hovering a segment of either bar marks its
-  user (and partition) in the shared key and the matching segments in both
-  bars, and hovering a user or a partition in the key does the same. A
-  click keeps the highlight until the same thing is clicked again. The "i"
-  next to the estimate says in one line that it is counted the same way as
-  RCC, which updates about a day later, and gives the compute formula with
-  the sacct command to check a job.
+  RCC's official numbers only, in three parts:
+  - Total: from `rcchelp balance -a cil`, used out of the allocation and
+    the balance left, such as "42,872 / 1,200,000 SU, 1,157,128 left". A
+    small "i" says these are RCC's official numbers, updated in batches.
+  - Per user: from `rcchelp usage -a cil -byuser`, one segment per user
+    with billed use, in the shared user colors, and a key with each
+    user's billed SUs and share.
+  - Per partition: from `rcchelp usage -a cil -bypartition`, one textured
+    segment per partition, with each partition's billed SUs and share.
+  RCC gives no user by partition, so these stay as separate bars. `-byjob`
+  is not used: it fails on RCC's side. Each output is read by its header
+  (the line starting "User Usage" or "Partition Usage", then one line per
+  name, then "Total Usage"); a part that cannot be read in a scan shows
+  "not available in this scan". In each bar, hovering a segment marks it
+  in its key and hovering the key marks the segment; a click keeps the
+  highlight until the same thing is clicked again.
+- Aggregation scenarios: progress and every count use only the main
+  scenario in the aggregation file names, set per sector in the manifest
+  (`aggregation_scenario`, price014 for energy). Energy aggregation has 8
+  files per unit: levels and aggregated for the main variant, histclim,
+  global and global-histclim. When the collector finds aggregation files
+  of other scenarios in the same folders (such as MERGEETL60_rcp45 in rcp45
+  folders and MERGEETL60_rcp85 in rcp85 ones, kept as one scenario,
+  MERGEETL60_rcp45/rcp85):
+  - a small selector above the grid reads "Aggregation: price014 (main) |
+    MERGEETL60_rcp45/rcp85 (additional)", shown only when there is more
+    than one scenario and always starting on the main one. It switches
+    which aggregation files the grid cells show; the hover summary adds the
+    picked scenario's count, marked "not counted";
+  - the cell details always list the main files (all 8 for energy), and
+    below them a group "Additional scenarios (not counted)" with each other
+    scenario's files, sizes and dates.
+  Other scenarios never count toward the progress, the cards, the tab and
+  column counts or the camel, whatever the selector shows. It works for any
+  sector whose aggregation file names carry a scenario: set
+  `aggregation_scenario` for it.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: no tab, and it is not in any count,
@@ -83,10 +89,14 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - SLURM jobs: task counts for the account, each partition and each user,
   as small letter badges (R running, P pending, D done, F failed, with a
   key above the table), and a table of every running or queued job: job
-  id, name, user, partition, state, task badges, elapsed time, CPUs and memory requested
-  (per task for arrays), time limit and time left
+  id, name, user, partition, state, task badges, when it started (the
+  start of its first task, empty while pending), elapsed time, CPUs and
+  memory requested (per task for arrays), time limit and time left
   before the limit (from squeue; for an array, the task closest to its
-  limit). Time left shows in amber when it is under 2 hours. Below it, a collapsed
+  limit). A job that allows several partitions shows each one once, with
+  how many of its tasks run there ("caslake 12, amd 3"); partitions it may
+  use but has nothing on yet follow without a count. Time left shows in
+  amber when it is under 2 hours. Below it, a collapsed
   list of jobs on the account that ended badly (timeout, out of memory,
   failed, cancelled) in the last `account.ended_badly_days` days: job id,
   name, user, partition, how it ended and how long it ran. Array tasks
@@ -138,7 +148,7 @@ in the `files:` section of `manifest.yml`.
 |---|---|---|---|
 | Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 36: 4 costs (`<age>-costs`), 16 levels, 16 aggregated |
 | Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder). Spring and winter wheat are not aggregated themselves: 2 costs (`adaptation_costs` and the winsorized `fulladaptcosts`), no aggregated. They are combined into `wheat_combined`, tracked as its own sub-model with the full 12. |
-| Energy | `energy_pixel_interaction/impacts-blueghost/median` | 4: the four variants per fuel | 4: levels and aggregated at the price014 price scenario, for full adaptation and histclim |
+| Energy | `energy_pixel_interaction/impacts-blueghost/median` | 4: the four variants per fuel | 8: levels and aggregated at the price014 price scenario, for the main variant, histclim, global and global-histclim |
 | Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 4: full adaptation, histclim, incadapt, noadapt | 31: 15 levels and 16 aggregated (each variant weighted by gdp, pop and wage, plus the histclim-noadapt file, which a separate step after the projection builds with `make_noadapt_histclim.py`) |
 
 Aggregation types per sector: mortality has costs, levels and aggregated;
@@ -264,29 +274,19 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
 - SUs to finish, per sector and run type, for the units whose projections
   are not done yet: remaining units x the SUs per unit, low to high.
   Aggregation is not included; it is much shorter than the projection.
-- Compute used = ElapsedRaw / 3600 x billing, with billing read from each
-  job's AllocTRES (not assumed equal to the CPUs), on every partition. For
-  example, a job on amd with billing=1, cpu=1, mem=45G that ran 36 h 25 s
-  used 36.01. To check a job:
-  `sacct -X -j <jobid> -n -P -o JobID,ElapsedRaw,Partition,AllocTRES`.
-  Core hours are elapsed hours x the job's allocated CPUs (cpu= in
-  AllocTRES). Jobs without a billing value are flagged with their elapsed
-  hours instead of counted. Only jobs that have finished (they have an end
-  time) or that squeue shows right now count: sacct sometimes keeps a job
-  as RUNNING or PENDING long after it ended, when its record was never
-  closed, and those stale records are listed apart, not counted. Every
-  user with jobs or use on the account is listed by cluster username. The
-  allocation and balance come from `rcchelp balance -a cil`, the service
-  units estimate from sreport, and storage from `rcchelp quota` (group
-  filesets of the cil account).
+- The allocation and balance come from `rcchelp balance -a cil`, the
+  billed use from `rcchelp usage -a cil -byuser` and `-bypartition`, and
+  storage from `rcchelp quota` (group filesets of the cil account). Every
+  user with jobs or billed use on the account is listed by cluster
+  username, which keeps each user's color the same across the page.
 
-## status.json format (schema 5)
+## status.json format (schema 8)
 
 The contract between the collector and the page; the mock follows it.
 
 ```jsonc
 {
-  "schema_version": 5,
+  "schema_version": 8,
   "source": "collector",             // "mock" or "collector"
   "generated_at": "2026-10-13T18:00:00Z",
   "scan_interval_hours": 1,
@@ -294,26 +294,20 @@ The contract between the collector and the page; the mock follows it.
     "name": "cil",
     "allocation_status": "ok",       // "ok", "none" (no allocation listed) or "unknown"
     "allocation_su": 1200000, "used_su": 0, "balance_su": 1200000,
-    "su_since": "2026-10-01",        // start of the allocation cycle; all use counts from here
-    "compute_total": 319.4,          // compute used, sacct, all partitions, SU equivalent
-    "su_estimate_total": 310.0,      // sreport, the way RCC counts; null when sreport failed
-    "su_stale_records": [{"job_id": "53282084_1", "user": "someuser", "state": "RUNNING",
-                          "partition": "caslake", "hours": 1580.2}],   // not counted
     "highlight_user": "cadavidsanchez",
-    "compute_partitions": ["cil", "amd", "caslake", "amd-hm"],   // always listed in the key
+    "billed": {                      // what RCC bills (rcchelp usage); each part null when it could not be read
+      "by_user": {"total": 42871.57, "by": {"sarahmad": 27632, "adwaitsinha": 15239}},
+      "by_partition": {"total": 42871.57, "by": {"caslake": 42871}}
+    },
     "storage": [                     // null when rcchelp could not be read
       {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5}
     ]
   },
-  "users": [                         // every user with jobs or usage, by cluster username; null without Slurm
+  "users": [                         // every user with jobs or billed use, by cluster username; null without Slurm
     {"user": "someuser",
-     "compute_used": 319.4,          // elapsed hours x billing since su_since, all partitions
-     "compute_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},   // largest first
-     "su_estimate": 310.0,           // sreport hours since su_since; null when sreport failed
-     "core_hours": 319.4,            // elapsed hours x CPUs
-     "core_hours_by_partition": {"amd": 150.2, "cil": 100.0, "caslake": 69.2},
-     "su_flagged": {"gpu": {"jobs": 1, "hours": 3.5, "reason": "no billing value"}},
-     "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "amd", "state": "RUNNING",
+     "active_jobs": [{"job_id": "59946806", "job_name": "energy-median", "partition": "caslake,amd", "state": "RUNNING",
+                      "running_on": {"caslake": 28, "amd": 4},   // running tasks per partition
+                      "started": "2026-10-18T13:05:00Z",         // start of the first task; null while pending
                       "tasks": {"running": 32, "queued": 0, "done": 16, "failed": 1},   // failed: failed, timeout, out of memory, node failure
                       "elapsed_min": 1391.0,
                       "cpus": 1, "mem": "45G",   // requested, per task
@@ -323,7 +317,7 @@ The contract between the collector and the page; the mock follows it.
   "ended_badly": [                   // newest first, at most 25; null without Slurm
     {"job_id": "59939384", "job_name": "labor-median", "user": "someuser", "partition": "caslake",
      "ended": "timeout",              // timeout, out of memory, failed, cancelled or node failure
-     "tasks": 11, "elapsed_min": 2160.0, "end": "2026-10-13T08:12:40"}
+     "tasks": 11, "elapsed_min": 2160.0, "end": "2026-10-13T13:12:40Z"}   // UTC
   ],
   "ended_badly_days": 3,
   "sectors": {
@@ -337,6 +331,7 @@ The contract between the collector and the page; the mock follows it.
           "dims": {"models": ["main"], "cells": [{"ssp": "SSP3", "rcp": "rcp45", "iam": "low"}],
                    "gcms": {"rcp45": ["..."], "rcp85": ["..."]}, "batches": null},
           "model_dirs": {"main": "/project/cil/gcp/outputs_newsocioeconomics/mortality/median/median"},
+          "agg_scenarios": {"main": "price014", "others": ["MERGEETL60_{rcp}"]},   // null without aggregation_scenario
                                      // each sub-model's folder, down to the batch or rcp folders
           "counts": {"not_started": 0, "running": 0, "partial": 0, "done": 0, "failed": 0, "total": 520},
           "eta_hours": 5.4,             // projection only; null when there is not enough data yet
@@ -355,7 +350,8 @@ The contract between the collector and the page; the mock follows it.
                         "aggregate": {"state": "not_started"}},
              "files": {"projection": {"found": 16, "total": 16}, "costs": {"found": 0, "total": 4},
                        "levels": {"found": 0, "total": 16}, "aggregated": {"found": 0, "total": 16}},
-             "bits": "1111111111111111000..."}   // one character per expected file, in files_spec order
+             "bits": "1111111111111111000...",   // one character per expected file, in files_spec order
+             "alt_bits": {"MERGEETL60_{rcp}": "11110000"}}   // aggregation files under other scenarios, when found
           ]
         }
       }
@@ -368,6 +364,8 @@ The contract between the collector and the page; the mock follows it.
 `<sub-model>/batch<N>.json` for montecarlo) maps
 `"<SSP>|<rcp>|<iam>|<GCM>"` to one entry per expected file, in files_spec
 order: `[size in bytes, written time in Unix seconds]`, or `0` if missing.
+Aggregation files under another scenario use the key
+`"<scenario>#<SSP>|<rcp>|<iam>|<GCM>"`, one entry per aggregation file.
 
 ## Automatic updates
 

@@ -46,7 +46,7 @@ const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeco
 let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
 
 let DATA = null;
-const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], selected: null };
+const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], selected: null, aggScen: null };
 const detailCache = new Map();
 let cellIndex = new Map();
 
@@ -78,20 +78,21 @@ function fmtMin(min) {
 }
 function fmtEta(hours) {
   if (hours == null) return "n/a";
-  if (hours < 48) return `~${Math.round(hours)} h`;
+  if (hours < 48) return `~${Math.max(1, Math.round(hours))}h`;
   if (hours > 24 * 365) return "over a year";
-  return `~${Math.round(hours / 24)} d`;
+  return `~${Math.round(hours / 24)}d`;
+}
+// A moment in local time, short: "Oct 19, 08:00", or with the year:
+// "Oct 19, 2026, 08:00".
+function fmtWhen(iso, withYear) {
+  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: withYear ? "numeric" : undefined,
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 function fmtSize(bytes) {
   if (!bytes) return "";
   if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${bytes} B`;
-}
-function fmtStamp(sec) {
-  const d = new Date(sec * 1000);
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 function fmtDate(iso) {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -107,8 +108,17 @@ function flatNames(spec) { return GROUPS.flatMap((g) => spec[g]); }
 function groupTotal(spec, groups) { return groups.reduce((n, g) => n + spec[g].length, 0); }
 
 // Presence per group for a unit (or all missing when the unit is not listed).
-function unitGroups(unit, spec) {
-  const bits = unit ? unit.bits : "";
+// A unit's file bits, with the aggregation part taken from another
+// aggregation scenario when one is picked (scen); projection stays the same.
+function unitBits(unit, spec, scen) {
+  if (!unit) return "";
+  const alt = scen && unit.alt_bits && unit.alt_bits[scen];
+  if (scen && !alt) return unit.bits.slice(0, spec.projection.length) + "0".repeat(groupTotal(spec, AGG_GROUPS));
+  return alt ? unit.bits.slice(0, spec.projection.length) + alt : unit.bits;
+}
+
+function unitGroups(unit, spec, scen) {
+  const bits = unitBits(unit, spec, scen);
   const out = {};
   let i = 0;
   for (const g of GROUPS) {
@@ -117,8 +127,8 @@ function unitGroups(unit, spec) {
   return out;
 }
 
-function unitCounts(unit, spec) {
-  const pres = unitGroups(unit, spec);
+function unitCounts(unit, spec, scen) {
+  const pres = unitGroups(unit, spec, scen);
   const c = (gs) => gs.reduce((n, g) => n + pres[g].filter(Boolean).length, 0);
   return {
     proj: c(["projection"]), projTotal: spec.projection.length,
@@ -144,7 +154,7 @@ const STATE_NAMES = {
 };
 
 // Files present and expected for a run type, from its units.
-function filesOf(sec, rt) {
+function filesOf(sec, rt, scen) {
   const out = { proj: 0, projExp: 0, agg: 0, aggExp: 0, complete: 0, partial: 0, started: 0 };
   const perModel = rt.counts.total / rt.dims.models.length;
   for (const m of rt.dims.models) {
@@ -153,7 +163,7 @@ function filesOf(sec, rt) {
     out.aggExp += perModel * groupTotal(s, AGG_GROUPS);
   }
   for (const u of rt.units) {
-    const c = unitCounts(u, specOf(sec, u.model));
+    const c = unitCounts(u, specOf(sec, u.model), scen);
     out.proj += c.proj;
     out.agg += c.agg;
     if (c.proj + c.agg === 0) continue;
@@ -171,6 +181,22 @@ function filesOf(sec, rt) {
 function progressText(f) {
   const part = (name, n, exp) => exp ? `${name} ${fmtPctShort(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)})` : null;
   return [part("Projection", f.proj, f.projExp), part("Aggregation", f.agg, f.aggExp)].filter(Boolean).join(", ");
+}
+
+// The aggregation scenario picked for the current run type, or null for the main one.
+function curScen() {
+  const sc = runType() && runType().agg_scenarios;
+  return view.aggScen && sc && sc.others.includes(view.aggScen) ? view.aggScen : null;
+}
+// "MERGEETL60_{rcp}" reads "MERGEETL60_rcp45/rcp85": each column uses its own RCP.
+function scenLabel(sc, rt) {
+  const rcps = [...new Set(rt.dims.cells.map((c) => c.rcp))];
+  return sc.replace("{rcp}", rcps.join("/"));
+}
+// An aggregation file name under the picked scenario, for one column's RCP.
+function scenName(name, info, sc) {
+  const main = runType().agg_scenarios && runType().agg_scenarios.main;
+  return sc && main && name.includes(main) ? name.replace(main, sc.replace("{rcp}", info.rcp)) : name;
 }
 
 function sectorFiles(sec) {
@@ -202,7 +228,7 @@ function sectorRunning(sec) {
 // Units with all projection files, and with all aggregation files.
 // Projection (P) and aggregation (A) files present out of expected, for a
 // set of units; expUnits is the number of expected units per sub-model.
-function paFiles(sec, units, expUnits, models) {
+function paFiles(sec, units, expUnits, models, scen) {
   const out = { p: 0, pExp: 0, a: 0, aExp: 0 };
   for (const m of models) {
     const spec = specOf(sec, m);
@@ -210,7 +236,7 @@ function paFiles(sec, units, expUnits, models) {
     out.aExp += expUnits * groupTotal(spec, AGG_GROUPS);
   }
   for (const u of units) {
-    const c = unitCounts(u, specOf(sec, u.model));
+    const c = unitCounts(u, specOf(sec, u.model), scen);
     out.p += c.proj;
     out.a += c.agg;
   }
@@ -271,8 +297,24 @@ function renderAll() {
   renderCards();
   if (needModel) return;
   renderSspTabs();
+  renderAggTabs();
   renderLegend();
   renderGrid();
+}
+
+// "Aggregation: price014 (main) | MERGEETL60_rcp45/rcp85": which aggregation
+// files the grid, counts and cell details use. Shown only with more than one.
+function renderAggTabs() {
+  const rt = runType(), sc = rt && rt.agg_scenarios;
+  const el = $("agg-tabs");
+  if (!sc || !sc.others.length) { el.classList.add("hidden"); el.innerHTML = ""; return; }
+  el.classList.remove("hidden");
+  const cur = curScen();
+  el.innerHTML = `<span class="lbl">Aggregation:</span> ` + [
+    `<button class="agg-opt${cur ? "" : " active"}" data-scen="">${esc(sc.main)} <span class="muted">(main)</span></button>`,
+    ...sc.others.map((o) => `<button class="agg-opt${cur === o ? " active" : ""}" data-scen="${esc(o)}">${esc(scenLabel(o, rt))}
+      <span class="muted">(additional)</span></button>`),
+  ].join(`<span class="agg-sep">|</span>`);
 }
 
 function selector(el, items, active, onPick) {
@@ -308,6 +350,7 @@ function renderTabs() {
       return;
     }
     view.sector = k;
+    view.aggScen = null;
     view.runType = defaultRunType(sector());
     view.model = null;
     view.ssps = defaultSsps(runType());
@@ -326,6 +369,7 @@ function renderTabs() {
   }
   selector($("runtype-tabs"), items, view.runType, (k) => {
     view.runType = k;
+    view.aggScen = null;
     view.model = null;
     view.modelOff = false;
     view.ssps = defaultSsps(runType());
@@ -421,7 +465,7 @@ function renderCards() {
 
 // Where the time per unit came from, for the tooltips.
 const UNIT_SOURCE = {
-  sacct: "Time per unit from sacct (elapsed time x billing of the run's tasks).",
+  sacct: "Time per unit from sacct (elapsed time × billing of the run's tasks).",
   "file dates": "Time per unit from file dates, plus the start up time measured from the singles.",
   reference: "Time per unit from the reference in the manifest; not enough finished units yet.",
 };
@@ -494,7 +538,7 @@ function squares(pres, groups) {
 }
 
 function cellHtml(key, unit, spec) {
-  const cnt = unitCounts(unit, spec);
+  const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
   let html = `<div class="batch ${cls}" data-key="${esc(key)}">`;
   html += `<div class="batch-row"><div class="sq-grid">${squares(cnt.pres, ["projection"])}</div>` +
@@ -654,7 +698,7 @@ function fileRow(group, name, rec) {
   }
   const cls = DOT_CLASS[group];
   return `<div class="fd-row ${cls}"><span class="dot ${cls}"></span><span class="fname">${esc(shown)}</span>` +
-    `<span class="meta">${fmtSize(rec[0])}</span><span class="meta">${fmtStamp(rec[1])}</span></div>`;
+    `<span class="meta">${fmtSize(rec[0])}</span><span class="meta">${fmtWhen(rec[1] * 1000, true)}</span></div>`;
 }
 
 function section(id, title, count, bodyHtml, open) {
@@ -675,6 +719,8 @@ async function showDetail(key) {
   const sec = sector();
   const spec = specOf(sec, info.model);
   const cnt = unitCounts(info.unit, spec);
+  const others = (runType().agg_scenarios || {}).others || [];
+  const hasOther = others.some((sc) => info.unit && info.unit.alt_bits && info.unit.alt_bits[sc]);
   const path = cellPath(info);
   $("info-bar").textContent = `${cellTitle(info)}  ${cnt.proj}/${cnt.projTotal} projection, ${cnt.agg}/${cnt.aggTotal} aggregation`;
   $("info-bar").title = path;
@@ -682,9 +728,10 @@ async function showDetail(key) {
   const box = $("file-detail");
   box.className = "file-detail";
   box.innerHTML = `<div class="fd-note">Loading file sizes and dates</div>`;
-  const details = cnt.proj + cnt.agg ? await loadDetails(info.model, info.batch) : {};
+  const details = cnt.proj + cnt.agg || hasOther ? await loadDetails(info.model, info.batch) : {};
   if (view.selected !== key) return;
-  const recs = details[[info.ssp, info.rcp, info.iam, info.gcm].join("|")] || [];
+  const cellKey = [info.ssp, info.rcp, info.iam, info.gcm].join("|");
+  const recs = details[cellKey] || [];
   let i = 0;
   const byGroup = {};
   for (const g of GROUPS) byGroup[g] = spec[g].map((n) => ({ name: n, rec: recs[i++] || null }));
@@ -704,10 +751,33 @@ async function showDetail(key) {
     const sub = aggParts.map((g) => `<div class="fd-sub" style="color:var(--agg-${g === "levels" ? "lvl" : "agg"})">` +
       `${g === "levels" ? "Levels" : "Aggregated"} (${found(g)}/${spec[g].length})</div>${rows(g)}`).join("");
     const n = aggParts.reduce((s, g) => s + found(g), 0), t = aggParts.reduce((s, g) => s + spec[g].length, 0);
-    html += section("fd-agg", "Aggregation", `${n}/${t}`, sub, false);
+    html += section("fd-agg", "Aggregation", `${n}/${t}`, sub, true);
   }
   if (spec.costs.length) {
     html += section("fd-costs", "Costs", `${found("costs")}/${spec.costs.length}`, rows("costs"), false);
+  }
+  // Aggregation files of other scenarios found for this unit: listed apart,
+  // never counted.
+  const extra = others.filter((sc) => details[`${sc}#${cellKey}`]);
+  if (extra.length) {
+    const aggNames = AGG_GROUPS.flatMap((g) => spec[g].map((name) => ({ g, name })));
+    let total = 0, have = 0;
+    const body = extra.map((sc) => {
+      const altRecs = details[`${sc}#${cellKey}`];
+      const listed = aggNames.map((f, j) => ({ ...f, rec: altRecs[j] || null }));
+      const parts = ["costs", "levels", "aggregated"].map((g) => {
+        const fs = listed.filter((f) => f.g === g && f.name !== scenName(f.name, info, sc));
+        if (!fs.length) return "";
+        return `<div class="fd-sub" style="color:var(--agg-${g === "levels" ? "lvl" : g === "costs" ? "cost" : "agg"})">` +
+          `${g === "levels" ? "Levels" : g === "costs" ? "Costs" : "Aggregated"} (${fs.filter((f) => f.rec).length}/${fs.length})</div>` +
+          fs.map((f) => fileRow(g, scenName(f.name, info, sc), f.rec)).join("");
+      }).join("");
+      const n = listed.filter((f) => f.rec && f.name !== scenName(f.name, info, sc)).length;
+      const t = listed.filter((f) => f.name !== scenName(f.name, info, sc)).length;
+      total += t; have += n;
+      return `<div class="fd-scen">${esc(sc.replace("{rcp}", info.rcp))} <span class="cnt">${n}/${t}</span></div>${parts}`;
+    }).join("");
+    html += section("fd-extra", "Additional scenarios (not counted)", `${have}/${total}`, body, true);
   }
   box.innerHTML = html;
   $("fd-close").onclick = closeDetail;
@@ -748,117 +818,80 @@ function trimSize(text) {
 function renderResources() {
   const a = DATA.account;
   let storage;
-  if (a.storage == null) storage = `<div class="res-note muted">Not read in this scan</div>`;
+  if (a.storage == null) storage = `<div class="res-note muted">Not available in this scan</div>`;
   else if (!a.storage.length) storage = `<div class="res-note muted">No group storage found</div>`;
-  else storage = a.storage.map((s) => resRow(s.label, s.used_pct, `${trimSize(s.used)}/${trimSize(s.quota)}`,
+  else storage = a.storage.map((s) => resRow(s.label, s.used_pct, `${trimSize(s.used)} / ${trimSize(s.quota)}`,
     `Used ${trimSize(s.used)} of ${trimSize(s.quota)}`)).join("");
 
   $("resources-content").innerHTML =
     `<div class="res-sec"><div class="res-title">Storage</div>${storage}</div>` +
     `<div class="res-sec"><div class="res-title">Service units</div>${serviceUnitsHtml()}</div>` +
-    `<div class="res-foot">${new Date(DATA.generated_at).toLocaleString()}</div>`;
+    `<div class="res-foot">${fmtWhen(DATA.generated_at, true)}</div>`;
 }
 
-// Official SUs come from RCC (rcchelp). Below it, two bars per user since
-// the start of the cycle: service units counted the way RCC counts them
-// (sreport, every partition, running jobs included), and compute used from
-// sacct, with one textured part per partition inside each user's segment.
+// Service units, RCC's official numbers only: the total from rcchelp
+// balance, and the billed use per user and per partition from rcchelp
+// usage. RCC gives no user by partition, so those are separate bars.
+function infoPop(title, text) {
+  return `<span class="info-wrap"><button class="info-btn" aria-expanded="false" title="${esc(title)}">i</button>` +
+    `<span class="su-pop hidden" role="dialog">${text}</span></span>`;
+}
+
+// One bar of billed use: a segment and a key entry per name with use.
+function billedBar(box, title, part, segStyle, keyMark) {
+  let html = `<div class="su-est su-blocks" data-box="${box}">`;
+  if (!part) {
+    return html + `<div class="su-bar-block"><div class="su-est-head">${title}
+      <span class="lbl">not available in this scan</span></div></div></div>`;
+  }
+  const rows = Object.entries(part.by).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
+  const sum = rows.reduce((n, [, v]) => n + v, 0) || 1;
+  const attr = box === "users" ? "data-user" : "data-part";
+  const bar = rows.map(([n, v]) => `<span class="seg ${segStyle(n).cls}" ${attr}="${esc(n)}"
+      style="width:${((100 * v) / sum).toFixed(2)}%;${segStyle(n).style}" title="${esc(n)}: ${fmtN(v)} SU"></span>`).join("");
+  html += `<div class="su-bar-block"><div class="su-est-head">${title} <b>${fmtN(part.total)} SU</b></div>
+    <div class="su-bar-all">${bar}</div></div>`;
+  html += `<div class="ukey ukey-left">` + (rows.length ? [...rows].sort((x, y) => x[0].localeCompare(y[0])).map(([n, v]) =>
+    `<span class="ukey-item" ${attr}="${esc(n)}">${keyMark(n)}${box === "users" ? userName(n) : esc(n)}
+      <span class="mono">${fmtN(v)} SU, ${fmtPctShort((100 * v) / sum)}</span></span>`).join("")
+    : `<span class="lbl">no billed use yet</span>`) + `</div>`;
+  return html + `</div>`;
+}
+
 function serviceUnitsHtml() {
   const a = DATA.account;
-  const since = esc(fmtDate(a.su_since));
-  const listed = a.compute_partitions || [];
-
   let html;
   if (a.allocation_status === "ok") {
     const pct = a.allocation_su ? (100 * a.used_su) / a.allocation_su : null;
-    html = resRow("Official (RCC)", pct, `${fmtN(a.used_su)} / ${fmtN(a.allocation_su)}`,
-      `Charged by RCC: ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)} (${fmtN(a.balance_su)} SU remaining)`, true,
-      `<span class="info-wrap"><button class="info-btn" aria-expanded="false" title="About the official figure">i</button>` +
-      `<span class="su-pop hidden" role="dialog">RCC updates its balance about a day after jobs run, so it can show
-        less use (even 0) than the estimate below. The two catch up later.</span></span>`);
+    html = resRow("Total", pct, `${fmtN(a.used_su)} / ${fmtN(a.allocation_su)} SU, ${fmtN(a.balance_su)} left`,
+      `Used ${fmtN(a.used_su)} SU of ${fmtN(a.allocation_su)}, ${fmtN(a.balance_su)} SU left`, true,
+      infoPop("About these numbers", "RCC's official numbers, updated by RCC in batches, so the newest jobs may not show yet."));
   } else {
-    const note = a.allocation_status === "none" ? "no allocation listed" : "not read in this scan";
-    html = `<div class="res-row"><span class="res-label">Official (RCC)</span>` +
+    const note = a.allocation_status === "none" ? "no allocation listed" : "not available in this scan";
+    html = `<div class="res-row"><span class="res-label">Total</span>` +
       `<span class="res-bar placeholder"><span class="ticks"></span></span>` +
-      `<span class="res-pct" style="color:var(--tx3)">0 SU</span><span class="res-counts">${esc(note)}</span></div>`;
+      `<span class="res-counts res-only">${esc(note)}</span></div>`;
   }
-  if (!DATA.users) return html + `<div class="res-note muted" style="margin-top:6px">Use by user not read in this scan</div>`;
-
-  const byPart = (u) => u.compute_by_partition || u.su_by_partition || {};
-  const users = (DATA.users || []).map((u) => {
-    const vals = byPart(u);
-    return { user: u.user, vals, su: u.su_estimate, compute: Object.values(vals).reduce((n, v) => n + v, 0),
-      ran: !!(u.compute_used || u.su_estimate) };
-  }).sort((x, y) => y.compute - x.compute || x.user.localeCompare(y.user));
-  const seen = [...new Set(users.flatMap((u) => Object.keys(u.vals)))];
-  const parts = [...listed, ...seen.filter((p) => !listed.includes(p)).sort()];
-  const reported = a.su_estimate_total != null;
-
-  const info = `<span class="info-wrap"><button class="info-btn" aria-expanded="false"
-      title="About these numbers">i</button><span class="su-pop hidden" role="dialog">Counted the same way as RCC, which
-      updates about a day later.<br>This estimate counts amd as charged; RCC is not charging amd yet but plans to,
-      so the official count may be lower for now.<br>Compute used = elapsed hours &times; billing. To check a job:
-      <code>sacct -X -j &lt;jobid&gt; -n -P -o JobID,ElapsedRaw,Partition,AllocTRES</code></span></span>`;
-  html += `<div class="su-est su-blocks"><div class="su-since">Since ${since}</div>` +
-    (reported ? suBar(users, a.su_estimate_total, info)
-      : `<div class="su-bar-block"><div class="su-est-head">Service units, estimate <span class="lbl">not read in this scan</span>${info}</div></div>`) +
-    usageBar("Compute used", "SU equivalent", parts, users, "");
-
-  // One key for both bars: each user's service units and compute used, then
-  // the partition textures with their compute totals.
-  const byName = [...users].sort((x, y) => x.user.localeCompare(y.user));
-  html += `<div class="ukey ukey-left">` + byName.map((u) =>
-    `<span class="ukey-item" data-user="${esc(u.user)}"><span class="udot" style="background:${userColor(u.user)}"></span>${userName(u.user)}
-      <span class="mono">${u.ran ? `${u.su != null ? fmtN(u.su) + " SU, " : ""}${fmtN(u.compute)} compute` : "no jobs yet"}</span></span>`).join("") + `</div>`;
-  const partTotal = (p) => users.reduce((n, u) => n + (u.vals[p] || 0), 0);
-  if (parts.length) {
-    html += `<div class="ukey pkey">` + parts.map((p) => {
-      const t = partTotal(p);
-      return `<span class="ukey-item" data-part="${esc(p)}">${partSwatch(p)}${esc(p)}
-        <span class="mono">${t ? fmtN(t) : "no use yet"}</span></span>`;
-    }).join("") + `</div>`;
-  }
-  html += `</div>`;
+  const billed = a.billed || {};
+  html += billedBar("users", "Per user", billed.by_user,
+    (u) => ({ cls: "", style: `background-color:${userColor(u)}` }),
+    (u) => `<span class="udot" style="background:${userColor(u)}"></span>`);
+  html += billedBar("parts", "Per partition", billed.by_partition,
+    (p) => ({ cls: `pbar-seg ${partTexture(p)}`, style: "" }),
+    (p) => partSwatch(p));
   return html;
 }
 
-// Service units per user, the way RCC counts them: one plain segment each.
-function suBar(users, total, extra) {
-  const sum = users.reduce((n, u) => n + (u.su || 0), 0) || 1;
-  const bar = users.filter((u) => u.su > 0).sort((x, y) => y.su - x.su).map((u) =>
-    `<span class="seg" data-user="${esc(u.user)}" style="width:${((100 * u.su) / sum).toFixed(2)}%;background-color:${userColor(u.user)}"
-      title="${esc(u.user)}: ${fmtN(u.su)} SU"></span>`).join("");
-  return `<div class="su-bar-block"><div class="su-est-head">Service units, estimate <b>${fmtN(total)} SU</b>${extra}</div>
-    <div class="su-bar-all">${bar}</div></div>`;
-}
-
-// One bar of use by user and partition, on the given partitions.
-function usageBar(title, unit, partitions, users, extra) {
-  const total = users.reduce((n, u) => n + partitions.reduce((m, p) => m + (u.vals[p] || 0), 0), 0);
-  let bar = "";
-  for (const u of users) {
-    const segs = partitions.map((p) => [p, u.vals[p] || 0]).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
-    for (const [p, v] of segs) {
-      bar += `<span class="seg ${partTexture(p)}" data-user="${esc(u.user)}" data-part="${esc(p)}"
-        style="width:${((100 * v) / (total || 1)).toFixed(2)}%;background-color:${userColor(u.user)}"
-        title="${esc(u.user)}, ${esc(p)}: ${fmtN(v)} ${unit}"></span>`;
-    }
-  }
-  return `<div class="su-bar-block"><div class="su-est-head">${title} <b>${fmtN(total)} ${unit}</b>${extra}</div>
-    <div class="su-bar-all">${bar}</div></div>`;
-}
-
-// The bars and the shared key highlight each other. A selection is a user,
+// The bar and its key highlight each other. A selection is a user,
 // a partition, or both (one segment); hovering shows it and a click keeps it
 // until the same thing is clicked again.
-let suPicked = null;
+const suPicked = {};
 function suSelection(el) {
   if (!el) return null;
   return { user: el.dataset.user || null, part: el.dataset.part || null };
 }
 function suHighlight(box, sel) {
   if (!box) return;
-  // A service units segment has a user but no partition: it lights for its user only.
   const hit = (el) => !!sel && (el.dataset.part
     ? (!sel.user || el.dataset.user === sel.user) && (!sel.part || el.dataset.part === sel.part)
     : !!sel.user && el.dataset.user === sel.user);
@@ -885,7 +918,7 @@ function endedBadlyHtml() {
     <span class="grp-counts">${rows.length ? `${fmtN(rows.length)} ${rows.length === 1 ? "job" : "jobs"}: ${summary}` : "none"}</span></span></div>`;
   if (!rows.length) return `<div class="grp bad-jobs">${head}<div class="grp-body"><div class="jobs-empty">No jobs ended badly</div></div></div>`;
   const table = `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>How it ended</th>
-      <th class="r">Ran</th></tr>` + rows.map((r) => `<tr title="Ended ${esc(r.end.replace("T", " "))}">
+      <th class="r">Elapsed</th></tr>` + rows.map((r) => `<tr title="${r.end ? `Ended ${esc(fmtWhen(r.end, true))}` : ""}">
       <td class="mono">${esc(r.job_id)}${r.tasks > 1 ? ` <span class="lbl">(${fmtN(r.tasks)} tasks)</span>` : ""}</td>
       <td>${esc(r.job_name)}</td>
       <td><span class="ukey-item"><span class="udot" style="background:${userColor(r.user)}"></span>${userName(r.user)}</span></td>
@@ -896,7 +929,15 @@ function endedBadlyHtml() {
 }
 
 function partPill(name, n) {
-  return `<span class="part-pill">${partSwatch(name)}${esc(name)}${n != null ? ": " + n : ""}</span>`;
+  return `<span class="part-pill">${partSwatch(name)}${esc(name)}${n != null ? ` <span class="mono">${fmtN(n)}</span>` : ""}</span>`;
+}
+
+// Each partition a job may use, once, with its running tasks: running ones
+// first, by count, then the ones it may use but has nothing on yet.
+function jobPartitions(j) {
+  const on = j.running_on || {};
+  const rest = j.partition.split(",").filter((p) => p && !(p in on));
+  return [...Object.entries(on).map(([p, n]) => partPill(p, n)), ...rest.map((p) => partPill(p))].join("");
 }
 
 // Task counts as small letter badges: R running, P pending, D done, F failed.
@@ -925,7 +966,7 @@ function renderJobs() {
   $("badge-pend").textContent = `${fmtN(pend)} pending`;
 
   if (!known) {
-    $("jobs-content").innerHTML = `<div class="jobs-empty">No Slurm data in this scan</div>` + endedBadlyHtml();
+    $("jobs-content").innerHTML = `<div class="jobs-empty">Jobs not available in this scan</div>` + endedBadlyHtml();
     return;
   }
 
@@ -963,15 +1004,17 @@ function renderJobs() {
     const order = [...jobs].sort((x, y) => (x.state !== "RUNNING") - (y.state !== "RUNNING") || y.elapsed_min - x.elapsed_min);
     html += `<div class="tb-key">` + TASK_BADGES.map(([, letter, word]) =>
       `<span class="tb tb-${letter.toLowerCase()}">${letter}</span> ${word}`).join(`<span class="tb-key-sep"></span>`) + ` <span class="lbl">(tasks)</span></div>`;
-    html += `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th><th>Partition</th><th>State</th>
-      <th>Tasks</th><th class="r">Elapsed</th>
+    html += `<div class="table-scroll"><table class="jobs-table"><tr><th>Job ID</th><th>Name</th><th>User</th>
+      <th title="Running tasks on each partition">Partition</th><th>State</th>
+      <th>Tasks</th><th class="r" title="When the first task started">Started</th><th class="r">Elapsed</th>
       <th class="r" title="Per task">CPUs</th><th class="r" title="Per task">Memory</th>
       <th class="r">Time limit</th><th class="r">Time left</th></tr>` +
       order.map((j) => `<tr><td class="mono">${esc(j.job_id || "")}</td><td>${esc(j.job_name)}</td>
         <td><span class="ukey-item"><span class="udot" style="background:${userColor(j.person)}"></span>${userName(j.person)}</span></td>
-        <td>${j.partition.split(",").map((p) => partPill(p)).join("")}</td>
+        <td>${jobPartitions(j)}</td>
         <td class="${j.state === "RUNNING" ? "state-run" : "state-pend"}">${j.state === "RUNNING" ? "Running" : "Pending"}</td>
         <td>${taskBadges(j.tasks)}</td>
+        <td class="r">${j.started ? fmtWhen(j.started) : ""}</td>
         <td class="r">${j.state === "RUNNING" ? fmtMin(j.elapsed_min) : ""}</td>
         <td class="r">${j.cpus != null ? fmtN(j.cpus) : ""}</td>
         <td class="r">${esc(j.mem || "")}</td>
@@ -1065,6 +1108,17 @@ function setup() {
   document.querySelectorAll(".panel-header").forEach((h) => {
     h.onclick = () => $(h.dataset.panel).classList.toggle("open");
   });
+  $("agg-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest(".agg-opt");
+    if (!b) return;
+    view.aggScen = b.dataset.scen || null;
+    closeDetail();
+    renderCards();
+    renderTabs();
+    renderSspTabs();
+    renderAggTabs();
+    renderGrid();
+  });
   $("pa-info-btn").addEventListener("click", () => {
     const open = $("pa-info").classList.toggle("hidden") === false;
     $("pa-info-btn").setAttribute("aria-expanded", String(open));
@@ -1078,7 +1132,7 @@ function setup() {
   });
   rc.addEventListener("mouseout", (e) => {
     const t = e.target.closest(SU_TARGET);
-    if (t && !t.contains(e.relatedTarget)) suHighlight(t.closest(".su-blocks"), suPicked);
+    if (t && !t.contains(e.relatedTarget)) { const box = t.closest(".su-blocks"); suHighlight(box, suPicked[box.dataset.box]); }
   });
   const closePop = (except) => {
     document.querySelectorAll(".info-wrap").forEach((w) => {
@@ -1094,14 +1148,15 @@ function setup() {
   rc.addEventListener("click", (e) => {
     const t = e.target.closest(SU_TARGET);
     if (t) {
-      const sel = suSelection(t);
-      const same = suPicked && suPicked.user === sel.user && suPicked.part === sel.part;
-      suPicked = same ? null : sel;
-      suHighlight(t.closest(".su-blocks"), suPicked);
+      const sel = suSelection(t), box = t.closest(".su-blocks"), pick = suPicked[box.dataset.box];
+      const same = pick && pick.user === sel.user && pick.part === sel.part;
+      suPicked[box.dataset.box] = same ? null : sel;
+      suHighlight(box, suPicked[box.dataset.box]);
       return;
     }
     const b = e.target.closest(".info-wrap > .info-btn");
     if (!b) return;
+    e.preventDefault();   // an "i" inside a summary must not open or close it
     const pop = b.parentElement.querySelector(".su-pop");
     if (!pop.classList.contains("hidden")) { closePop(); return; }
     pop.classList.remove("hidden");
@@ -1131,9 +1186,11 @@ function setup() {
   }, true);
   const fillTip = (b) => {
     const info = cellIndex.get(b.dataset.key);
-    const cnt = unitCounts(info.unit, specOf(sector(), info.model));
+    const spec = specOf(sector(), info.model), cnt = unitCounts(info.unit, spec), sc = curScen();
+    const alt = sc ? unitCounts(info.unit, spec, sc) : null;
     tip.innerHTML = `${esc(cellTitle(info))}<br>${cnt.proj}/${cnt.projTotal} projection` +
       (cnt.aggTotal ? `<br>${cnt.agg}/${cnt.aggTotal} aggregation` : "") +
+      (alt ? `<br><span class="muted">${esc(scenLabel(sc, runType()))}: ${alt.agg}/${alt.aggTotal}, not counted</span>` : "") +
       `<br><span class="muted">${esc(STATE_NAMES[cellState(info.unit, cnt)])}</span>`;
     tip.style.display = "block";
     return tip.getBoundingClientRect();
@@ -1219,7 +1276,7 @@ async function boot() {
 
   const ageH = (Date.now() - new Date(DATA.generated_at).getTime()) / 3.6e6;
   const every = DATA.scan_interval_hours === 1 ? "every hour" : `every ${DATA.scan_interval_hours} h`;
-  $("subtitle").textContent = `Last scan: ${new Date(DATA.generated_at).toLocaleString()}, ${every}` +
+  $("subtitle").textContent = `Last scan: ${fmtWhen(DATA.generated_at, true)}, ${every}` +
     (localCopy ? " (local copy)" : "");
   if (DATA.source === "mock") $("mock-badge").classList.remove("hidden");
   if (ageH > 2 * DATA.scan_interval_hours) {

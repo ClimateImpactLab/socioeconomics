@@ -174,6 +174,36 @@ def lookup(name, rcp, leaf_files, twin_files):
     return hit if hit and hit[0] > 0 else None
 
 
+def scenario_patterns(agg_names, main):
+    """For each aggregation file name holding the main scenario, a pattern that
+    finds the same file under another scenario: the main token swapped for any
+    one dash-free word. Returns [(index in agg_names, compiled pattern)]."""
+    out = []
+    for i, name in enumerate(agg_names):
+        if main and main in name and not name.startswith("winsorized/"):
+            before, after = name.split(main, 1)
+            out.append((i, re.compile("^" + re.escape(before).replace(r"\{rcp\}", "{rcp}") + "([^-/]+)"
+                                      + re.escape(after).replace(r"\{rcp\}", "{rcp}") + "$")))
+    return out
+
+
+def other_scenarios(patterns, main, rcp, leaf_files):
+    """Aggregation files of other scenarios in one leaf: {scenario: {index: hit}}.
+
+    A scenario that names the column's RCP (MERGEETL60_rcp45 in an rcp45
+    folder) is kept with the RCP as {rcp}, so it is one scenario across the
+    RCP columns."""
+    found = {}
+    for fname, hit in leaf_files.items():
+        if not hit or hit[0] <= 0:
+            continue
+        for i, pat in patterns:
+            m = re.match(pat.pattern.replace("{rcp}", re.escape(rcp)), fname)
+            if m and m.group(1) != main:
+                found.setdefault(m.group(1).replace(rcp, "{rcp}"), {})[i] = hit
+    return found
+
+
 def leaf_path(root, *parts):
     return os.path.join(root, *[p for p in parts if p])
 
@@ -235,8 +265,13 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     last_projection_write = 0
     first_projection_write = None
 
+    main_scen = sector.get("aggregation_scenario")
+    scenarios_seen = set()
     for model in models:
         names = flat_names(spec[model])
+        agg_names = [n for g in GROUPS[1:] for n in spec[model][g]]
+        n_proj = len(spec[model]["projection"])
+        patterns = scenario_patterns(agg_names, main_scen)
         per_stage = {st: stage_files(st, spec[model], stages) for st in stages}
         # A stage that writes nothing for this sub-model (spring and winter
         # wheat are never aggregated themselves) does not apply to it.
@@ -260,6 +295,8 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                         twin_files = twin["files"] if twin else {}
                     leaf_files = info["files"] if info else {}
                     hits = {n: lookup(n, cell["rcp"], leaf_files, twin_files) for n in names}
+                    alt = other_scenarios(patterns, main_scen, cell["rcp"], leaf_files) if patterns else {}
+                    scenarios_seen.update(alt)
                     for n in spec[model]["projection"]:
                         if hits[n]:
                             last_projection_write = max(last_projection_write, hits[n][1])
@@ -310,7 +347,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                         state = "not_started"
                     counts[state] += 1
 
-                    any_file = any(hits.values())
+                    any_file = any(hits.values()) or bool(alt)
                     if not (any_file or state != "not_started"):
                         continue
 
@@ -326,9 +363,20 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     }
                     if fail_reason:
                         unit["fail_reason"] = fail_reason
+                    key = "|".join([cell["ssp"], cell["rcp"], cell["iam"], gcm])
+                    if alt:
+                        # Aggregation bits under each other scenario; a file with no
+                        # scenario in its name keeps its main bit.
+                        held = {i for i, _ in patterns}
+                        unit["alt_bits"] = {sc: "".join(
+                            ("1" if i in got else "0") if i in held else unit["bits"][n_proj + i]
+                            for i in range(len(agg_names))) for sc, got in alt.items()}
+                        for sc, got in alt.items():
+                            details.setdefault((model, batch_num), {})[f"{sc}#{key}"] = \
+                                [list(got[i]) if i in got else (list(hits[n]) if i not in held and hits[n] else 0)
+                                 for i, n in enumerate(agg_names)]
                     units.append(unit)
-                    if any_file:
-                        key = "|".join([cell["ssp"], cell["rcp"], cell["iam"], gcm])
+                    if any(hits.values()):
                         details.setdefault((model, batch_num), {})[key] = \
                             [list(hits[n]) if hits[n] else 0 for n in names]
 
@@ -337,6 +385,9 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
 
     return {
         "dims": {"models": models, "cells": cells, "gcms": rcp_gcms, "batches": batches},
+        # Aggregation scenarios: the main one counts for progress; the others
+        # were found in the same folders and can be picked on the page.
+        "agg_scenarios": {"main": main_scen, "others": sorted(scenarios_seen)} if main_scen else None,
         # Folder of each sub-model, down to the batch or rcp folders.
         "model_dirs": {m: model_dir_for(sector, rt_name, rt_cfg, m) for m in models},
         "counts": counts,
@@ -380,20 +431,20 @@ def projection_eta(left, recent, running, ut):
     if running and ut:
         pace = running / ut["low_h"]
         return {"hours": round(left / pace, 1), "method": "writing",
-                "basis": f"{left} projection units left; {running} being written now at "
+                "basis": f"{left:,} projection units left; {running:,} being written now at "
                          f"{ut['low_h']:.1f} h per unit ({ut['basis']}), so {pace:.1f} units per hour"}
     if recent >= MIN_RECENT_UNITS:
         pace = recent / PACE_WINDOW_HOURS
         return {"hours": round(left / pace, 1), "method": "recent",
-                "basis": f"{left} projection units left; {recent} finished in the last "
+                "basis": f"{left:,} projection units left; {recent:,} finished in the last "
                          f"{PACE_WINDOW_HOURS} h, so {pace:.1f} units per hour"}
     return {"hours": None, "method": None,
-            "basis": f"{left} projection units left; not enough data yet "
-                     f"({recent} finished in the last {PACE_WINDOW_HOURS} h, no time per unit known)"}
+            "basis": f"{left:,} projection units left; not enough data yet "
+                     f"({recent:,} finished in the last {PACE_WINDOW_HOURS} h, no time per unit known)"}
 
 
 def plural(n, word):
-    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+    return f"{n:,} {word}" if n == 1 else f"{n:,} {word}s"
 
 
 def estimate_sus(remaining, ut, sector, rt_name):
@@ -417,7 +468,7 @@ def estimate_sus(remaining, ut, sector, rt_name):
         return {"remaining": remaining, "hours_low": round(ut["low_h"], 2), "hours_high": round(ut["high_h"], 2),
                 "su_low": round(remaining * lo), "su_high": round(remaining * hi),
                 "source": ut["source"],
-                "basis": f"{plural(remaining, 'unit')} left x {per} per unit ({ut['basis']})"}
+                "basis": f"{plural(remaining, 'unit')} left × {per} per unit ({ut['basis']})"}
     low_h = ref.get("hours_per_unit")
     if low_h is None:
         return {"remaining": remaining, "su_low": None, "su_high": None,
@@ -428,7 +479,7 @@ def estimate_sus(remaining, ut, sector, rt_name):
     return {"remaining": remaining, "hours_low": round(low_h, 2), "hours_high": round(high_h, 2),
             "su_low": round(remaining * low_h * billing), "su_high": round(remaining * high_h * billing),
             "source": "reference",
-            "basis": (f"{plural(remaining, 'unit')} left x {low_h:g} h (reference) to {high_h:g} h ({what}), "
+            "basis": (f"{plural(remaining, 'unit')} left × {low_h:g} h (reference) to {high_h:g} h ({what}), "
                       f"{billing:g} SU per hour")}
 
 
@@ -699,29 +750,34 @@ FAILED_STATES = ("FAILED", "TIMEOUT", "OUT_OF_MEMORY", "NODE_FAIL")
 def completed_task_counts(account, bases):
     """Tasks that finished well and tasks that failed, per job id.
 
-    Returns ({job id: done}, {job id: failed}). Failed means failed, timeout,
-    out of memory or node failure; cancelled tasks are in neither.
+    Returns ({job id: done}, {job id: failed}, {job id: start of the first
+    task, Unix time}). Failed means failed, timeout, out of memory or node
+    failure; cancelled tasks are in neither.
     """
     done, failed = {}, {}
     if not bases:
-        return done, failed
+        return done, failed, {}
+    started = {}
     out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account,
-                   "-j", ",".join(sorted(bases)), "--format=JobID,State"])
+                   "-j", ",".join(sorted(bases)), "--format=JobID,State,Start"])
     for line in (out or "").splitlines():
         parts = line.strip().split("|")
-        if len(parts) != 2 or not parts[1].split():
+        if len(parts) != 3 or not parts[1].split():
             continue
         state, base = parts[1].split()[0], parts[0].split("_")[0]
         if state == "COMPLETED":
             done[base] = done.get(base, 0) + 1
         elif state in FAILED_STATES:
             failed[base] = failed.get(base, 0) + 1
-    return done, failed
+        t = sacct_time(parts[2])
+        if t is not None:
+            started[base] = min(started.get(base, t), t)
+    return done, failed, started
 
 
 def active_jobs_by_user(account, rows):
     """Running and queued jobs per cluster user, one row per job or array."""
-    done, failed = completed_task_counts(account, {r["base"] for r in rows})
+    done, failed, started = completed_task_counts(account, {r["base"] for r in rows})
     jobs = {}
     for row in rows:
         if row["state"] not in ("RUNNING", "COMPLETING", "PENDING"):
@@ -730,10 +786,14 @@ def active_jobs_by_user(account, rows):
             "job_name": row["name"], "partitions": [], "running": 0, "queued": 0,
             "elapsed_s": 0, "done": done.get(row["base"], 0), "failed": failed.get(row["base"], 0),
             "limit_s": row["limit_s"], "left_s": None,
-            "cpus": row["cpus"], "mem": row["mem"],
+            "cpus": row["cpus"], "mem": row["mem"], "on": {},
         })
-        if row["partition"] not in job["partitions"]:
-            job["partitions"].append(row["partition"])
+        # A pending task lists every partition it may use; a running one, the one it runs on.
+        for part in row["partition"].split(","):
+            if part not in job["partitions"]:
+                job["partitions"].append(part)
+        if row["state"] != "PENDING":
+            job["on"][row["partition"]] = job["on"].get(row["partition"], 0) + 1
         if row["state"] == "PENDING":
             job["queued"] += 1
         else:
@@ -751,6 +811,8 @@ def active_jobs_by_user(account, rows):
             "job_id": base,
             "job_name": job["job_name"],
             "partition": ",".join(job["partitions"]),
+            "running_on": dict(sorted(job["on"].items(), key=lambda x: -x[1])),   # running tasks per partition
+            "started": iso_utc(started[base]) if job["running"] and base in started else None,
             "state": "RUNNING" if job["running"] else "PENDING",
             "tasks": {"running": job["running"], "queued": job["queued"], "done": job["done"],
                       "failed": job["failed"]},
@@ -804,8 +866,12 @@ def ended_badly(account, days, limit=25):
         g["tasks"] += 1
         g["elapsed_min"] = max(g["elapsed_min"], round(elapsed_s / 60.0, 1))
         g["end"] = max(g["end"], end)
-    rows = sorted(groups.values(), key=lambda g: g["end"], reverse=True)
-    return rows[:limit]
+    rows = sorted(groups.values(), key=lambda g: g["end"], reverse=True)[:limit]
+    # sacct gives local cluster time; the page gets UTC.
+    for g in rows:
+        t = sacct_time(g["end"])
+        g["end"] = iso_utc(t) if t is not None else None
+    return rows
 
 
 def tres_value(tres, key):
@@ -814,126 +880,42 @@ def tres_value(tres, key):
     return float(m.group(1)) if m else None
 
 
-def usage_by_user(account, since, live):
-    """Compute used and core hours on the account since the start date, per user and partition.
-
-    Compute used = ElapsedRaw / 3600 x billing, with billing read from each
-    job's AllocTRES, on every partition, including the time so far of jobs
-    still running. Core hours = elapsed hours x allocated CPUs. Jobs without
-    a billing value are flagged, with their elapsed hours, instead of
-    guessed.
-
-    Only jobs that finished (they have an end time) or that squeue shows
-    right now count. sacct sometimes keeps a job as RUNNING or PENDING long
-    after it ended, when its record was never closed; those stale records
-    are not counted and are returned apart.
-    --truncate clips jobs that started earlier to the start date.
-    Returns ({user: {"su": {}, "core_hours": {}, "flagged": {}}}, stale),
-    or (None, None) if sacct failed.
-    """
-    out = run_cmd(["sacct", "-a", "-X", "-n", "-P", "-A", account,
-                   "--starttime", since, "--endtime", "now", "--truncate",
-                   "--format=JobID,User,Partition,ElapsedRaw,AllocTRES,State,End"])
-    if out is None:
-        return None, None
-    live_ids = {r["id"] for r in live or []}
-    live_bases = {r["base"] for r in live or []}
-
-    def in_squeue(job):
-        if job in live_ids:
-            return True
-        base = job.split("_")[0]
-        return base in live_bases and ("_" not in job or "[" in job)
-
-    totals, stale = {}, []
-    for line in out.splitlines():
-        parts = line.strip().split("|")
-        if len(parts) != 7 or not parts[1]:
+def usage_table(text, first):
+    """Read an rcchelp usage table by its header: the line starting with
+    <first> and Usage, then one line per name (name, then SUs), then
+    "Total Usage ...: <total>". Returns {"total": SU, "by": {name: SU}}, or
+    None if no table was found."""
+    rows, total, in_table, seen = {}, None, False, False
+    for line in (text or "").splitlines():
+        cells = line.split()
+        if not cells:
             continue
-        job, user, partition, elapsed, tres, state, end = parts
-        state = state.split()[0] if state else ""
-        open_record = state in ("RUNNING", "PENDING", "REQUEUED", "SUSPENDED") or end in ("", "Unknown", "None")
-        if open_record and live is not None and not in_squeue(job):
+        if cells[:2] == [first, "Usage"]:
+            in_table = seen = True
+            continue
+        m = re.match(r"^\s*Total Usage\b.*:\s*([\d,.]+)\s*$", line)
+        if m:
+            total = float(m.group(1).replace(",", ""))
+            in_table = False
+            continue
+        if not in_table or set(line.strip()) <= set("- "):
+            continue
+        if len(cells) == 2:
             try:
-                stale_h = round(int(elapsed) / 3600.0, 1)
+                rows[cells[0]] = rows.get(cells[0], 0.0) + float(cells[1].replace(",", ""))
             except ValueError:
-                stale_h = None
-            stale.append({"job_id": job, "user": user, "state": state,
-                          "partition": partition.split(",")[0], "hours": stale_h})
-            continue
-        try:
-            hours = int(elapsed) / 3600.0
-        except ValueError:
-            continue
-        if hours <= 0:
-            continue
-        # A job that could run on several partitions lists them all; it ran on the first.
-        partition = partition.split(",")[0] or "unknown"
-        per = totals.setdefault(user, {"su": {}, "core_hours": {}, "flagged": {}})
-        cpus = tres_value(tres, "cpu")
-        billing = tres_value(tres, "billing")
-        if billing is None:
-            reason = "no billing value"
-        else:
-            per["su"][partition] = per["su"].get(partition, 0.0) + hours * billing
-            if cpus:
-                per["core_hours"][partition] = per["core_hours"].get(partition, 0.0) + hours * cpus
-            continue
-        f = per["flagged"].setdefault(partition, {"jobs": 0, "hours": 0.0, "reason": reason})
-        f["jobs"] += 1
-        f["hours"] += hours
-    return totals, stale
-
-
-def usage_summary(entry):
-    """Rounded totals and per-partition values for one user, largest first."""
-    def by_part(d):
-        return {p: round(v, 2) for p, v in sorted(d.items(), key=lambda x: -x[1]) if v >= 0.005}
-    flagged = {p: {**f, "hours": round(f["hours"], 2)} for p, f in entry["flagged"].items()}
-    return {
-        "compute_used": round(sum(entry["su"].values()), 2),
-        "compute_by_partition": by_part(entry["su"]),
-        "core_hours": round(sum(entry["core_hours"].values()), 2),
-        "core_hours_by_partition": by_part(entry["core_hours"]),
-        "su_flagged": flagged,
-    }
-
-
-def sreport_usage(account, since):
-    """Use per user since the start date, counted the way RCC counts it.
-
-    sreport cluster AccountUtilizationByUser, in hours, matches the usage in
-    rcchelp balance (RCC updates about a day later): every partition, and
-    the time so far of jobs still running. Returns {"total": hours,
-    "by_user": {user: hours}}, or None if sreport failed.
-    """
-    out = run_cmd(["sreport", "-P", "cluster", "AccountUtilizationByUser", f"account={account}",
-                   f"start={since}", "end=now", "-t", "hours"])
-    if out is None:
+                continue
+    if not seen:
         return None
-    header, total, by_user = None, None, {}
-    for line in out.splitlines():
-        parts = [p.strip() for p in line.split("|")]
-        if header is None:
-            if "Login" in parts and "Used" in parts:
-                header = parts
-            continue
-        if len(parts) != len(header):
-            continue
-        row = dict(zip(header, parts))
-        if row.get("Account") != account:
-            continue
-        try:
-            used = float(row["Used"])
-        except ValueError:
-            continue
-        if row["Login"]:
-            by_user[row["Login"]] = by_user.get(row["Login"], 0.0) + used
-        else:
-            total = used
-    if header is None:
-        return None
-    return {"total": total if total is not None else sum(by_user.values()), "by_user": by_user}
+    return {"total": total if total is not None else sum(rows.values()), "by": rows}
+
+
+def billed_usage(account):
+    """Use billed by RCC: per user (rcchelp usage -byuser) and per partition
+    (rcchelp usage -bypartition), each read on its own. Either part is None
+    when it could not be read. RCC gives no use per user and partition."""
+    return {"by_user": usage_table(run_rcchelp(["usage", "-a", account, "-byuser"]), "User"),
+            "by_partition": usage_table(run_rcchelp(["usage", "-a", account, "-bypartition"]), "Partition")}
 
 
 def account_balance(account):
@@ -1021,8 +1003,6 @@ def main():
     with open(os.path.join(HERE, "manifest.yml")) as f:
         manifest = yaml.safe_load(f)
     account = manifest["account"]["name"]
-    since = manifest["account"]["su_since"]
-    compute_partitions = manifest["account"]["compute_partitions"]
     bad_days = manifest["account"].get("ended_badly_days", 3)
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -1051,16 +1031,15 @@ def main():
         }
 
     use_slurm = not args.no_slurm and shutil.which("sacct") and shutil.which("squeue")
-    rows, su, jobs, storage, stale, bad, report = None, None, None, None, None, None, None
+    rows, jobs, storage, bad, billed = None, None, None, None, None
     balance = {"allocation_status": "unknown",
                "allocation_su": None, "used_su": None, "balance_su": None}
     if use_slurm:
         rows = live_tasks(account)
-        su, stale = usage_by_user(account, since, rows)
-        report = sreport_usage(account, since) if shutil.which("sreport") else None
         jobs = active_jobs_by_user(account, rows) if rows is not None else None
         bad = ended_badly(account, bad_days)
         balance = account_balance(account)
+        billed = billed_usage(account)
         storage = storage_quotas(account)
     else:
         log("slurm tools not used; resources and jobs will show n/a")
@@ -1074,40 +1053,28 @@ def main():
             all_tasks = run_tasks(account, min(starts))
     finish_estimates(manifest, sectors_out, all_tasks)
 
-    # Every user with jobs or usage on the account, by cluster username.
+    # Every user with jobs or billed use on the account, by cluster username;
+    # the list gives each user a stable color on the page.
     users = None
-    if su is not None or jobs is not None:
-        users = []
+    if jobs is not None or billed is not None:
         always = manifest["account"].get("always_show_users", [])
-        reported = (report or {}).get("by_user", {})
-        for user in sorted(set(su or {}) | set(jobs or {}) | set(always) | set(reported)):
-            entry = (su or {}).get(user, {"su": {}, "core_hours": {}, "flagged": {}})
-            row = {"user": user, **usage_summary(entry)} if su is not None else \
-                {"user": user, "compute_used": None, "compute_by_partition": None,
-                 "core_hours": None, "core_hours_by_partition": None, "su_flagged": None}
-            # Service units the way RCC counts them (sreport); None if sreport failed.
-            row["su_estimate"] = round(reported.get(user, 0.0), 2) if report is not None else None
-            row["active_jobs"] = jobs.get(user, []) if jobs is not None else None
-            users.append(row)
-        users = [r for r in users if r["compute_used"] or r["su_estimate"] or r["su_flagged"] or r["active_jobs"]
-                 or r["user"] in always]
-        users.sort(key=lambda r: (-(r["compute_used"] or 0), -(r["core_hours"] or 0), r["user"]))
-        log(f"slurm shows {len(users)} user(s) on the account")
-    # Estimated from sacct; RCC's own figure (rcchelp) is the official one.
-    compute_total = None if su is None else round(sum(r["compute_used"] for r in users), 2)
-    su_estimate_total = None if report is None else round(report["total"], 2)
+        billed_users = set(((billed or {}).get("by_user") or {}).get("by", {}))
+        users = [{"user": u, "active_jobs": (jobs or {}).get(u, []) if jobs is not None else None}
+                 for u in sorted(set(jobs or {}) | set(always) | billed_users)]
+        log(f"slurm and rcchelp show {len(users)} user(s) on the account")
 
     status = {
-        "schema_version": 5,
+        "schema_version": 8,
         "source": "collector",
         "generated_at": now_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 1,
-        "account": {"name": account, **balance, "su_since": since, "storage": storage,
-                    "compute_total": compute_total,
-                    "su_estimate_total": su_estimate_total,   # sreport, the way RCC counts
-                    "su_stale_records": stale,
-                    "highlight_user": manifest["account"].get("highlight_user"),
-                    "compute_partitions": compute_partitions},
+        "account": {"name": account, **balance, "storage": storage,
+                    # Billed by RCC (rcchelp usage); each part null when it could not be read.
+                    "billed": None if billed is None else {k: None if t is None else {
+                        "total": round(t["total"], 2),
+                        "by": {n: round(v, 2) for n, v in sorted(t["by"].items(), key=lambda x: -x[1])}}
+                        for k, t in billed.items()},
+                    "highlight_user": manifest["account"].get("highlight_user")},
         "users": users,
         "ended_badly": bad,
         "ended_badly_days": bad_days,

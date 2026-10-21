@@ -56,24 +56,6 @@ MOCK_JOB_NAMES = [
 
 
 
-def mock_usage(rng, scale):
-    """Compute used and core hours on the compute partitions, and a few flagged jobs."""
-    core, su = {}, {}
-    for p, share in zip(["cil", "amd", "caslake", "amd-hm"], [0.4, 0.3, 0.22, 0.08]):
-        if rng.random() < 0.8 or p == "cil":
-            core[p] = round(scale * share * rng.uniform(0.4, 1.6), 2)
-            su[p] = round(core[p] * rng.uniform(0.6, 1.0), 2)
-    flagged = {}
-    if rng.random() < 0.3:
-        flagged["bigmem"] = {"jobs": rng.randint(1, 6), "hours": round(rng.uniform(5, 300), 2),
-                             "reason": "bigmem partition"}
-    order = lambda d: {k: v for k, v in sorted(d.items(), key=lambda x: -x[1]) if v > 0}
-    return {"compute_used": round(sum(su.values()), 2), "compute_by_partition": order(su),
-            "su_estimate": round(sum(su.values()) * rng.uniform(0.97, 1.03), 2),
-            "core_hours": round(sum(core.values()), 2), "core_hours_by_partition": order(core),
-            "su_flagged": flagged}
-
-
 def mock_ended_badly(rng, users, now):
     """A few jobs that ended badly in the last days, newest first."""
     ends = ["timeout", "out of memory", "failed", "cancelled"]
@@ -84,7 +66,7 @@ def mock_ended_badly(rng, users, now):
         rows.append({"job_id": str(rng.randint(59_900_000, 60_100_000)), "job_name": name,
                      "user": rng.choice(users), "partition": partition, "ended": rng.choice(ends),
                      "tasks": rng.randint(1, min(size, 12)), "elapsed_min": round(rng.uniform(1, 2160), 1),
-                     "end": end.strftime("%Y-%m-%dT%H:%M:%S")})
+                     "end": end.strftime("%Y-%m-%dT%H:%M:%SZ")})
     rows.sort(key=lambda r: r["end"], reverse=True)
     return rows
 
@@ -108,10 +90,10 @@ def mock_su_estimate(counts, stages, sector, rt_name):
     return {"remaining": remaining, "hours_low": low, "hours_high": high,
             "su_low": round(remaining * low * billing), "su_high": round(remaining * high * billing),
             "source": "reference",
-            "basis": f"{remaining} units left x {low:g} h (reference) to {high:g} h ({what}), {billing:g} SU per hour"}
+            "basis": f"{remaining:,} units left × {low:g} h (reference) to {high:g} h ({what}), {billing:g} SU per hour"}
 
 
-def mock_active_jobs(rng):
+def mock_active_jobs(rng, now):
     """Zero to three running or queued jobs for one person."""
     jobs = []
     for name, partition, size in rng.sample(MOCK_JOB_NAMES, rng.randint(0, 3)):
@@ -122,7 +104,10 @@ def mock_active_jobs(rng):
         jobs.append({
             "job_id": str(rng.randint(59_900_000, 60_100_000)),
             "job_name": name,
-            "partition": partition,
+            "partition": partition + (",amd" if partition == "caslake" and rng.random() < 0.4 else ""),
+            "running_on": ({partition: running} if partition != "caslake" or running < 4 else
+                           {partition: running - (k := rng.randint(1, running // 3)), "amd": k}),
+            "started": (now - datetime.timedelta(minutes=elapsed + rng.uniform(0, 600))).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "state": "RUNNING",
             "tasks": {"running": running, "queued": queued,
                       "done": rng.randint(0, max(size - running - queued, 0)),
@@ -136,7 +121,7 @@ def mock_active_jobs(rng):
         name, partition, size = rng.choice(MOCK_JOB_NAMES)
         queued = rng.randint(1, size)
         jobs.append({"job_id": str(rng.randint(59_900_000, 60_100_000)),
-                     "job_name": name, "partition": partition, "state": "PENDING",
+                     "job_name": name, "partition": partition, "running_on": {}, "started": None, "state": "PENDING",
                      "tasks": {"running": 0, "queued": queued, "done": 0, "failed": 0},
                      "elapsed_min": 0.0, "cpus": 1, "mem": "45G", "limit_min": 36 * 60.0, "left_min": None})
     jobs.sort(key=lambda j: (j["state"] != "RUNNING", -j["elapsed_min"]))
@@ -295,11 +280,11 @@ def eta_for(counts, stages, rng):
         return {"hours": 0, "method": None, "basis": "all projections done"}, agg
     if counts["running"] == 0:
         return {"hours": None, "method": None,
-                "basis": f"{left} projection units left; not enough data yet"}, agg
+                "basis": f"{left:,} projection units left; not enough data yet"}, agg
     per_unit = round(rng.uniform(2, 24), 1)
     pace = counts["running"] / per_unit
     return {"hours": round(left / pace, 1), "method": "writing",
-            "basis": f"{left} projection units left; {counts['running']} being written now at "
+            "basis": f"{left:,} projection units left; {counts['running']:,} being written now at "
                      f"{per_unit} h per unit (sacct), so {pace:.1f} units per hour"}, agg
 
 
@@ -333,6 +318,11 @@ def main():
             counts = {s: 0 for s in ["not_started", "running", "partial", "done", "failed"]}
             listed = []
             details = {}
+            # Sectors with a main aggregation scenario also get one additional
+            # scenario on some finished units, as the collector would find it.
+            main_scen = sector.get("aggregation_scenario")
+            alt_scen = "MERGEETL60_{rcp}" if main_scen else None
+            seen_alt = False
             for i, unit in enumerate(all_units):
                 state = pick_state(i, len(all_units), fractions, rng)
                 counts[state] += 1
@@ -341,9 +331,32 @@ def main():
                     made["files"], made["bits"], detail = files_for_unit(
                         files_spec[made["model"]], made["stages"], sector["stages"], rng, now)
                     listed.append(made)
+                    key = "|".join([made["ssp"], made["rcp"], made["iam"], made["gcm"]])
                     if "1" in made["bits"]:
-                        key = "|".join([made["ssp"], made["rcp"], made["iam"], made["gcm"]])
                         details.setdefault((made["model"], made["batch"]), {})[key] = detail
+                    spec_m = files_spec[made["model"]]
+                    n_proj = len(spec_m["projection"])
+                    n_agg = len(made["bits"]) - n_proj
+                    if alt_scen and n_agg and made["bits"][:n_proj] == "1" * n_proj and rng.random() < 0.6:
+                        # Half of these have both scenarios complete; the rest a
+                        # partial set of the additional one.
+                        both = rng.random() < 0.5
+                        k = n_agg if both else rng.randint(1, n_agg - 1)
+                        if both:
+                            made["bits"] = "1" * len(made["bits"])
+                            made["files"] = {g: {"found": f["total"], "total": f["total"]} for g, f in made["files"].items()}
+                            made["state"] = "done"
+                            for st in made["stages"].values():
+                                st["state"] = "done"
+                            rec = details.setdefault((made["model"], made["batch"]), {}).setdefault(key, detail)
+                            for j in range(n_proj, len(rec)):
+                                if not rec[j]:
+                                    rec[j] = [int(rng.uniform(3, 25) * 1e6), int(now.timestamp()) - rng.randint(0, 86400)]
+                        made["alt_bits"] = {alt_scen: "1" * k + "0" * (n_agg - k)}
+                        details.setdefault((made["model"], made["batch"]), {})[f"{alt_scen}#{key}"] = \
+                            [[int(rng.uniform(3, 25) * 1e6), int(now.timestamp()) - rng.randint(0, 86400)] if j < k else 0
+                             for j in range(n_agg)]
+                        seen_alt = True
             counts["total"] = len(all_units)
 
             eta, agg = eta_for(counts, sector["stages"], rng)
@@ -355,6 +368,7 @@ def main():
                     "batches": batches,
                 },
                 "model_dirs": {m: model_dir_for(sector, run_type, rt_cfg, m) for m in sector["models"]},
+                "agg_scenarios": {"main": main_scen, "others": [alt_scen] if seen_alt else []} if main_scen else None,
                 "counts": counts,
                 "eta_hours": eta["hours"],
                 "eta_method": eta["method"],
@@ -384,20 +398,18 @@ def main():
     users = []
     acct = manifest["account"]
     for i in range(1, 10):
-        users.append({"user": f"user{i:02d}", **mock_usage(rng, 40_000 * rng.uniform(0.1, 2.0)),
-                      "active_jobs": mock_active_jobs(rng)})
+        users.append({"user": f"user{i:02d}", "active_jobs": mock_active_jobs(rng, now)})
     if acct.get("highlight_user"):
-        users.append({"user": acct["highlight_user"], **mock_usage(rng, 30_000),
-                      "active_jobs": mock_active_jobs(rng)})
+        users.append({"user": acct["highlight_user"], "active_jobs": mock_active_jobs(rng, now)})
     for name in acct.get("always_show_users", []):
-        users.append({"user": name, "compute_used": 0, "compute_by_partition": {}, "su_estimate": 0,
-                      "core_hours": 0, "core_hours_by_partition": {}, "su_flagged": {}, "active_jobs": []})
-    users.sort(key=lambda r: -r["compute_used"])
+        users.append({"user": name, "active_jobs": []})
+    users.sort(key=lambda r: r["user"])
 
-    total_su = round(sum(u["su_estimate"] for u in users), 2)
+    billed_users = {u["user"]: round(rng.uniform(2_000, 30_000), 2) for u in users[:4]}
+    total_su = round(sum(billed_users.values()), 2)
     allocation = 1_200_000
     status = {
-        "schema_version": 5,
+        "schema_version": 8,
         "source": "mock",
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "scan_interval_hours": 1,
@@ -405,24 +417,20 @@ def main():
             "name": manifest["account"]["name"],
             "allocation_status": "ok",
             "allocation_su": allocation,
-            "used_su": round(total_su * 0.92),
-            "balance_su": allocation - round(total_su * 0.92),
-            "su_since": manifest["account"]["su_since"],
-            "compute_total": round(sum(u["compute_used"] for u in users), 2),
-            "su_estimate_total": total_su,
-            "su_stale_records": [
-                {"job_id": "53282084_1", "user": "user03", "state": "RUNNING", "partition": "caslake", "hours": 1580.2},
-                {"job_id": "50096159", "user": "user05", "state": "RUNNING", "partition": "amd", "hours": 1610.7},
-            ],
+            "used_su": round(total_su),
+            "balance_su": allocation - round(total_su),
+            "billed": {
+                "by_user": {"total": total_su, "by": dict(sorted(billed_users.items(), key=lambda x: -x[1]))},
+                "by_partition": {"total": total_su, "by": {"caslake": round(total_su * 0.8, 2), "amd": round(total_su * 0.2, 2)}},
+            },
             "highlight_user": manifest["account"].get("highlight_user"),
-            "compute_partitions": acct["compute_partitions"],
             "storage": [
                 {"label": "cil /project", "used": "412.6T", "quota": "500.0T", "used_pct": 82.5},
                 {"label": "cil /cds3", "used": "61.2T", "quota": "125.0T", "used_pct": 49.0},
             ],
         },
         "users": users,
-        "ended_badly": mock_ended_badly(rng, [u["user"] for u in users if u["compute_used"]], now),
+        "ended_badly": mock_ended_badly(rng, [u["user"] for u in users if u["active_jobs"]], now),
         "ended_badly_days": manifest["account"].get("ended_badly_days", 3),
         "sectors": sectors_out,
     }
