@@ -44,6 +44,8 @@ const params = new URLSearchParams(location.search);
 // the page reads it from there; the copy deployed with the site is the fallback.
 const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeconomics/monitor-data/data/";
 let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
+// Prototype: a tree on the left instead of the tabs, with ?nav=tree.
+const TREE = params.get("nav") === "tree";
 
 let DATA = null;
 const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], selected: null, aggScen: null };
@@ -298,10 +300,16 @@ function renderAll() {
   document.body.classList.toggle("no-sector", !view.sector);
   if (DATA) renderCamel();
   renderTabs();
-  const needModel = !!view.sector && gridKind(runType()) === "gcms" && runType().dims.models.length > 1 && !view.model;
-  document.body.classList.toggle("no-model", needModel);
-  $("pick-note").textContent = !view.sector ? "Select a sector and a run type (single, median or montecarlo) to see progress." : "Pick a sub-model to see its grid.";
-  if (!view.sector) return;
+  if (TREE) renderTree();
+  const noRun = !!view.sector && !view.runType;
+  const needModel = !!view.sector && !noRun && gridKind(runType()) === "gcms" && runType().dims.models.length > 1 && !view.model;
+  document.body.classList.toggle("no-run", noRun);
+  document.body.classList.toggle("no-model", needModel || noRun);
+  $("pick-note").textContent = TREE
+    ? (!view.sector ? "Pick a sector in the list to see its progress."
+      : noRun ? "Pick a run type in the list to see its grid." : "Pick a sub-model in the list to see its grid.")
+    : (!view.sector ? "Select a sector and a run type (single, median or montecarlo) to see progress." : "Pick a sub-model to see its grid.");
+  if (!view.sector || noRun) return;
   renderCards();
   if (needModel) return;
   renderSspTabs();
@@ -331,6 +339,162 @@ function renderAggTabs() {
   el.innerHTML = `<span class="lbl">Aggregation:</span> ` + [main,
     ...sc.others.map((o) => `<button class="agg-opt${cur === o ? " active" : ""}" data-scen="${esc(o)}">${esc(scenLabel(o, rt))}</button>`),
   ].join(`<span class="agg-sep">|</span>`);
+}
+
+/* ---------- tree navigation (prototype, ?nav=tree) ---------- */
+
+const RUN_TYPE_ORDER = ["single", "median", "montecarlo"];
+
+// "P 18% · A 13%" for a set of files.
+function paShort(f) {
+  const bits = [];
+  if (f.projExp) bits.push(`P ${fmtPctShort(pctOf(f.proj, f.projExp))}`);
+  if (f.aggExp) bits.push(`A ${fmtPctShort(pctOf(f.agg, f.aggExp))}`);
+  return bits.join(" · ");
+}
+
+// Moves the cards, SSP row and grid into a right-hand column, with the tree
+// on the left. On phones the tree folds into a menu at the top.
+function buildTreeLayout() {
+  document.body.classList.add("nav-tree");
+  const layout = document.createElement("div");
+  layout.className = "tree-layout";
+  layout.innerHTML = `<div class="tree-side" id="tree-side"><details class="tree-menu" id="tree-menu" open>
+    <summary id="tree-summary">Menu</summary><nav class="tree" id="tree" aria-label="Sectors and runs"></nav></details></div>
+    <div class="tree-main" id="tree-main"><div class="tree-path" id="tree-path"></div></div>`;
+  const cards = $("cards");
+  cards.parentNode.insertBefore(layout, cards);
+  const main = $("tree-main");
+  let el = layout.nextSibling;
+  while (el && el.id !== "global-tip") {
+    const next = el.nextSibling;
+    main.appendChild(el);
+    el = next;
+  }
+  // The "pick a sector" note and the P and A key sit right below the list.
+  $("tree-side").appendChild($("pick-note"));
+  const key = document.createElement("div");
+  key.className = "tree-key";
+  key.innerHTML = "<b>P</b> projection files present, <b>A</b> aggregation files present, out of expected.";
+  $("tree-side").appendChild(key);
+  if (matchMedia("(max-width: 600px)").matches) $("tree-menu").open = false;
+  $("tree").addEventListener("click", (e) => {
+    const b = e.target.closest(".tnode[data-act]");
+    if (!b || b.disabled) return;
+    treePick(b.dataset.act, b.dataset.key);
+    if (matchMedia("(max-width: 600px)").matches && b.dataset.leaf === "1") $("tree-menu").open = false;
+  });
+}
+
+function treePick(act, key) {
+  closeDetail();
+  if (act === "sector") {
+    view.modelOff = false;
+    if (key === view.sector) {
+      view.sector = view.runType = view.model = null;
+      view.ssps = [];
+    } else {
+      view.sector = key;
+      view.aggScen = null;
+      view.runType = defaultRunType(sector());
+      view.model = null;
+      view.ssps = defaultSsps(runType());
+    }
+  } else if (act === "run") {
+    view.aggScen = null;
+    view.model = null;
+    view.modelOff = false;
+    if (key === view.runType) {
+      view.runType = null;
+      view.ssps = [];
+    } else {
+      view.runType = key;
+      view.ssps = defaultSsps(runType());
+    }
+  } else if (act === "model") {
+    view.modelOff = key === view.model;
+    view.model = view.modelOff ? null : key;
+  } else if (act === "scen") {
+    view.aggScen = key || null;
+  }
+  renderAll();
+}
+
+function tnode(act, key, label, figure, { on = false, off = false, cls = "", style = "", leaf = false, title = "" } = {}) {
+  return `<button class="tnode ${cls}${on ? " on" : ""}${off ? " off" : ""}" ${off ? "disabled" : ""}
+    data-act="${act}" data-key="${esc(key)}" data-leaf="${leaf ? 1 : 0}" style="${style}"${title ? ` title="${esc(title)}"` : ""}>
+    <span class="tlabel">${label}</span>${figure ? `<span class="tfig">${esc(figure)}</span>` : ""}</button>`;
+}
+
+function renderTree() {
+  let html = "";
+  for (const cs of CAMEL_SECTIONS) {
+    const sec = DATA.sectors[cs.key];
+    const color = `--tc:var(--sec-${cs.key})`;
+    if (!sec) {
+      html += tnode("sector", cs.key, esc(cs.label), "not tracked (yet)", { off: true, cls: "tsector", style: color });
+      continue;
+    }
+    const open = view.sector === cs.key;
+    html += tnode("sector", cs.key, esc(sec.label), paShort(sectorFiles(sec)), { on: open, cls: "tsector", style: color });
+    if (!open) continue;
+    html += `<div class="tkids">`;
+    const names = [...new Set([...RUN_TYPE_ORDER, ...Object.keys(sec.run_types), ...(sec.disabled_run_types || [])])]
+      .filter((k) => k in sec.run_types || (sec.disabled_run_types || []).includes(k) || RUN_TYPE_ORDER.includes(k));
+    for (const k of names) {
+      const rt = sec.run_types[k];
+      const usable = rt && rt.units.length > 0;
+      const why = !rt ? ((sec.disabled_run_types || []).includes(k) ? "not part of this sector" : "not run for this sector")
+        : !usable ? "no files yet" : "";
+      const here = view.runType === k;
+      const hasModels = usable && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
+      html += tnode("run", k, esc(k), rt ? (usable ? paShort(filesOf(sec, rt)) : "no files yet") : "n/a",
+        { on: here, off: !usable, leaf: usable && !hasModels, title: why });
+      if (!here || !usable) continue;
+      html += `<div class="tkids">`;
+      if (hasModels) {
+        const perModel = rt.counts.total / rt.dims.models.length;
+        for (const m of rt.dims.models) {
+          const units = rt.units.filter((u) => u.model === m);
+          const n = paFiles(sec, units, perModel, [m], curScen());
+          html += tnode("model", m, esc(m), units.length ? paShort({ proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }) : "no files yet",
+            { on: view.model === m, off: !units.length, leaf: true, title: units.length ? "" : "no files yet" });
+        }
+      }
+      // Aggregation scenarios, as the selector shows them.
+      const sc = rt.agg_scenarios || { main: null, others: [] };
+      const anyAgg = rt.units.some((u) => u.bits.slice(specOf(sec, u.model).projection.length).includes("1")
+        || Object.values(u.alt_bits || {}).some((b) => b.includes("1")));
+      html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
+      if (!anyAgg) {
+        html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main",
+          sc.main ? "none yet" : "-", { off: true, title: "no aggregation files yet" });
+      } else {
+        const cur = curScen();
+        const aggPct = (scen) => { const f = filesOf(sec, rt, scen); return f.aggExp ? `A ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : ""; };
+        html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main", aggPct(null), { on: !cur, leaf: true });
+        for (const o of sc.others) html += tnode("scen", o, esc(scenLabel(o)), aggPct(o), { on: cur === o, leaf: true });
+      }
+      html += `</div></div>`;
+    }
+    html += `</div>`;
+  }
+  $("tree").innerHTML = html;
+
+  // The current path, at the top of the grid and on the phone menu.
+  const parts = [];
+  if (view.sector) {
+    const rt = runType(), sec = sector();
+    parts.push(sec.label);
+    if (view.runType) parts.push(view.runType);
+    if (rt && gridKind(rt) === "gcms" && rt.dims.models.length > 1 && view.model) parts.push(view.model);
+    const sc = rt && rt.agg_scenarios;
+    const cur = curScen();
+    if (cur) parts.push(scenLabel(cur));
+    else if (sc && sc.main) parts.push(sc.main);
+  }
+  $("tree-path").textContent = parts.join(" / ");
+  $("tree-summary").textContent = parts.length ? parts.join(" / ") : "Pick a sector";
 }
 
 function selector(el, items, active, onPick) {
@@ -394,7 +558,7 @@ function renderTabs() {
   });
 
   const rt = runType();
-  const showModels = gridKind(rt) === "gcms" && rt.dims.models.length > 1;
+  const showModels = !!rt && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
   $("model-sep").classList.toggle("hidden", !showModels);
   if (!showModels) { $("model-tabs").innerHTML = ""; view.model = null; return; }
   if (!view.model && !view.modelOff) view.model = rt.dims.models[0];
@@ -860,7 +1024,7 @@ function billedBar(box, title, part, segStyle, keyMark) {
   const attr = box === "users" ? "data-user" : "data-part";
   const bar = rows.map(([n, v]) => `<span class="seg ${segStyle(n).cls}" ${attr}="${esc(n)}"
       style="width:${((100 * v) / sum).toFixed(2)}%;${segStyle(n).style}" title="${esc(n)}: ${fmtN(v)} SU"></span>`).join("");
-  html += `<div class="su-bar-block"><div class="su-est-head">${title} <b>${fmtN(part.total)} SU</b></div>
+  html += `<div class="su-bar-block"><div class="su-est-head">${title}</div>
     <div class="su-bar-all">${bar}</div></div>`;
   html += `<div class="ukey ukey-left">` + (rows.length ? [...rows].sort((x, y) => x[0].localeCompare(y[0])).map(([n, v]) =>
     `<span class="ukey-item" ${attr}="${esc(n)}">${keyMark(n)}${box === "users" ? userName(n) : esc(n)}
@@ -1104,13 +1268,20 @@ function renderCamel() {
       `${s.label}: ${fmtPctShort(s.proj)} of projection files` : `${s.label}: not tracked (yet)`).join("; ") + ".";
   }
 
-  $("camel-key").innerHTML = prog.map((s) => {
-    const note = !s.tracked ? "not tracked (yet)" : progressText(s.files);
-    const on = s.tracked && sectorActive(DATA.sectors[s.key]);
-    return `<span class="ckey${on ? " on" : ""}"${on ? ` style="--ant:var(--sec-${s.key})"` : ""}` +
-      ` title="${esc(s.part)}${on ? ", active: jobs running or files written in the last day" : ""}">` +
-      `<span class="cdot sec-${s.key}"></span>${esc(s.label)} <span class="muted">${note}</span></span>`;
-  }).join("");
+  // A small table: one row per sector in camel order, its mark on the left
+  // (softly pulsing in its color while the sector is being computed, still
+  // and dim when idle), then projection and aggregation.
+  const cell = (n, exp) => exp
+    ? `<span class="ck-pct">${fmtPctShort(pctOf(n, exp))}</span> <span class="ck-n">(${fmtN(n)}/${fmtN(exp)})</span>` : "";
+  $("camel-key").innerHTML = `<table class="ck-table"><thead><tr><th></th><th>Projection</th><th>Aggregation${mainMark()}</th></tr></thead><tbody>` +
+    prog.map((s) => {
+      const on = s.tracked && sectorActive(DATA.sectors[s.key]);
+      const tip = `${s.part}${on ? ", active: jobs running or files written in the last day" : ""}`;
+      const name = `<td class="ck-name"><span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
+      const rest = !s.tracked ? `<td colspan="2" class="ck-none">not tracked (yet)</td>`
+        : `<td>${cell(s.files.proj, s.files.projExp)}</td><td>${cell(s.files.agg, s.files.aggExp)}</td>`;
+      return `<tr title="${esc(tip)}">${name}${rest}</tr>`;
+    }).join("") + `</tbody></table>`;
 }
 
 /* ---------- interactions and boot ---------- */
@@ -1303,6 +1474,7 @@ async function boot() {
   view.sector = null;
   view.runType = null;
   view.ssps = [];
+  if (TREE) buildTreeLayout();
   setup();
   renderCamel();
   loadCamel();

@@ -129,15 +129,7 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .camel svg.solid-labor .cell[data-sector="labor"][data-filled="true"] { stroke: var(--sector-color); }
 .camel svg.tex-labor .cell[data-sector="labor"][data-filled="true"] { fill: url(#camel-tex-labor); stroke: var(--sector-color); }
 @keyframes camelpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
-.camel-key { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; font-size: 10px; color: var(--tx2); }
-.ckey { display: inline-flex; align-items: center; gap: 4px; }
-.ckey .muted { color: var(--tx3); }
-.cdot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-.cdot.sec-mortality { background: var(--sec-mortality); }
-.cdot.sec-coastal { background: var(--sec-coastal); }
-.cdot.sec-agriculture { background: var(--sec-agriculture); }
-.cdot.sec-energy { background: var(--sec-energy); }
-.cdot.sec-labor { background: var(--sec-labor); }
+.camel-key { margin-top: 5px; font-size: 10px; color: var(--tx2); }
 
 .stale { background: var(--amber-bg); color: var(--amber-tx); border-radius: 6px; padding: 4px 10px;
   font-size: 11px; margin-bottom: 8px; }
@@ -341,24 +333,9 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .sec-spin.on i:nth-child(9) { animation-delay: 0.8s; }
 @keyframes sec-spin { 0%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
 
-/* Sector key badges: a dotted border drawn with dashes on each edge. For
-   active sectors it is in the sector color and the dots travel slowly
-   around the badge; otherwise it is still and dim grey. */
-.camel-key .ckey { --ant: color-mix(in srgb, var(--tx3) 55%, transparent);
-  padding: 1px 7px 1px 6px; border-radius: 2px;
-  background-image:
-    linear-gradient(90deg, var(--ant) 50%, transparent 50%),
-    linear-gradient(90deg, var(--ant) 50%, transparent 50%),
-    linear-gradient(0deg, var(--ant) 50%, transparent 50%),
-    linear-gradient(0deg, var(--ant) 50%, transparent 50%);
-  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y;
-  background-size: 4px 1px, 4px 1px, 1px 4px, 1px 4px;
-  background-position: 0 0, 0 100%, 0 0, 100% 0; }
-.camel-key .ckey.on { animation: ckey-ants 2.4s linear infinite; }
-@keyframes ckey-ants { to { background-position: 4px 0, -4px 100%, 0 -4px, 100% 4px; } }
 @media (prefers-reduced-motion: reduce) {
   .sec-spin.on i { animation: none; opacity: 0.8; }
-  .camel-key .ckey.on { animation: none; }
+  .ck-mark.on { animation: none; opacity: 1; }
 }
 .pa-info { margin: -4px 0 8px; }
 #pa-info-btn { margin-left: 0; }
@@ -493,7 +470,6 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .grp-header > span { min-width: 0; }
 /* Row labels stay in view when a wide grid scrolls sideways. */
 .grid-table th.model-th, .grid-table td.model-cell { position: sticky; left: 0; z-index: 1; background: var(--bg); }
-.ckey { white-space: nowrap; }
 @media (max-width: 600px) {
   body { padding: 10px; }
   .head { gap: 6px 10px; align-items: flex-start; flex-wrap: wrap; }
@@ -630,3 +606,71 @@ body.no-sector #agg-tabs, body.no-model #agg-tabs { display: none !important; }
 .agg-opt:hover:not(.active) { border-color: var(--agg-badge-on-line); color: var(--tx); }
 .agg-opt:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .agg-sep { display: none; }
+/* ---------- tree navigation (prototype, ?nav=tree) ---------- */
+body.nav-tree #sector-tabs, body.nav-tree #runtype-tabs, body.nav-tree #model-tabs,
+body.nav-tree #model-sep, body.nav-tree .top-bar-sep, body.nav-tree #agg-tabs { display: none !important; }
+.tree-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tree-menu > summary { display: none; }
+.tree-side { position: sticky; top: 8px; }
+.tree { display: flex; flex-direction: column; gap: 3px; }
+.tree-side .pick-note { margin: 8px 0 0; }
+.tnode { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left;
+  font: inherit; font-size: 11px; color: var(--tx2); background: none; border: 1px solid transparent; border-radius: 6px;
+  padding: 4px 8px; cursor: pointer; }
+.tnode:hover:not(.off) { background: var(--bg2); color: var(--tx); }
+.tnode.on { background: var(--bg3); color: var(--tx); font-weight: 600; border-color: var(--bd2); }
+.tnode.off { opacity: 0.45; cursor: default; }
+.tnode .tlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tnode .tlabel .muted { color: var(--tx3); font-weight: 400; }
+.tnode .tfig { flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--tx3); font-weight: 400; }
+/* Sectors: badges in their camel colors. */
+.tnode.tsector { font-size: 12px; font-weight: 600; color: var(--tx); padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--tc) 45%, transparent); border-left: 4px solid var(--tc);
+  background: color-mix(in srgb, var(--tc) 8%, var(--bg)); }
+.tnode.tsector.on { background: color-mix(in srgb, var(--tc) 22%, var(--bg)); border-color: var(--tc); }
+/* An unavailable sector keeps its camel color, only dimmed. */
+.tnode.tsector.off { opacity: 0.5; }
+.tkids { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px 10px; padding-left: 8px; border-left: 1px solid var(--bd); }
+.tgroup { font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tx3); margin: 5px 0 1px 8px; }
+.tree-path { font-size: 12px; font-weight: 600; color: var(--tx); margin: 0 0 8px; min-height: 16px; }
+@media (max-width: 900px) { .tree-layout { grid-template-columns: 200px minmax(0, 1fr); } }
+/* Phones: the tree folds into a menu at the top. */
+@media (max-width: 600px) {
+  .tree-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .tree-menu { border: 0.5px solid var(--bd2); border-radius: 8px; background: var(--bg2); }
+  .tree-menu > summary { display: block; cursor: pointer; padding: 9px 12px; font-size: 12px; font-weight: 600; list-style: none; }
+  .tree-menu > summary::-webkit-details-marker { display: none; }
+  .tree-menu > summary::before { content: "\2630  "; color: var(--tx3); }
+  .tree-menu .tree { position: static; padding: 0 8px 8px; }
+  .tree-path { display: none; }
+}
+/* Phones: sector key badges may wrap their progress text. */
+body.no-run #cards, body.no-run .tab-note { display: none !important; }
+/* Sector key: a small table under the title. */
+.ck-table { border-collapse: collapse; font-size: 10px; color: var(--tx2); }
+.ck-table th { font-weight: 500; font-size: 9px; color: var(--tx3); text-align: left; padding: 0 14px 2px 0; }
+.ck-table td { padding: 1px 14px 1px 0; white-space: nowrap; line-height: 1.35; }
+.ck-table td.ck-name { color: var(--tx); font-weight: 500; }
+.ck-table .ck-pct { font-family: var(--mono); color: var(--tx); }
+.ck-table .ck-n { font-family: var(--mono); color: var(--tx3); font-size: 9px; }
+.ck-table td.ck-none { color: var(--tx3); }
+/* The mark: still and dim when idle, softly pulsing in the sector color
+   while the sector is being computed. */
+.ck-mark { display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 6px; vertical-align: -0.5px;
+  background: var(--mk); opacity: 0.35; }
+.ck-mark.on { opacity: 1; animation: ck-pulse 2.4s ease-in-out infinite; }
+@keyframes ck-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mk) 55%, transparent); opacity: 1; }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk) 0%, transparent); opacity: 0.6; }
+}
+/* Phones: the file counts go under the percent. */
+@media (max-width: 600px) {
+  .ck-table td { padding-right: 10px; }
+  .ck-table .ck-n { display: block; }
+}
+/* Phones: long tab labels wrap instead of running off the screen. */
+@media (max-width: 600px) {
+  #sector-tabs .run-opt, #runtype-tabs .run-opt { white-space: normal; text-align: left; max-width: 100%; }
+}
+.tree-key { font-size: 10px; color: var(--tx3); margin: 8px 0 0; line-height: 1.5; }
+.tree-key b { color: var(--tx2); font-family: var(--mono); font-weight: 600; }

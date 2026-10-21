@@ -18,6 +18,14 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   for now (`CAMEL_WALK` in app.js); when on, the camel walks only while
   projection files are being written in the output folders, the same
   signal as the grid's "writing" state.
+- Next to the camel, under the title, a small table: one row per sector in
+  camel order with its color mark, and two columns, Projection and
+  Aggregation, each cell with the percent and the file counts ("100%
+  (64/64)") for the sector's main run. The mark pulses softly in the
+  sector color while the sector is being computed (jobs running or files
+  written in the last day) and is still and dim otherwise. Coastal reads
+  "not tracked (yet)" across its row. On phones the counts go under the
+  percent.
 - The CIL logo at the top right (site/cil-logo.svg), inverted and
   desaturated in dark mode, following the same light and dark switch. The tab icon is
   the kit's color favicon in the same five colors (site/camel/).
@@ -27,7 +35,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   shows the progress of its main run, projection and aggregation apart,
   each with its percent and file counts ("Projection 100% (64/64),
   Aggregation 0% (0/496)"), and the SUs needed to finish it. Run type tabs
-  and the sector key next to the camel show the same two parts; the camel
+  show the same two parts, as does the table next to the camel; the camel
   itself fills with projection progress only ("not known yet" for
   agriculture), with a one-line explanation underneath. A sector is active
   when projection files were written in its folders in the last 24 hours
@@ -91,6 +99,20 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   `-global-histclim.nc4`, `-incadapt-histclim.nc4` and
   `-noadapt-histclim.nc4`), in a grey group "Other files (not counted)"
   with sizes and dates. They never count toward the progress.
+- Tree navigation (prototype, add `?nav=tree` to the address, also with
+  `?source=mock&nav=tree`): instead of the tabs, a tree on the left lists
+  the sectors as badges in their camel colors (Coastal, Agriculture,
+  Mortality, Energy, Labor). A sector opens into its run types, a run type
+  into its sub-models (when its grid has several) and an Aggregation branch
+  with its scenarios. Options that do not apply or have no files yet are
+  shown dimmed and cannot be picked; an unavailable sector (Coastal) keeps
+  its camel color, only dimmed. Clicking a picked sector, run type or
+  sub-model again clears it and hides the grid. Each branch shows its P
+  and A figures.
+  The tree is built from the data, so each sector gets its own branches.
+  The current path shows at the top of the grid ("Energy / median /
+  electricity / price014"); on phones the tree folds into a menu at the top
+  that shows the same path. Without `?nav=tree` the page keeps its tabs.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: no tab, and it is not in any count,
