@@ -44,8 +44,6 @@ const params = new URLSearchParams(location.search);
 // the page reads it from there; the copy deployed with the site is the fallback.
 const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeconomics/monitor-data/data/";
 let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
-// Prototype: a tree on the left instead of the tabs, with ?nav=tree.
-const TREE = params.get("nav") === "tree";
 
 let DATA = null;
 const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], selected: null, aggScen: null };
@@ -221,13 +219,6 @@ function sectorActive(sec) {
     rt.last_projection_write && scan - new Date(rt.last_projection_write).getTime() < 24 * 3.6e6);
 }
 
-// A 3 by 3 grid of small squares: animated in the sector color when the
-// sector is active, still and dim grey when it is not.
-function activeMark(key, active) {
-  const tip = active ? "Projection files written in the last 24 hours" : "No projection files written in the last 24 hours";
-  return `<span class="sec-spin${active ? " on" : ""}"${active ? ` style="color:var(--sec-${key})"` : ""} title="${tip}">` +
-    "<i></i>".repeat(9) + `</span>`;
-}
 
 function sectorRunning(sec) {
   return Object.values(sec.run_types).some((rt) =>
@@ -289,7 +280,7 @@ function sspsOf(rt) {
 function defaultSsps(rt) {
   const ssps = sspsOf(rt);
   if (view.sector === "energy") return ssps;
-  return [ssps.includes("SSP3") ? "SSP3" : ssps[0]];
+  return [ssps.includes("SSP2") ? "SSP2" : ssps[0]];
 }
 
 /* ---------- render ---------- */
@@ -299,49 +290,29 @@ function renderAll() {
   // grid waits for a sub-model when the sector has several (crops, fuels).
   document.body.classList.toggle("no-sector", !view.sector);
   if (DATA) renderCamel();
-  renderTabs();
-  if (TREE) renderTree();
+  pickDefaults();
+  renderTree();
   const noRun = !!view.sector && !view.runType;
   const needModel = !!view.sector && !noRun && gridKind(runType()) === "gcms" && runType().dims.models.length > 1 && !view.model;
   document.body.classList.toggle("no-run", noRun);
   document.body.classList.toggle("no-model", needModel || noRun);
-  $("pick-note").textContent = TREE
-    ? (!view.sector ? "Pick a sector in the list to see its progress."
-      : noRun ? "Pick a run type in the list to see its grid." : "Pick a sub-model in the list to see its grid.")
-    : (!view.sector ? "Select a sector and a run type (single, median or montecarlo) to see progress." : "Pick a sub-model to see its grid.");
+  $("pick-note").textContent = "Pick a sector in the list to see its progress.";
+  const mainNote = $("main-note");
+  if (mainNote) mainNote.textContent = noRun ? "Select a run type to see progress"
+    : needModel ? "Select a sub-model to see progress" : "";
   if (!view.sector || noRun) return;
   renderCards();
   if (needModel) return;
   renderSspTabs();
-  renderAggTabs();
   renderLegend();
   renderGrid();
 }
 
-// "Aggregation: price014 (main) | MERGEETL60_rcp45/rcp85": which aggregation
-// files the grid cells and cell details show. Always shown: "none yet" when
-// the run has no aggregation files of any scenario.
-function renderAggTabs() {
-  const rt = runType(), sec = sector(), el = $("agg-tabs");
-  if (!rt) { el.innerHTML = ""; return; }
-  el.classList.remove("hidden");
-  const sc = rt.agg_scenarios || { main: null, others: [] };
-  const anyAgg = rt.units.some((u) => {
-    const spec = specOf(sec, u.model), n = spec.projection.length;
-    return u.bits.slice(n).includes("1") || Object.values(u.alt_bits || {}).some((b) => b.includes("1"));
-  });
-  // No files yet: "none yet" for a sector with scenarios in its file names,
-  // "-" for one without.
-  if (!anyAgg) { el.innerHTML = `<span class="lbl">Aggregation:</span> <span class="muted">${sc.main ? "none yet" : "-"}</span>`; return; }
-  const cur = curScen();
-  const main = `<button class="agg-opt${cur ? "" : " active"}" data-scen="">` +
-    (sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main") + `</button>`;
-  el.innerHTML = `<span class="lbl">Aggregation:</span> ` + [main,
-    ...sc.others.map((o) => `<button class="agg-opt${cur === o ? " active" : ""}" data-scen="${esc(o)}">${esc(scenLabel(o, rt))}</button>`),
-  ].join(`<span class="agg-sep">|</span>`);
-}
+/* ---------- tree navigation ---------- */
 
-/* ---------- tree navigation (prototype, ?nav=tree) ---------- */
+// Phones held upright are narrow; held sideways they are short. Either way
+// the tree is a menu at the top, so the grid keeps the full width.
+const PHONE = matchMedia("(max-width: 600px), (max-height: 500px)");
 
 const RUN_TYPE_ORDER = ["single", "median", "montecarlo"];
 
@@ -356,7 +327,6 @@ function paShort(f) {
 // Moves the cards, SSP row and grid into a right-hand column, with the tree
 // on the left. On phones the tree folds into a menu at the top.
 function buildTreeLayout() {
-  document.body.classList.add("nav-tree");
   const layout = document.createElement("div");
   layout.className = "tree-layout";
   layout.innerHTML = `<div class="tree-side" id="tree-side"><details class="tree-menu" id="tree-menu" open>
@@ -375,15 +345,28 @@ function buildTreeLayout() {
   $("tree-side").appendChild($("pick-note"));
   const key = document.createElement("div");
   key.className = "tree-key";
-  key.innerHTML = "<b>P</b> projection files present, <b>A</b> aggregation files present, out of expected.";
-  $("tree-side").appendChild(key);
-  if (matchMedia("(max-width: 600px)").matches) $("tree-menu").open = false;
+  key.innerHTML = "<b>P</b> projection files present | <b>A</b> aggregation files present, out of expected.";
+  $("tree-menu").appendChild(key);
+  // The note where the grid would be, until a run type (and sub-model) is picked.
+  const note = document.createElement("div");
+  note.className = "main-note";
+  note.id = "main-note";
+  $("tree-path").after(note);
+  $("tree-menu").open = !PHONE.matches;
+  PHONE.addEventListener("change", () => { $("tree-menu").open = !PHONE.matches; });
   $("tree").addEventListener("click", (e) => {
     const b = e.target.closest(".tnode[data-act]");
     if (!b || b.disabled) return;
     treePick(b.dataset.act, b.dataset.key);
-    if (matchMedia("(max-width: 600px)").matches && b.dataset.leaf === "1") $("tree-menu").open = false;
+    if (PHONE.matches && b.dataset.leaf === "1") $("tree-menu").open = false;
   });
+}
+
+// No sub-model unless the run's grid has several; then the user picks one.
+function pickDefaults() {
+  if (!view.sector || !view.runType) return;
+  const rt = runType();
+  if (!(gridKind(rt) === "gcms" && rt.dims.models.length > 1)) view.model = null;
 }
 
 function treePick(act, key) {
@@ -396,9 +379,9 @@ function treePick(act, key) {
     } else {
       view.sector = key;
       view.aggScen = null;
-      view.runType = defaultRunType(sector());
+      view.runType = null;
       view.model = null;
-      view.ssps = defaultSsps(runType());
+      view.ssps = [];
     }
   } else if (act === "run") {
     view.aggScen = null;
@@ -465,11 +448,14 @@ function renderTree() {
       const sc = rt.agg_scenarios || { main: null, others: [] };
       const anyAgg = rt.units.some((u) => u.bits.slice(specOf(sec, u.model).projection.length).includes("1")
         || Object.values(u.alt_bits || {}).some((b) => b.includes("1")));
-      html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
       if (!anyAgg) {
-        html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main",
-          sc.main ? "none yet" : "-", { off: true, title: "no aggregation files yet" });
-      } else {
+        // Nothing to pick yet: the branch stays folded.
+        html += tnode("scen", "", "Aggregation", sc.main ? "none yet" : "-", { off: true, cls: "tfold", title: "no aggregation files yet" });
+        html += `</div>`;
+        continue;
+      }
+      html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
+      {
         const cur = curScen();
         const aggPct = (scen) => { const f = filesOf(sec, rt, scen); return f.aggExp ? `A ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : ""; };
         html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main", aggPct(null), { on: !cur, leaf: true });
@@ -510,69 +496,6 @@ function selector(el, items, active, onPick) {
   }
 }
 
-function renderTabs() {
-  selector($("sector-tabs"), sectorOrder().map((k) => [k, DATA.sectors[k]]).map(([k, s]) => {
-    const f = sectorFiles(s);
-    const est = sectorSuEstimate(s);
-    return { key: k, label: s.label, cls: `sec-tab sec-${k}`, extra: activeMark(k, sectorActive(s)),
-      count: progressText(f) +
-        (est ? `, ${suRange(est.low, est.high)} to finish` : ", SUs not known yet") };
-  }), view.sector, (k) => {
-    closeDetail();
-    view.modelOff = false;
-    if (k === view.sector) {
-      // Clicking the selected sector again clears it.
-      view.sector = null;
-      view.runType = null;
-      view.model = null;
-      view.ssps = [];
-      renderAll();
-      return;
-    }
-    view.sector = k;
-    view.aggScen = null;
-    view.runType = defaultRunType(sector());
-    view.model = null;
-    view.ssps = defaultSsps(runType());
-    closeDetail();
-    renderAll();
-  });
-  if (!view.sector) return;
-
-  const sec = sector();
-  const items = Object.entries(sec.run_types).map(([k, rt]) => {
-    const f = filesOf(sec, rt);
-    return { key: k, label: k, count: progressText(f) };
-  });
-  for (const k of sec.disabled_run_types || []) {
-    items.push({ key: k, label: k, disabled: true, title: "Not part of this sector" });
-  }
-  selector($("runtype-tabs"), items, view.runType, (k) => {
-    view.runType = k;
-    view.aggScen = null;
-    view.model = null;
-    view.modelOff = false;
-    view.ssps = defaultSsps(runType());
-    closeDetail();
-    renderAll();
-  });
-
-  const rt = runType();
-  const showModels = !!rt && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
-  $("model-sep").classList.toggle("hidden", !showModels);
-  if (!showModels) { $("model-tabs").innerHTML = ""; view.model = null; return; }
-  if (!view.model && !view.modelOff) view.model = rt.dims.models[0];
-  const perModel = rt.counts.total / rt.dims.models.length;
-  selector($("model-tabs"), rt.dims.models.map((m) => ({ key: m, label: m,
-    count: paText(paFiles(sec, rt.units.filter((u) => u.model === m), perModel, [m], curScen())) })), view.model, (k) => {
-    // Clicking the selected sub-model again clears it and hides its grid.
-    view.modelOff = k === view.model;
-    view.model = view.modelOff ? null : k;
-    closeDetail();
-    renderAll();
-  });
-}
-
 function pctOf(a, b) { return b ? (100 * a) / b : 0; }
 
 function fmtSU(n) {
@@ -587,19 +510,6 @@ function suRange(low, high) {
   if (low == null) return "n/a";
   if (!high) return "0 SU";
   return low === high ? `${fmtSU(low)} SU` : `${fmtSU(low)} to ${fmtSU(high)} SU`;
-}
-
-// Lower and upper SUs to finish a sector, summed over its run types.
-function sectorSuEstimate(sec) {
-  let low = 0, high = 0;
-  for (const rt of Object.values(sec.run_types)) {
-    const e = rt.su_estimate;
-    if (!e) continue;
-    if (e.su_low == null) return null;
-    low += e.su_low;
-    high += e.su_high;
-  }
-  return { low, high };
 }
 
 function card(label, val, sub, bar, tip) {
@@ -1290,18 +1200,6 @@ function setup() {
   document.querySelectorAll(".panel-header").forEach((h) => {
     h.onclick = () => $(h.dataset.panel).classList.toggle("open");
   });
-  $("agg-tabs").addEventListener("click", (e) => {
-    const b = e.target.closest(".agg-opt");
-    if (!b) return;
-    view.aggScen = b.dataset.scen || null;
-    closeDetail();
-    renderCamel();
-    renderCards();
-    renderTabs();
-    renderSspTabs();
-    renderAggTabs();
-    renderGrid();
-  });
   $("pa-info-btn").addEventListener("click", () => {
     const open = $("pa-info").classList.toggle("hidden") === false;
     $("pa-info-btn").setAttribute("aria-expanded", String(open));
@@ -1474,7 +1372,7 @@ async function boot() {
   view.sector = null;
   view.runType = null;
   view.ssps = [];
-  if (TREE) buildTreeLayout();
+  buildTreeLayout();
   setup();
   renderCamel();
   loadCamel();

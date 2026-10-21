@@ -147,7 +147,6 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 
 /* Segmented selectors */
 .top-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-.top-bar-sep { width: 1px; height: 16px; background: var(--bd2); flex-shrink: 0; }
 .run-selector { display: flex; gap: 0; }
 .run-opt { padding: 5px 14px; font: inherit; font-size: 11px; font-weight: 500; cursor: pointer;
   color: var(--tx2); border: 1.5px solid var(--bd2); background: var(--bg); user-select: none; }
@@ -159,20 +158,6 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .run-opt:disabled { color: var(--tx3); opacity: 0.55; cursor: not-allowed; }
 .run-opt .opt-count { color: var(--tx3); font-weight: 400; margin-left: 4px; }
 .run-opt { white-space: nowrap; }
-#model-tabs { flex-wrap: wrap; row-gap: 4px; }
-#model-tabs .run-opt { padding: 4px 10px; }
-#model-tabs .opt-count { font-size: 10px; }
-#model-sep { display: none !important; }
-.run-opt.sec-tab { border-bottom-width: 3px; }
-.run-opt.sec-mortality { border-bottom-color: var(--sec-mortality); }
-.run-opt.sec-mortality.active { background: color-mix(in srgb, var(--sec-mortality) 22%, var(--bg)); border-color: var(--sec-mortality); }
-.run-opt.sec-agriculture { border-bottom-color: var(--sec-agriculture); }
-.run-opt.sec-agriculture.active { background: color-mix(in srgb, var(--sec-agriculture) 22%, var(--bg)); border-color: var(--sec-agriculture); }
-.run-opt.sec-energy { border-bottom-color: var(--sec-energy); }
-.run-opt.sec-energy.active { background: color-mix(in srgb, var(--sec-energy) 22%, var(--bg)); border-color: var(--sec-energy); }
-.run-opt.sec-labor { border-bottom-color: var(--sec-labor); }
-.run-opt.sec-labor.active { background: color-mix(in srgb, var(--sec-labor) 22%, var(--bg)); border-color: var(--sec-labor); }
-.run-opt.sec-tab.active { color: var(--tx); font-weight: 700; }
 .run-opt:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 
 .info-bar { background: var(--bg2); border: 0.5px solid var(--bd); border-radius: 6px; padding: 4px 10px;
@@ -313,28 +298,15 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --hl-user: #d6d6cf; } }
 .su-est .ukey.pkey { justify-content: flex-start; }
 .pick-note { display: none; font-size: 11px; color: var(--tx3); margin: -2px 0 10px; }
-body.no-sector .pick-note, body.no-model .pick-note { display: block; }
+body.no-sector .pick-note { display: block; }
 body.no-sector #pa-info-btn, body.no-sector #pa-info, body.no-model #pa-info-btn, body.no-model #pa-info,
 body.no-model #ssp-tabs, body.no-model #legend, body.no-model #info-bar,
 body.no-model #file-detail, body.no-model .grid-wrap { display: none !important; }
-body.no-sector #cards, body.no-sector .top-bar-sep, body.no-sector #runtype-tabs, body.no-sector #model-tabs,
+body.no-sector #cards,
 body.no-sector .tab-note, body.no-sector #ssp-tabs, body.no-sector #legend, body.no-sector #info-bar,
 body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !important; }
-/* Sector activity: a 3 by 3 grid of small squares. Still and dim grey when
-   the sector is idle; a slow wave in the sector color when it is active. */
-.sec-spin { display: inline-grid; grid-template-columns: repeat(3, 2.5px); gap: 1px; margin-left: 6px;
-  vertical-align: middle; color: var(--tx3); }
-.sec-spin i { width: 2.5px; height: 2.5px; background: currentColor; border-radius: 0.5px; opacity: 0.35; }
-.sec-spin.on i { opacity: 0.25; animation: sec-spin 1.8s ease-in-out infinite; }
-.sec-spin.on i:nth-child(1) { animation-delay: 0s; }
-.sec-spin.on i:nth-child(2), .sec-spin.on i:nth-child(4) { animation-delay: 0.2s; }
-.sec-spin.on i:nth-child(3), .sec-spin.on i:nth-child(5), .sec-spin.on i:nth-child(7) { animation-delay: 0.4s; }
-.sec-spin.on i:nth-child(6), .sec-spin.on i:nth-child(8) { animation-delay: 0.6s; }
-.sec-spin.on i:nth-child(9) { animation-delay: 0.8s; }
-@keyframes sec-spin { 0%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .sec-spin.on i { animation: none; opacity: 0.8; }
   .ck-mark.on { animation: none; opacity: 1; }
 }
 .pa-info { margin: -4px 0 8px; }
@@ -465,7 +437,6 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
   .run-selector { flex-wrap: wrap; gap: 4px; }
   .run-opt { border-radius: 4px !important; }
   .run-opt:not(:first-child) { border-left-style: solid; border-left-width: 1.5px; }
-  .top-bar-sep { display: none; }
 }
 .grp-header > span { min-width: 0; }
 /* Row labels stay in view when a wide grid scrolls sideways. */
@@ -497,7 +468,6 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 /* Fingers: bigger targets for tabs, buttons and the SU bar. */
 @media (pointer: coarse) {
   .run-opt { padding: 7px 12px; }
-  #model-tabs .run-opt { padding: 6px 10px; }
   .info-btn { width: 22px; height: 22px; font-size: 11px; }
   .su-bar-all { height: 16px; }
   .grp-header, .fd-sec { padding-top: 8px; padding-bottom: 8px; }
@@ -534,11 +504,6 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tb-key-sep { width: 8px; }
 .juser { display: inline-flex; align-items: center; gap: 3px; margin-right: 12px; white-space: nowrap; }
 .part-pill .tbs { margin-left: 2px; }
-/* Sector and run type tabs carry projection and aggregation counts, so they
-   wrap as separate buttons at every width. */
-#sector-tabs, #runtype-tabs { flex-wrap: wrap; gap: 4px; }
-#sector-tabs .run-opt, #runtype-tabs .run-opt { border-radius: 4px; }
-#sector-tabs .run-opt:not(:first-child), #runtype-tabs .run-opt:not(:first-child) { border-left-style: solid; border-left-width: 1.5px; }
 /* The grid scrolls inside its own box, so its headers (scenarios, IAMs,
    batches) and row labels (climate models) stay in view. */
 .grid-wrap { overflow: auto; max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); }
@@ -576,39 +541,16 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .part-pill .mono { font-family: var(--mono); font-weight: 600; color: var(--tx); }
 /* Service units: total, per user and per partition, stacked. */
 .res-sec .su-blocks { display: flex; margin-top: 10px; }
-/* Aggregation scenario selector above the grid. */
-.agg-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 10.5px; color: var(--tx2); }
-body.no-sector #agg-tabs, body.no-model #agg-tabs { display: none !important; }
-@media (max-width: 600px) and (orientation: portrait) { #agg-tabs { display: none !important; } }
 /* Files in a cell's folder that are not expected: grey, not counted. */
 .dot.oth { background: var(--tx3); }
 .fd-row.oth { background: transparent; color: var(--tx2); }
 .fd-sub-other { color: var(--tx3); }
 .card .card-label { display: flex; align-items: center; gap: 2px; }
 .card .info-btn { width: 13px; height: 13px; font-size: 8px; margin-left: 3px; }
-/* The SSP badges with the aggregation selector right below them. */
+/* The SSP badges and their P and A note. */
 .ssp-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .ssp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.agg-tabs .muted { color: var(--tx3); }
-/* Aggregation scenario options: small round badges like the SSP ones, in a
-   soft bone, the selected one in a light grey; text in the page's neutrals. */
-:root { --agg-badge: #F4EFE4; --agg-badge-line: #E2DACA; --agg-badge-on: #DEDDD8; --agg-badge-on-line: #C8C6BF; }
-:root[data-theme="dark"] { --agg-badge: #34322B; --agg-badge-line: #48453B; --agg-badge-on: #4A4A46; --agg-badge-on-line: #605F59; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --agg-badge: #34322B; --agg-badge-line: #48453B; --agg-badge-on: #4A4A46; --agg-badge-on-line: #605F59; }
-}
-.agg-tabs { gap: 6px; }
-.agg-opt { font: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer; padding: 3px 11px; border-radius: 999px;
-  background: var(--agg-badge); border: 1.5px solid var(--agg-badge-line); color: var(--tx2); }
-.agg-opt .muted { color: var(--tx3); font-weight: 400; }
-.agg-opt.active { background: var(--agg-badge-on); border-color: var(--agg-badge-on-line); color: var(--tx); }
-.agg-opt.active .muted { color: var(--tx2); }
-.agg-opt:hover:not(.active) { border-color: var(--agg-badge-on-line); color: var(--tx); }
-.agg-opt:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
-.agg-sep { display: none; }
-/* ---------- tree navigation (prototype, ?nav=tree) ---------- */
-body.nav-tree #sector-tabs, body.nav-tree #runtype-tabs, body.nav-tree #model-tabs,
-body.nav-tree #model-sep, body.nav-tree .top-bar-sep, body.nav-tree #agg-tabs { display: none !important; }
+/* ---------- tree navigation ---------- */
 .tree-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start; }
 .tree-menu > summary { display: none; }
 .tree-side { position: sticky; top: 8px; }
@@ -634,9 +576,10 @@ body.nav-tree #model-sep, body.nav-tree .top-bar-sep, body.nav-tree #agg-tabs { 
 .tgroup { font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tx3); margin: 5px 0 1px 8px; }
 .tree-path { font-size: 12px; font-weight: 600; color: var(--tx); margin: 0 0 8px; min-height: 16px; }
 @media (max-width: 900px) { .tree-layout { grid-template-columns: 200px minmax(0, 1fr); } }
-/* Phones: the tree folds into a menu at the top. */
-@media (max-width: 600px) {
+/* Phones, held upright or sideways: the tree folds into a menu at the top. */
+@media (max-width: 600px), (max-height: 500px) {
   .tree-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .tree-side { position: static; }
   .tree-menu { border: 0.5px solid var(--bd2); border-radius: 8px; background: var(--bg2); }
   .tree-menu > summary { display: block; cursor: pointer; padding: 9px 12px; font-size: 12px; font-weight: 600; list-style: none; }
   .tree-menu > summary::-webkit-details-marker { display: none; }
@@ -668,9 +611,12 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
   .ck-table td { padding-right: 10px; }
   .ck-table .ck-n { display: block; }
 }
-/* Phones: long tab labels wrap instead of running off the screen. */
-@media (max-width: 600px) {
-  #sector-tabs .run-opt, #runtype-tabs .run-opt { white-space: normal; text-align: left; max-width: 100%; }
-}
 .tree-key { font-size: 10px; color: var(--tx3); margin: 8px 0 0; line-height: 1.5; }
 .tree-key b { color: var(--tx2); font-family: var(--mono); font-weight: 600; }
+.tnode.tfold { margin-top: 3px; }
+/* Where the grid would be, until a run type (and sub-model) is picked. */
+.main-note { display: none; font-size: 12px; color: var(--tx3); padding: 26px 0; text-align: center;
+  border: 1px dashed var(--bd2); border-radius: 8px; margin-bottom: 8px; }
+body.no-model .main-note { display: block; }
+body.no-sector .main-note { display: none; }
+@media (max-width: 600px), (max-height: 500px) { .tree-menu .tree-key { padding: 0 12px 10px; margin-top: 0; } }

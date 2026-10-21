@@ -1,4 +1,4 @@
-# CIL | Projections, new socioeconomics: run-status monitor
+# CIL | Projections - New Socioeconomics: run-status monitor
 
 A status dashboard for the new socioeconomics projection runs of the four
 AMEL sectors (agriculture, mortality, energy, labor). It shows run status
@@ -29,20 +29,28 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - The CIL logo at the top right (site/cil-logo.svg), inverted and
   desaturated in dark mode, following the same light and dark switch. The tab icon is
   the kit's color favicon in the same five colors (site/camel/).
-- Right above the grid: sector, run type and sub-model tabs (montecarlo by
-  default, median for energy, whose montecarlo tab is greyed out). Each
-  sector tab has its camel color, the selected one filled with it, and
-  shows the progress of its main run, projection and aggregation apart,
-  each with its percent and file counts ("Projection 100% (64/64),
-  Aggregation 0% (0/496)"), and the SUs needed to finish it. Run type tabs
-  show the same two parts, as does the table next to the camel; the camel
-  itself fills with projection progress only ("not known yet" for
-  agriculture), with a one-line explanation underneath. A sector is active
-  when projection files were written in its folders in the last 24 hours
-  (or a unit is being written now); its tab then shows four small squares
-  in the sector color, lighting in turn. Sub-model tabs (crops, fuels)
-  show their own P and A file counts. Clicking a selected sector or
-  sub-model again clears it.
+- Navigation: a tree on the left lists the sectors as badges in their
+  camel colors, in camel order (Coastal, Agriculture, Mortality, Energy,
+  Labor). A sector opens into its run types (single, median, montecarlo),
+  with none picked: the grid shows only once a run type is picked, and a
+  sub-model when its grid has several (fuels, crops); until then a short
+  note sits where the grid would be ("Select a run type to see progress",
+  "Select a sub-model to see progress"). A run type also opens an Aggregation
+  branch with its scenarios. Options that do not apply or have no files
+  yet are shown dimmed and cannot be picked (montecarlo under energy is
+  "n/a"); an unavailable sector (Coastal) keeps its camel color, only
+  dimmed. While a run has no aggregation files, its Aggregation branch
+  stays folded into one dimmed line ("none yet", or "-" for sectors whose
+  file names carry no scenario). Clicking a picked sector, run type or
+  sub-model again clears it and hides the grid. Each branch shows its P
+  and A figures, and a short key under the list says what P and A mean.
+  The tree is built from the data, so each sector gets its own branches.
+  The current path shows at the top of the grid ("Energy / median /
+  electricity / price014"). On phones, held upright or sideways (narrow up
+  to 600px, or short up to 500px), the tree folds into a menu at the top
+  that shows the same path: tap it to open, and picking a leaf closes it,
+  so the grid keeps the full width. Sector progress counts the main run only
+  (montecarlo, or median for energy).
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
@@ -73,22 +81,17 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   folders and MERGEETL60_rcp85 in rcp85 ones, kept as one scenario and
   shown by its name only, MERGEETL60; the cell details keep the full file
   names):
-  - a small selector right below the SSP badges reads "Aggregation: price014 (main) |
-    MERGEETL60", its options shown as small round
-    badges like the SSP ones, in a soft bone with the selected one in a
-    light grey (darker shades in dark mode). It is always shown and always
-    starts on the main one: "Aggregation: none yet" when the run has no
-    aggregation files of any scenario, only the main one when there are no
-    others. For sectors whose file names carry no scenario (such as
-    mortality) it reads "Aggregation: -" while there are no aggregation
-    files, and "Aggregation: main" once some exist.
+  - the scenarios are picked in the tree's Aggregation branch, which
+    starts on the main one: "price014 (main)" and "MERGEETL60", each with
+    its A figure;
   - What follows the picked scenario: the grid cells, the column header
-    counts, the SSP badge counts, the sub-model tab counts, the hover
+    counts, the SSP badge counts, the sub-model counts in the tree, the hover
     summary and the cell details (which list the picked scenario's
     aggregation files only, all 8 for energy, with sizes and dates, and
     name it, marked "not counted").
   - What always counts the main scenario: the overall progress, that is
-    the summary cards, the sector tabs, the run type tabs and the camel.
+    the summary cards, the sector and run type figures in the tree and the
+    camel table.
     While another scenario is picked, their aggregation figure reads
     "Aggregation (main)".
   It works for any sector whose aggregation file names carry a scenario:
@@ -99,23 +102,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   `-global-histclim.nc4`, `-incadapt-histclim.nc4` and
   `-noadapt-histclim.nc4`), in a grey group "Other files (not counted)"
   with sizes and dates. They never count toward the progress.
-- Tree navigation (prototype, add `?nav=tree` to the address, also with
-  `?source=mock&nav=tree`): instead of the tabs, a tree on the left lists
-  the sectors as badges in their camel colors (Coastal, Agriculture,
-  Mortality, Energy, Labor). A sector opens into its run types, a run type
-  into its sub-models (when its grid has several) and an Aggregation branch
-  with its scenarios. Options that do not apply or have no files yet are
-  shown dimmed and cannot be picked; an unavailable sector (Coastal) keeps
-  its camel color, only dimmed. Clicking a picked sector, run type or
-  sub-model again clears it and hides the grid. Each branch shows its P
-  and A figures.
-  The tree is built from the data, so each sector gets its own branches.
-  The current path shows at the top of the grid ("Energy / median /
-  electricity / price014"); on phones the tree folds into a menu at the top
-  that shows the same path. Without `?nav=tree` the page keeps its tabs.
 - Resources and SLURM jobs start collapsed.
 - Run types can be left out with `enabled: false` under `run_types` in the
-  manifest. quick_test is off this way: no tab, and it is not in any count,
+  manifest. quick_test is off this way: not in the tree, and not in any count,
   percent, card or SU estimate. Set it back to true to show it again.
 - Phones and tablets: the grid shrinks to fit the screen width, down to
   60%; wider grids (montecarlo) scroll sideways inside their own box, with
@@ -139,7 +128,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   name, user, partition, how it ended and how long it ran. Array tasks
   that ended the same way are grouped under their job id.
 - A row of small cards for the selected sector and run type, right above
-  the tabs and the grid: expected units, complete, partial, not started,
+  the grid: expected units, complete, partial, not started,
   projection and aggregation progress, units being written, time to
   finish, and SUs to finish. Time to finish covers the projection only;
   aggregation shows as "not started" (or its units done) and is not
@@ -153,7 +142,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   aggregation files present out of expected, for example
   "P 917/4,160, A 0/4,160"; a small "i" next to the SSP tabs says so. Energy shows every SSP at
   once, with all its SSP tabs selected; the other sectors show one SSP at a
-  time. Each cell has one small square per
+  time, SSP2 by default. Each cell has one small square per
   expected file with the counts next to them: projection squares on top,
   then a thin line, then the aggregation squares colored by type (costs
   orange, levels purple, aggregated blue). The border gives the state:
@@ -170,8 +159,9 @@ Colors and textures: each sector, state and user has one color, and each
 partition one texture, used the same way everywhere on the page (badges,
 bars, keys, tables). States are set once in style.css (`--st-*`) and
 partition textures as `.ptex-*`; users get colors from a palette that
-avoids the state hues. Sector tabs follow the AMEL order: Agriculture,
-Mortality, Energy, Labor. Coastal shows "not tracked (yet)".
+avoids the state hues. The tree and the camel table follow the camel
+order: Coastal, Agriculture, Mortality, Energy, Labor. Coastal shows "not
+tracked (yet)".
 
 ## Expected files per unit
 
