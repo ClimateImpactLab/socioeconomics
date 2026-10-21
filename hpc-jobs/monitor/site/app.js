@@ -337,13 +337,21 @@ function buildTreeLayout() {
     el = next;
   }
   // The "pick a sector" note sits right below the list, then the P and A
-  // key, then the SSP, RCP and IAM badges.
+  // key, then one box with the SSP, RCP and IAM badges ("Scenario") and the
+  // state filter ("Filter").
   $("tree-side").appendChild($("pick-note"));
   const key = document.createElement("div");
   key.className = "tree-key";
   key.innerHTML = "<b>P</b> projection files present | <b>A</b> aggregation files present, out of expected.";
   $("tree-menu").appendChild(key);
-  $("tree-menu").appendChild($("scen-graph"));
+  const box = document.createElement("div");
+  box.className = "scen-box";
+  box.id = "scen-box";
+  box.innerHTML = `<div class="sbx-title">Scenario</div>`;
+  box.appendChild($("scen-graph"));
+  box.insertAdjacentHTML("beforeend", `<div class="sbx-title sbx-filter">Filter</div>`);
+  box.appendChild($("hl-tabs"));
+  $("tree-menu").appendChild(box);
   // The note where the grid would be, until a run type (and sub-model) is picked.
   const note = document.createElement("div");
   note.className = "main-note";
@@ -354,8 +362,9 @@ function buildTreeLayout() {
   $("tree").addEventListener("click", (e) => {
     const b = e.target.closest(".tnode[data-act]");
     if (!b || b.disabled) return;
+    // On phones the menu stays open after a pick, so the badges and the
+    // filter stay at hand.
     treePick(b.dataset.act, b.dataset.key);
-    if (PHONE.matches && b.dataset.leaf === "1") $("tree-menu").open = false;
   });
 }
 
@@ -624,7 +633,8 @@ function renderSspTabs() {
     const cls = { ssp: (v) => `ssp-${v}`, rcp: (v) => `sb-${v}`, iam: (v) => `sb-iam sb-iam-${v}` };
     box.innerHTML = ["ssp", "rcp", "iam"].map((f) => `<div class="sb-row">` + all[f].map((v) =>
       `<button class="sb ${cls[f](v)}" data-f="${f}" data-v="${esc(v)}" aria-pressed="false">${esc(v)}</button>`).join("") + `</div>`).join("") +
-      `<div class="sb-note">Select a combination to filter the progress grid.</div>`;
+      `<div class="sb-note">Select a full combination of at least one SSP, one emissions scenario and one IAM.</div>` +
+      (all.iam.some((v) => v === "low" || v === "high") ? `<div class="sb-note">low: IIASA, high: OECD</div>` : "");
   }
   for (const b of box.querySelectorAll(".sb")) {
     const on = view.picks[b.dataset.f].includes(b.dataset.v);
@@ -635,9 +645,9 @@ function renderSspTabs() {
 
 // Highlight by state: the grid stays whole, and cells of other states are
 // shown blank so the matching ones stand out.
-const HIGHLIGHTS = [["all", "All"], ["incomplete", "Incomplete"], ["complete", "Complete"],
-  ["writing", "Being written"], ["failed", "Failed"], ["notstarted", "Not started"],
-  ["projdone", "Projection complete"], ["projmiss", "Projection incomplete"]];
+const HIGHLIGHTS = [["all", "All"], ["complete", "Complete"], ["incomplete", "Incomplete"],
+  ["projdone", "Projection complete"], ["projmiss", "Projection incomplete"],
+  ["writing", "Being written"], ["failed", "Failed"], ["notstarted", "Not started"]];
 // The last two look at the projection files only, whatever the aggregation.
 // Units are counted by their files, the same way as the summary cards:
 // complete, incomplete and not started add up to all, and so do the two
@@ -658,9 +668,9 @@ function cellMatches(hl, unit, cnt) {
   return false;
 }
 function renderHighlight(counts) {
-  $("hl-tabs").innerHTML = `<span class="lbl">Highlight:</span> ` + HIGHLIGHTS.map(([k, label]) =>
-    `<button class="hl-opt${view.hl === k ? " active" : ""}" data-hl="${k}">${label}` +
-    ` <span class="muted">${fmtN(counts[k] || 0)}</span></button>`).join("");
+  $("hl-tabs").innerHTML = HIGHLIGHTS.map(([k, label]) =>
+    `<button class="hl-opt${view.hl === k ? " active" : ""}" data-hl="${k}"><span class="hl-lbl">${label}</span>` +
+    `<span class="muted">${fmtN(counts[k] || 0)}</span></button>`).join("");
 }
 
 // Aggregation types a sector actually has, in a fixed order.

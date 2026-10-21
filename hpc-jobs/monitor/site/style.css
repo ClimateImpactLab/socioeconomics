@@ -649,7 +649,7 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
   border: 1px dashed var(--bd2); border-radius: 8px; margin-bottom: 8px; }
 body.no-model .main-note { display: block; }
 body.no-sector .main-note { display: none; }
-@media (max-width: 600px), (max-height: 500px) { .tree-menu .tree-key { padding: 0 12px; margin-top: 0; } .tree-menu .scen-graph { padding: 0 12px 12px; } }
+@media (max-width: 600px), (max-height: 500px) { .tree-menu .tree-key { padding: 0 12px; margin-top: 0; } .tree-menu .scen-box { margin: 8px 12px 12px; } }
 /* The total's text runs past its column instead of widening it. */
 .ck-table .ck-over { width: 0; white-space: nowrap; overflow: visible; }
 .ck-wrap { padding-right: 2px; }
@@ -662,11 +662,16 @@ body.no-sector .main-note { display: none; }
 :root { --st-done-bg: color-mix(in srgb, var(--st-done) 14%, transparent); }
 .ssp-row { gap: 6px 14px; }
 /* Highlight by state: cells of other states are shown blank. */
-.hl-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 10.5px; color: var(--tx2); margin: 0 0 8px; }
-.hl-opt { font: inherit; font-size: 10px; cursor: pointer; padding: 2px 9px; border-radius: 999px;
+/* In the Filter section: rows of equal badges that wrap inside the box,
+   label on the left and count on the right. */
+.hl-tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px; font-size: 10px; color: var(--tx2); }
+.hl-opt { font: inherit; font-size: 10px; cursor: pointer; padding: 3px 8px; border-radius: 999px; min-width: 0;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px; text-align: left;
   background: none; border: 1px solid var(--bd2); color: var(--tx2); }
-.hl-opt .muted { color: var(--tx3); font-family: var(--mono); font-size: 9px; }
-.hl-opt.active { background: var(--bg3); border-color: var(--tx3); color: var(--tx); font-weight: 600; }
+.hl-opt .hl-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hl-opt .muted { color: var(--tx3); font-family: var(--mono); font-size: 9px; flex: none; }
+/* The picked one is filled, not bold, so its width never changes. */
+.hl-opt.active { background: var(--bg3); border-color: var(--tx2); color: var(--tx); }
 .hl-opt:hover:not(.active) { color: var(--tx); border-color: var(--tx3); }
 .grid-empty { padding: 18px 8px; color: var(--tx3); font-size: 11px; }
 .ssp-col { flex: 1 1 100%; }
@@ -674,8 +679,14 @@ body.no-sector .main-note { display: none; }
 /* SSP, RCP and IAM badges under the sector list: three rows of round
    badges, on or off. SSP and RCP badges in their soft colors, IAM badges
    white with blue text for low and red for high. */
-.scen-graph { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
-body.no-sector #scen-graph, body.no-model #scen-graph { display: none; }
+/* One box under the tree: "Scenario" (the badges and their notes) and
+   "Filter" (the cell states). */
+/* No border: it lines up with the list and the note above it. */
+.scen-box { margin-top: 12px; padding: 0; background: transparent; }
+.sbx-title { font-size: 11px; font-weight: 700; color: var(--tx); margin: 0 0 6px; }
+.sbx-title.sbx-filter { margin-top: 12px; }
+.scen-graph { display: flex; flex-direction: column; gap: 5px; }
+body.no-sector #scen-box, body.no-model #scen-box { display: none; }
 .sb-row { display: flex; flex-wrap: wrap; gap: 4px; }
 .sb-note { font-size: 10px; color: var(--tx3); line-height: 1.4; margin-top: 2px; }
 .sb { font: inherit; font-size: 10px; font-weight: 600; line-height: 1; padding: 4px 10px; border-radius: 999px; cursor: pointer;

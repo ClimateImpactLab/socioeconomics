@@ -63,8 +63,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   The current path shows at the top of the grid ("Energy / median /
   electricity / price014"). On phones, held upright or sideways (narrow up
   to 600px, or short up to 500px), the tree folds into a menu at the top
-  that shows the same path: tap it to open, and picking a leaf closes it,
-  so the grid keeps the full width. Sector progress counts the main run only
+  that shows the same path: tap it to open or close. It stays open after
+  a pick, so the badges and the filter stay at hand while filtering. Sector progress counts the main run only
   (montecarlo, or median for energy).
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
@@ -153,15 +153,18 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   finish, and SUs to finish. Time to finish covers the projection only;
   aggregation shows as "not started" (or its units done) and is not
   added in. Its tooltip gives the numbers and the pace used.
-- SSP, RCP and IAM badges under the sector list, for the run type
-  picked: three rows of round badges, SSPs, then RCPs, then IAMs, with no
+- A "Scenario" and "Filter" box under the sector list, for the run type
+  picked, with a transparent background and no border.
+  Scenario holds the SSP, RCP and IAM badges: three rows of round badges, SSPs, then RCPs, then IAMs, with no
   counts (the grid headers show them). SSP badges keep their soft colors
   (SSP2 #86BDE0, SSP3 #CC956B, SSP4 #A6B990), RCP badges the grid's blue
   and red, and IAM badges are white with blue text for low and red for
-  high, with a grey line below: "Select a combination to filter the
-  progress grid." Each badge turns on or off on its own, and the grid shows the
-  columns whose SSP, RCP and IAM are all on. A run type starts with every SSP, RCP and IAM on. On
-  phones the badges are in the menu with the tree.
+  high, with two grey lines below: "Select a full combination of at least
+  one SSP, one emissions scenario and one IAM." and "low: IIASA, high:
+  OECD". Each badge turns on or off on its own, and the grid shows the
+  columns whose SSP, RCP and IAM are all on. A run type starts with every
+  SSP, RCP and IAM on. Filter, below, holds the state badges described
+  under Filter. On phones the box is in the menu with the tree.
 - Speed: the grid's grouped counts are added up once per scan, run type,
   sub-model and aggregation scenario. The grid is built once per run with
   every column, each cell's file squares drawn as one small cached picture,
@@ -169,10 +172,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   hides columns, and a highlight only sets an attribute on the grid. On the
   largest grid (mortality montecarlo, about 6,000 cells) a click takes
   about 0.03 to 0.13 s.
-- Highlight: a row above the grid, "Highlight: All | Incomplete | Complete
-  | Being written | Failed | Not started | Projection complete | Projection
-  incomplete", each with its count of units in the columns shown, All
-  included. Units are counted by their files, the same way as the summary
+- Filter: equal badges in rows that wrap inside the box (one column on a
+  desktop, more on a sideways phone), "All | Complete | Incomplete |
+  Projection complete | Projection incomplete | Being written | Failed |
+  Not started", each with its label on the left and its count of units in
+  the columns shown on the right, All included. Units are counted by their files, the same way as the summary
   cards: complete has every file, incomplete has some, not started has
   none, so the three add up to All. Projection complete has every
   projection file whatever the aggregation, projection incomplete is
