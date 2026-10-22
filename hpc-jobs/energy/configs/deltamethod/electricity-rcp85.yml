@@ -9,7 +9,7 @@
 # <outputdir>/median/<rcp>/<GCM>/<iam>/<ssp>/, apart from the normal median.
 import: "../hddcddspline_OTHERIND_electricity.yml"
 mode: median
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/electricity/deltamethod
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/electricity/delta_method
 deltamethod: yes
 do_farmers: false
 do_historical: true

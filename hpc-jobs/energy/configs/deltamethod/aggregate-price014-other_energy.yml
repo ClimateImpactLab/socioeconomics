@@ -3,7 +3,7 @@
 # the delta method files by their vcv variable and writes variances and
 # gradients; no deltamethod key is needed. Population comes from the new
 # panel. Run after the delta method median has finished.
-outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/other_energy/deltamethod
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/energy/other_energy/delta_method
 levels-weighting: population * social/baselines/energy/IEA_Price_FIN_Clean_gr014_GLOBAL_COMPILE.dta:country:year:other_energycompile_price
 levels-unit: dollar
 aggregated-unit: dollar
