@@ -10,6 +10,9 @@
 #SBATCH --time=08:00:00
 #SBATCH --array=0-15
 
+# Create the log folder before submitting: mkdir -p logs/agriculture/post
+# (Slurm opens the log before the job starts, so the job cannot create it.)
+
 # Spatial aggregation of impacts and costs, one task per crop and folder:
 # tasks 0-7 the crop folders (agriculture/<crop>/single), tasks 8-15 the
 # winsorized folders (agriculture/<crop>-1pct_winsorization/single).

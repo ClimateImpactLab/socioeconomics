@@ -45,15 +45,22 @@ design and the reasons behind it are in `post_projection_plan.md`.
 | Winsorization | `post_winsorize.sbatch` | `<crop>-1pct_winsorization/single/...` |
 | Aggregation | `post_aggregate.sbatch` | `*-aggregated.nc4` next to the files, in both `<crop>/single` and `<crop>-1pct_winsorization/single` |
 
-Two jobs exist only to check a method against older results:
+Two jobs exist only to check a method against older results. Their outputs
+are tests, so they go to
+`/project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/checks/agriculture/`,
+never under `outputs_newsocioeconomics/`:
 
-- `post_income.sbatch` with `SOURCE=old` writes to `income_netcdfs/method_check_old/`.
-- `post_costs_repro.sbatch` writes to `checks/corn_costs_old_income/single/`.
+- `post_income.sbatch` with `SOURCE=old` writes to `income_method_check_old/`.
+- `post_costs_repro.sbatch` writes to `corn_costs_old_income/single/`.
 
 ### Order
 
 From `hpc-jobs/`, with `IMPACT_CALCULATIONS` set. Wait for each job to finish
 and for its check to end with `OK` before the next line.
+
+**Create the log folder first.** Slurm opens a job's log file before the job
+starts, so a job cannot create its own log folder. If the folder is missing,
+the job fails without writing any log.
 
 ```bash
 mkdir -p logs/agriculture/post
@@ -148,8 +155,7 @@ finished and how much it used.
   leaves `status-aggregate.txt` in a folder for 24 hours, during which a
   rerun skips that folder; delete the file before rerunning.
 - **R modules**: the costs jobs load the same R modules as the older costs
-  jobs. If a module is missing on an `amd` node, submit with
-  `--partition=caslake`.
+  jobs. All post jobs run on `caslake`.
 - R packages must be installed once on a login node, since compute nodes may
   have no internet. Load the same modules as the costs jobs, then run:
 

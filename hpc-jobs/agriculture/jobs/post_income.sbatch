@@ -10,16 +10,20 @@
 #SBATCH --time=02:00:00
 #SBATCH --array=0-5
 
+# Create the log folder before submitting: mkdir -p logs/agriculture/post
+# (Slurm opens the log before the job starts, so the job cannot create it.)
+
 # Income files for the costs script, one task per SSP x IAM.
 # Submit from hpc-jobs/ with IMPACT_CALCULATIONS set.
 # SOURCE=panel (default) builds them from the 1.0.0 panel; SOURCE=old rebuilds
-# the existing files from the older inputs, to check the method.
+# the existing files from the older inputs, to check the method (written
+# to the checks folder, not to the outputs).
 SOURCE=${SOURCE:-panel}
 CELLS=("SSP2 low" "SSP2 high" "SSP3 low" "SSP3 high" "SSP4 low" "SSP4 high")
 read -r SSP IAM <<< "${CELLS[$SLURM_ARRAY_TASK_ID]}"
 
 ROOT=/project/cil/gcp/outputs_newsocioeconomics/agriculture/income_netcdfs
-if [ "$SOURCE" = "panel" ]; then OUT=$ROOT/1.0.0; else OUT=$ROOT/method_check_old; fi
+if [ "$SOURCE" = "panel" ]; then OUT=$ROOT/1.0.0; else OUT=/project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/checks/agriculture/income_method_check_old; fi
 
 if [ -z "$IMPACT_CALCULATIONS" ]; then
     echo "ERROR: IMPACT_CALCULATIONS is not set." >&2

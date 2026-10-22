@@ -9,6 +9,9 @@
 #SBATCH --mem=32G
 #SBATCH --time=02:00:00
 
+# Create the log folder before submitting: mkdir -p logs/agriculture/post
+# (Slurm opens the log before the job starts, so the job cannot create it.)
+
 # Short check after a step. Submit from hpc-jobs/ with STEP set, one of:
 # income-old, income, costs-repro, costs, wheat, winsor, aggregate.
 #   sbatch --export=ALL,STEP=income agriculture/jobs/post_check.sbatch

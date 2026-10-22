@@ -15,12 +15,13 @@ import pandas as pd
 import xarray as xr
 
 ROOT = '/project/cil/gcp/outputs_newsocioeconomics/agriculture'
-INCOME, INCOME_CHECK = f'{ROOT}/income_netcdfs/1.0.0', f'{ROOT}/income_netcdfs/method_check_old'
+CHECKS = '/project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/checks/agriculture'
+INCOME, INCOME_CHECK = f'{ROOT}/income_netcdfs/1.0.0', f'{CHECKS}/income_method_check_old'
 OLD_INCOME = '/project/cil/sacagawea_shares/gcp/social/baselines/agriculture/income_netcdfs'
 PANEL = '/project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0'
 AREA = '/project/cil/gcp/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv'
 SEASONAL = '/project/cil/sacagawea_shares/gcp/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-wheat-weights_seasonal.csv'
-REPRO_NEW = f'{ROOT}/checks/corn_costs_old_income/single/rcp85/CCSM4/low/SSP2/adaptation_costs.nc4'
+REPRO_NEW = f'{CHECKS}/corn_costs_old_income/single/rcp85/CCSM4/low/SSP2/adaptation_costs.nc4'
 REPRO_REF = '/project/cil/gcp/outputs/agriculture/impacts-mealy/median/corn-global/median/rcp85/CCSM4/low/SSP2/adaptation_costs.nc4'
 OLD_COSTS = '/project/cil/gcp/outputs/agriculture/impacts-mealy/median/{crop}-global/median/{cell}/adaptation_costs.nc4'
 

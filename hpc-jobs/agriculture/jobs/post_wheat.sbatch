@@ -9,6 +9,9 @@
 #SBATCH --mem=8G
 #SBATCH --time=02:00:00
 
+# Create the log folder before submitting: mkdir -p logs/agriculture/post
+# (Slurm opens the log before the job starts, so the job cannot create it.)
+
 # wheat_combined from spring and winter wheat, impacts and costs, for all 12
 # scenario cells. Needs the wheat projections and their costs. Submit from hpc-jobs/.
 module load python

@@ -10,6 +10,9 @@
 #SBATCH --time=04:00:00
 #SBATCH --array=0-83
 
+# Create the log folder before submitting: mkdir -p logs/agriculture/post
+# (Slurm opens the log before the job starts, so the job cannot create it.)
+
 # Adaptation costs, one task per crop x rcp x IAM x SSP (7 x 12), with the
 # income built from the 1.0.0 panel. Writes adaptation_costs.nc4 into
 # agriculture/<crop>/single/<rcp>/CCSM4/<iam>/<SSP>/. Submit from hpc-jobs/.

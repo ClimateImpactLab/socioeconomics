@@ -9,6 +9,9 @@
 #SBATCH --mem=32G
 #SBATCH --time=03:00:00
 
+# Create the log folder before submitting: mkdir -p logs/agriculture/post
+# (Slurm opens the log before the job starts, so the job cannot create it.)
+
 # Winsorization of the 8 crops (including wheat_combined) x 12 cells, with
 # the costs copied into agriculture/<crop>-1pct_winsorization/single/.
 # Needs costs and wheat_combined. Submit from hpc-jobs/.
