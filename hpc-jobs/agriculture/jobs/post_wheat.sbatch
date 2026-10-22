@@ -3,7 +3,7 @@
 #SBATCH --output=logs/agriculture/post/wheat_%j.out
 #SBATCH --error=logs/agriculture/post/wheat_%j.err
 #SBATCH --account=cil
-#SBATCH --partition=amd,caslake
+#SBATCH --partition=caslake
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=8G
