@@ -329,8 +329,8 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   (`layout_by_run_type`), its own expected files (`files_by_run_type`,
   naming a list under `files:`) and its own reference (`by_run_type`
   under `reference`, for example the hours per unit). Energy's delta
-  method uses all three: `{model}/{run_type}/{subdir}`, so
-  `energy/electricity/deltamethod/median/rcp45/...` with the median/ level
+  method uses all three: `{model}/delta_method/{subdir}`, so
+  `energy/electricity/delta_method/median/rcp45/...` with the median/ level
   the projection system adds; the `energy_deltamethod` files; and 9.5 h
   per unit on amd, 1 core, 20G. Its tasks are matched by the job name
   `energy-deltamethod` (the aggregation job, `energy-deltamethod-agg`, is

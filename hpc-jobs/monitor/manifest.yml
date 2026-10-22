@@ -261,9 +261,10 @@ sectors:
     # folder: energy/electricity/median/rcp45/...
     layout: "{model}/{run_type}"
     # The delta method has the median/ folder the projection system adds:
-    # energy/electricity/deltamethod/median/rcp45/...
+    # energy/electricity/delta_method/median/rcp45/... (the folder has an
+    # underscore; the run type keeps its name).
     layout_by_run_type:
-      deltamethod: "{model}/{run_type}/{subdir}"
+      deltamethod: "{model}/delta_method/{subdir}"
     # Its own expected files (from files: energy_deltamethod below).
     files_by_run_type:
       deltamethod: energy_deltamethod
