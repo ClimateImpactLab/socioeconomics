@@ -1,0 +1,9 @@
+# Singles, rice impacts, winsorized folder: impact regions to admin regions,
+# countries and the globe, weighted by rice area.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/rice-1pct_winsorization
+batch: single
+aggregate-weighting: constcsv/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv:hierid:rice
+aggregated-unit: "log kg / Ha"
+basename: rice-160221
+only-variables:
+  - rebased

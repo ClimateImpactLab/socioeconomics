@@ -1,0 +1,9 @@
+# Singles, soy impacts, crop folder (projection files and costs): impact regions to admin regions,
+# countries and the globe, weighted by soy area.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/soy
+batch: single
+aggregate-weighting: constcsv/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv:hierid:soy
+aggregated-unit: "log kg / Ha"
+basename: soy-160221
+only-variables:
+  - rebased

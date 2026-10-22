@@ -1,0 +1,9 @@
+# Singles, sorghum adaptation costs, winsorized folder, same weights as the impacts.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/sorghum-1pct_winsorization
+batch: single
+aggregate-weighting: constcsv/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv:hierid:sorghum
+aggregated-unit: "log kg / Ha"
+basename: adaptation_costs
+check-variable: adpt.cost.cuml
+only-variables:
+  - adpt.cost.cuml

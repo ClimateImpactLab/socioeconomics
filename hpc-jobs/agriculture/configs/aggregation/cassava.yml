@@ -1,0 +1,9 @@
+# Singles, cassava impacts, crop folder (projection files and costs): impact regions to admin regions,
+# countries and the globe, weighted by cassava area.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/cassava
+batch: single
+aggregate-weighting: constcsv/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv:hierid:cassava
+aggregated-unit: "log kg / Ha"
+basename: cassava-110221
+only-variables:
+  - rebased

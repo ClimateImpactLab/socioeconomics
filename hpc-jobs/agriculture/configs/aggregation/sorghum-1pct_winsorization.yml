@@ -1,0 +1,9 @@
+# Singles, sorghum impacts, winsorized folder: impact regions to admin regions,
+# countries and the globe, weighted by sorghum area.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/sorghum-1pct_winsorization
+batch: single
+aggregate-weighting: constcsv/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv:hierid:sorghum
+aggregated-unit: "log kg / Ha"
+basename: sorghum-160221
+only-variables:
+  - rebased

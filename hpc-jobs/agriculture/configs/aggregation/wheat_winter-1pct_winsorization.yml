@@ -1,0 +1,9 @@
+# Singles, wheat_winter impacts, winsorized folder: impact regions to admin regions,
+# countries and the globe, weighted by wheat area.
+outputdir: /project/cil/gcp/outputs_newsocioeconomics/agriculture/wheat_winter-1pct_winsorization
+batch: single
+aggregate-weighting: constcsv/estimation/agriculture/Data/1_raw/3_cropped_area/agglomerated-world-new-hierid-crop-weights.csv:hierid:wheat
+aggregated-unit: "log kg / Ha"
+basename: wheat_winter-280823
+only-variables:
+  - rebased
