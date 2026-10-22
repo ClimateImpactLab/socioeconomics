@@ -5,7 +5,7 @@
 #SBATCH --account=cil
 #SBATCH --partition=caslake
 #SBATCH --ntasks=1
-#SBATCH --mem=15G
+#SBATCH --mem=24G
 #SBATCH --time=36:00:00
 #SBATCH --array=0-263
 

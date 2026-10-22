@@ -24,5 +24,5 @@ climcovar:
 loggdppc-delta: 9.087
 # A folder takes about 9.5 h (two passes): claims older than this many hours
 # are taken over by other workers, so keep it well above that.
-timeout: 20
+timeout: 48
 socioeconomic_data_dir: /project/cil/gcp/outputs_newsocioeconomics/socioeconomics/1.0.0/
