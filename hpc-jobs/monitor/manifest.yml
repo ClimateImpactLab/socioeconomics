@@ -148,6 +148,18 @@ run_types:
     gcms: per_rcp
     batches: 15          # batch0 .. batch14, as in the legacy mortality runs
     subdir: null         # check against the first montecarlo outputs
+  # The delta method median: the median's point estimate with deltamethod on,
+  # so its files hold variances and gradients instead of impacts. Same
+  # scenarios as the median. Shown in the tree under its parent run type,
+  # with its own grid; never the main run, so it never counts toward the
+  # camel or the sector percent. Median mode adds its own median/ folder.
+  deltamethod:
+    label: delta method
+    parent: median
+    cells: all
+    gcms: per_rcp
+    batches: null
+    subdir: median
 
 # Sectors. layout is the folder path from output_root down to the rcp
 # folders, built from {run_type}, {model} and {subdir} (empty parts are
@@ -224,7 +236,7 @@ sectors:
     label: Energy
     models: [electricity, other_energy]
     stages: [generate, aggregate]
-    run_types: [quick_test, single, median]
+    run_types: [quick_test, single, median, deltamethod]
     disabled_run_types: [montecarlo]   # shown as a greyed-out tab, not tracked
     # Reference: about 6.5 h per unit on 1 CPU from earlier production runs;
     # the cil2 single runs logged 3.5 h (median of 16 tasks). Job limits from
@@ -232,17 +244,29 @@ sectors:
     reference:
       hours_per_unit: 6.5
       billing: 1
-      time_limit_hours: {quick_test: 12, single: 12, median: 36}
+      time_limit_hours: {quick_test: 12, single: 12, median: 36, deltamethod: 36}
+      # Delta method: about 9.5 h per unit, from the delta method pilot (one
+      # GCM, both IAMs, full adaptation and histclim in 18:45).
+      by_run_type:
+        deltamethod: {hours_per_unit: 9.5, hours_per_unit_max: 9.5}
       request:
         partition: amd           # hpc-jobs/energy single
         cpus: 1
         mem_gb: 15
         by_run_type:
           median: {partition: caslake}   # the median that ran on caslake, also 15G
+          deltamethod: {partition: amd, mem_gb: 20}   # hpc-jobs/energy/jobs/deltamethod.sbatch
     output_root: /project/cil/gcp/outputs_newsocioeconomics/energy
     # Energy keeps each fuel first, then the run type, with no extra median
     # folder: energy/electricity/median/rcp45/...
     layout: "{model}/{run_type}"
+    # The delta method has the median/ folder the projection system adds:
+    # energy/electricity/deltamethod/median/rcp45/...
+    layout_by_run_type:
+      deltamethod: "{model}/{run_type}/{subdir}"
+    # Its own expected files (from files: energy_deltamethod below).
+    files_by_run_type:
+      deltamethod: energy_deltamethod
     # The scenario in the aggregation file names that counts for progress.
     # Aggregation files under other scenarios in the same folders (such as
     # MERGEETL60_rcp45) are found on their own and can be picked on the page.
@@ -251,6 +275,8 @@ sectors:
       quick_test: [energy-quick-test, cil2wpp-energy-smoke, "*energy*quick*", "*energy*smoke*", "*energy*test*"]
       single: [energy-single, cil2wpp-energy-gen, "*energy*single*", "*single*energy*", "*energy*gen*"]
       median: [cil2-energy-med, "*energy*med*", "*med*energy*"]
+      # Projection tasks only: energy-deltamethod-agg is the aggregation.
+      deltamethod: [energy-deltamethod]
     run_started:
       median: "2026-10-15T16:30:00"
 
@@ -533,6 +559,32 @@ files:
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-price014-aggregated.nc4"
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-global-price014-aggregated.nc4"
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-global-histclim-price014-aggregated.nc4"
+  # Energy delta method median (do_farmers: false): the main file and its
+  # histclim version, named as in the normal median, and their price014
+  # levels and aggregated files.
+  energy_deltamethod:
+    electricity:
+      projection:
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim.nc4"
+      costs: []
+      levels:
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-price014-levels.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim-price014-levels.nc4"
+      aggregated:
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-price014-aggregated.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim-price014-aggregated.nc4"
+    other_energy:
+      projection:
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim.nc4"
+      costs: []
+      levels:
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-price014-levels.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-price014-levels.nc4"
+      aggregated:
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-price014-aggregated.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim-price014-aggregated.nc4"
   # labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41:
   # 4 projection, 31 aggregation (15 levels, 16 aggregated; gdp, pop and wage weights).
   # The histclim-noadapt file is not made by the projection: a separate step

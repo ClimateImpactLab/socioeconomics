@@ -60,6 +60,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   sub-model again clears it and hides the grid. Each branch shows its P
   and A figures, and a short key under the list says what P and A mean.
   The tree is built from the data, so each sector gets its own branches.
+  A run type with a `parent` in the manifest sits inside its parent's
+  branch, under its `label`: energy's "delta method" opens under median,
+  with its own grid, fuels and aggregation scenarios, while clicking median
+  still shows the median's grid. Such a run is never the main run: it
+  never counts toward the camel, its activity, or the sector percent. Its
+  SUs to finish are added to the sector's, like any run left to do.
   The current path shows at the top of the grid ("Energy / median /
   electricity / price014"). On phones, held upright or sideways (narrow up
   to 600px, or short up to 500px), the tree folds into a menu at the top
@@ -236,6 +242,7 @@ in the `files:` section of `manifest.yml`.
 | Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 36: 4 costs (`<age>-costs`), 16 levels, 16 aggregated |
 | Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder). Spring and winter wheat are not aggregated themselves: 2 costs (`adaptation_costs` and the winsorized `fulladaptcosts`), no aggregated. They are combined into `wheat_combined`, tracked as its own sub-model with the full 12. |
 | Energy | `energy_pixel_interaction/impacts-blueghost/median` | 4: the four variants per fuel | 8: levels and aggregated at the price014 price scenario, for the main variant, histclim, global and global-histclim |
+| Energy, delta method | the median's names, from the delta method run (`do_farmers: false`) | 2: the main file and its histclim version per fuel | 4: price014 levels and aggregated for those two |
 | Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 4: full adaptation, histclim, incadapt, noadapt | 31: 15 levels and 16 aggregated (each variant weighted by gdp, pop and wage, plus the histclim-noadapt file, which a separate step after the projection builds with `make_noadapt_histclim.py`) |
 
 Aggregation types per sector: mortality has costs, levels and aggregated;
@@ -318,6 +325,16 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   `agriculture/corn-1pct_winsorization/single/...`. The global variants
   the agriculture singles also write are listed as other files, not
   counted.
+- A sector can set, for one run type, its own folder rule
+  (`layout_by_run_type`), its own expected files (`files_by_run_type`,
+  naming a list under `files:`) and its own reference (`by_run_type`
+  under `reference`, for example the hours per unit). Energy's delta
+  method uses all three: `{model}/{run_type}/{subdir}`, so
+  `energy/electricity/deltamethod/median/rcp45/...` with the median/ level
+  the projection system adds; the `energy_deltamethod` files; and 9.5 h
+  per unit on amd, 1 core, 20G. Its tasks are matched by the job name
+  `energy-deltamethod` (the aggregation job, `energy-deltamethod-agg`, is
+  not a projection task).
 - Scenarios: SSP2, SSP3 and SSP4, each with rcp45 and rcp85 and both IAMs
   (12 scenarios), as in the original specifications.
 - A file counts as present only if it exists and is not empty.

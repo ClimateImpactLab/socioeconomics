@@ -106,7 +106,8 @@ function fmtDate(iso) {
 const sector = () => DATA.sectors[view.sector];
 const runType = () => sector().run_types[view.runType];
 
-function specOf(sec, model) { return sec.files_spec[model]; }
+// A run type with its own expected files (the delta method) carries them.
+function specOf(sec, model, rt) { return ((rt && rt.files_spec) || sec.files_spec)[model]; }
 function flatNames(spec) { return GROUPS.flatMap((g) => spec[g]); }
 function groupTotal(spec, groups) { return groups.reduce((n, g) => n + spec[g].length, 0); }
 
@@ -161,12 +162,12 @@ function filesOf(sec, rt, scen) {
   const out = { proj: 0, projExp: 0, agg: 0, aggExp: 0, complete: 0, partial: 0, started: 0, running: 0, failed: 0 };
   const perModel = rt.counts.total / rt.dims.models.length;
   for (const m of rt.dims.models) {
-    const s = specOf(sec, m);
+    const s = specOf(sec, m, rt);
     out.projExp += perModel * s.projection.length;
     out.aggExp += perModel * groupTotal(s, AGG_GROUPS);
   }
   for (const u of rt.units) {
-    const c = unitCounts(u, specOf(sec, u.model), scen);
+    const c = unitCounts(u, specOf(sec, u.model, rt), scen);
     out.proj += c.proj;
     out.agg += c.agg;
     if (u.state === "running") out.running += 1;
@@ -216,29 +217,32 @@ function sectorFiles(sec) {
 
 // A sector is active when projection files were written in its folders in
 // the last 24 hours before the scan, or a unit is being written right now.
+// Run types nested in another (the delta method) do not count: the camel
+// and its table follow the sector's own runs.
+function ownRuns(sec) { return Object.values(sec.run_types).filter((rt) => !rt.parent); }
 function sectorActive(sec) {
   const scan = new Date(DATA.generated_at).getTime();
-  return sectorRunning(sec) || Object.values(sec.run_types).some((rt) =>
+  return sectorRunning(sec) || ownRuns(sec).some((rt) =>
     rt.last_projection_write && scan - new Date(rt.last_projection_write).getTime() < 24 * 3.6e6);
 }
 
 
 function sectorRunning(sec) {
-  return Object.values(sec.run_types).some((rt) =>
+  return ownRuns(sec).some((rt) =>
     rt.units.some((u) => u.stages.generate && u.stages.generate.state === "running"));
 }
 
 // Projection (P) and aggregation (A) files present out of expected, for a
 // set of units; expUnits is the number of expected units per sub-model.
-function paFiles(sec, units, expUnits, models, scen) {
+function paFiles(sec, rt, units, expUnits, models, scen) {
   const out = { p: 0, pExp: 0, a: 0, aExp: 0 };
   for (const m of models) {
-    const spec = specOf(sec, m);
+    const spec = specOf(sec, m, rt);
     out.pExp += expUnits * spec.projection.length;
     out.aExp += expUnits * groupTotal(spec, AGG_GROUPS);
   }
   for (const u of units) {
-    const c = unitCounts(u, specOf(sec, u.model), scen);
+    const c = unitCounts(u, specOf(sec, u.model, rt), scen);
     out.p += c.proj;
     out.a += c.agg;
   }
@@ -416,6 +420,52 @@ function tnode(act, key, label, figure, { on = false, off = false, cls = "", sty
     <span class="tlabel">${label}</span>${figure ? `<span class="tfig">${esc(figure)}</span>` : ""}</button>`;
 }
 
+// One run type in the tree: its node, and when open its sub-models, its
+// aggregation scenarios and the run types nested in it.
+function runBranch(sec, k) {
+  const rt = sec.run_types[k];
+  const usable = rt && rt.units.length > 0;
+  const why = !rt ? ((sec.disabled_run_types || []).includes(k) ? "not part of this sector" : "not run for this sector")
+    : !usable ? "no files yet" : "";
+  const here = view.runType === k;
+  const nested = Object.keys(sec.run_types).filter((c) => sec.run_types[c].parent === k);
+  const inside = nested.includes(view.runType);
+  const hasModels = usable && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
+  let html = tnode("run", k, esc((rt && rt.label) || k), rt ? (usable ? paShort(filesOf(sec, rt)) : "no files yet") : "n/a",
+    { on: here, off: !usable, leaf: usable && !hasModels && !nested.length, title: why });
+  // A run type with nothing yet still shows what is nested in it.
+  if (!here && !inside && !(nested.length && !usable)) return html;
+  html += `<div class="tkids">`;
+  if (here && usable) {
+    if (hasModels) {
+      const perModel = rt.counts.total / rt.dims.models.length;
+      for (const m of rt.dims.models) {
+        const units = rt.units.filter((u) => u.model === m);
+        const n = paFiles(sec, rt, units, perModel, [m], curScen());
+        html += tnode("model", m, esc(m), units.length ? paShort({ proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }) : "no files yet",
+          { on: view.model === m, off: !units.length, leaf: true, title: units.length ? "" : "no files yet" });
+      }
+    }
+    // Aggregation scenarios, as the selector shows them.
+    const sc = rt.agg_scenarios || { main: null, others: [] };
+    const anyAgg = rt.units.some((u) => u.bits.slice(specOf(sec, u.model, rt).projection.length).includes("1")
+      || Object.values(u.alt_bits || {}).some((b) => b.includes("1")));
+    if (!anyAgg) {
+      // Nothing to pick yet: the branch stays folded.
+      html += tnode("scen", "", "Aggregation", sc.main ? "none yet" : "-", { off: true, cls: "tfold", title: "no aggregation files yet" });
+    } else {
+      const cur = curScen();
+      const aggPct = (scen) => { const f = filesOf(sec, rt, scen); return f.aggExp ? `A ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : ""; };
+      html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
+      html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main", aggPct(null), { on: !cur, leaf: true });
+      for (const o of sc.others) html += tnode("scen", o, esc(scenLabel(o)), aggPct(o), { on: cur === o, leaf: true });
+      html += `</div>`;
+    }
+  }
+  for (const c of nested) html += runBranch(sec, c);
+  return html + `</div>`;
+}
+
 function renderTree() {
   let html = "";
   for (const cs of CAMEL_SECTIONS) {
@@ -429,47 +479,12 @@ function renderTree() {
     html += tnode("sector", cs.key, esc(sec.label), paShort(sectorFiles(sec)), { on: open, cls: "tsector", style: color });
     if (!open) continue;
     html += `<div class="tkids">`;
+    // Run types; one with a parent (the delta method under median) sits
+    // inside its parent's branch instead.
     const names = [...new Set([...RUN_TYPE_ORDER, ...Object.keys(sec.run_types), ...(sec.disabled_run_types || [])])]
-      .filter((k) => k in sec.run_types || (sec.disabled_run_types || []).includes(k) || RUN_TYPE_ORDER.includes(k));
-    for (const k of names) {
-      const rt = sec.run_types[k];
-      const usable = rt && rt.units.length > 0;
-      const why = !rt ? ((sec.disabled_run_types || []).includes(k) ? "not part of this sector" : "not run for this sector")
-        : !usable ? "no files yet" : "";
-      const here = view.runType === k;
-      const hasModels = usable && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
-      html += tnode("run", k, esc(k), rt ? (usable ? paShort(filesOf(sec, rt)) : "no files yet") : "n/a",
-        { on: here, off: !usable, leaf: usable && !hasModels, title: why });
-      if (!here || !usable) continue;
-      html += `<div class="tkids">`;
-      if (hasModels) {
-        const perModel = rt.counts.total / rt.dims.models.length;
-        for (const m of rt.dims.models) {
-          const units = rt.units.filter((u) => u.model === m);
-          const n = paFiles(sec, units, perModel, [m], curScen());
-          html += tnode("model", m, esc(m), units.length ? paShort({ proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }) : "no files yet",
-            { on: view.model === m, off: !units.length, leaf: true, title: units.length ? "" : "no files yet" });
-        }
-      }
-      // Aggregation scenarios, as the selector shows them.
-      const sc = rt.agg_scenarios || { main: null, others: [] };
-      const anyAgg = rt.units.some((u) => u.bits.slice(specOf(sec, u.model).projection.length).includes("1")
-        || Object.values(u.alt_bits || {}).some((b) => b.includes("1")));
-      if (!anyAgg) {
-        // Nothing to pick yet: the branch stays folded.
-        html += tnode("scen", "", "Aggregation", sc.main ? "none yet" : "-", { off: true, cls: "tfold", title: "no aggregation files yet" });
-        html += `</div>`;
-        continue;
-      }
-      html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
-      {
-        const cur = curScen();
-        const aggPct = (scen) => { const f = filesOf(sec, rt, scen); return f.aggExp ? `A ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : ""; };
-        html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main", aggPct(null), { on: !cur, leaf: true });
-        for (const o of sc.others) html += tnode("scen", o, esc(scenLabel(o)), aggPct(o), { on: cur === o, leaf: true });
-      }
-      html += `</div></div>`;
-    }
+      .filter((k) => k in sec.run_types || (sec.disabled_run_types || []).includes(k) || RUN_TYPE_ORDER.includes(k))
+      .filter((k) => !(sec.run_types[k] && sec.run_types[k].parent));
+    for (const k of names) html += runBranch(sec, k);
     html += `</div>`;
   }
   $("tree").innerHTML = html;
@@ -479,7 +494,10 @@ function renderTree() {
   if (view.sector) {
     const rt = runType(), sec = sector();
     parts.push(sec.label);
-    if (view.runType) parts.push(view.runType);
+    if (view.runType) {
+      if (rt && rt.parent) parts.push(rt.parent);
+      parts.push((rt && rt.label) || view.runType);
+    }
     if (rt && gridKind(rt) === "gcms" && rt.dims.models.length > 1 && view.model) parts.push(view.model);
     const sc = rt && rt.agg_scenarios;
     const cur = curScen();
@@ -593,7 +611,7 @@ function cellStats(rt, sec, models, scen) {
   for (const c of rt.dims.cells) {
     let pExp = 0, aExp = 0;
     for (const m of models) {
-      const spec = specOf(sec, m);
+      const spec = specOf(sec, m, rt);
       pExp += rt.dims.gcms[c.rcp].length * per * spec.projection.length;
       aExp += rt.dims.gcms[c.rcp].length * per * groupTotal(spec, AGG_GROUPS);
     }
@@ -603,7 +621,7 @@ function cellStats(rt, sec, models, scen) {
     if (!models.includes(u.model)) continue;
     const t = out.get(`${u.ssp}|${u.rcp}|${u.iam}`);
     if (!t) continue;
-    const c = unitCounts(u, specOf(sec, u.model), scen);
+    const c = unitCounts(u, specOf(sec, u.model, rt), scen);
     t.p += c.proj;
     t.a += c.agg;
   }
@@ -676,8 +694,8 @@ function renderHighlight(counts) {
 // Aggregation types a sector actually has, in a fixed order.
 const AGG_STYLE = { costs: { v: "cost", label: "Costs" }, levels: { v: "lvl", label: "Levels" },
   aggregated: { v: "agg", label: "Aggregated" } };
-function aggTypes(sec) {
-  return AGG_GROUPS.filter((g) => Object.values(sec.files_spec).some((spec) => spec[g].length));
+function aggTypes(sec, rt) {
+  return AGG_GROUPS.filter((g) => Object.values((rt && rt.files_spec) || sec.files_spec).some((spec) => spec[g].length));
 }
 
 function renderLegend() {
@@ -693,7 +711,7 @@ function renderLegend() {
      <div class="leg-item" title="All projection and aggregation files present">${box("border:1.5px solid color-mix(in srgb, var(--st-done) 55%, transparent);background:var(--st-done-bg)")} Aggregation complete</div>
      <span class="leg-sep">|</span>
      <span style="font-weight:500">Aggregation:</span>
-     ${aggTypes(sector()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}`;
+     ${aggTypes(sector(), runType()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}`;
 }
 
 // A cell's file squares as one small picture instead of one element per file,
@@ -792,7 +810,7 @@ function renderGrid() {
         const key = [model, c.ssp, c.rcp, c.iam, gcm, b ?? ""].join("|");
         const unit = byKey.get(key) || null;
         cellIndex.set(key, { unit, model, ssp: c.ssp, rcp: c.rcp, iam: c.iam, gcm, batch: b });
-        body += `<td class="${cls}" data-c="${esc(k)}">${cellHtml(key, unit, specOf(sec, model), gridCols.hl.get(k))}</td>`;
+        body += `<td class="${cls}" data-c="${esc(k)}">${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k))}</td>`;
       });
     });
     body += `</tr>`;
@@ -932,7 +950,7 @@ async function showDetail(key) {
   crossHighlight(el);
 
   const sec = sector();
-  const spec = specOf(sec, info.model);
+  const spec = specOf(sec, info.model, runType());
   // The aggregation files shown are those of the scenario picked in the selector.
   const scen = curScen();
   const cnt = unitCounts(info.unit, spec, scen);
@@ -1484,7 +1502,7 @@ function setup() {
   }, true);
   const fillTip = (b) => {
     const info = cellIndex.get(b.dataset.key);
-    const spec = specOf(sector(), info.model), cnt = unitCounts(info.unit, spec), sc = curScen();
+    const spec = specOf(sector(), info.model, runType()), cnt = unitCounts(info.unit, spec), sc = curScen();
     const alt = sc ? unitCounts(info.unit, spec, sc) : null;
     tip.innerHTML = `${esc(cellTitle(info))}<br>${cnt.proj}/${cnt.projTotal} projection` +
       (cnt.aggTotal ? `<br>${cnt.agg}/${cnt.aggTotal} aggregation` : "") +

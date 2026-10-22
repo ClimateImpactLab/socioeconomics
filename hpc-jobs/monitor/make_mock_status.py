@@ -34,6 +34,7 @@ MOCK_PROGRESS = {
     ("energy", "quick_test"):      {"failed": 1.0},
     ("energy", "single"):          {"done": 0.80, "running": 0.06, "failed": 0.07, "partial": 0.07},
     ("energy", "median"):          {"running": 0.05},
+    ("energy", "deltamethod"):     {"done": 0.04, "running": 0.06, "partial": 0.03},
     ("energy", "montecarlo"):      {},
     ("labor", "quick_test"):       {"done": 1.0},
     ("labor", "single"):           {"done": 1.0},
@@ -74,7 +75,8 @@ def mock_ended_badly(rng, users, now):
 def mock_su_estimate(counts, stages, sector, rt_name, rcc):
     """Same rules as the collector, from the reference time and the reference
     request in the manifest, since the mock has no jobs or file dates."""
-    ref = sector.get("reference") or {}
+    ref = dict(sector.get("reference") or {})
+    ref.update((ref.pop("by_run_type", None) or {}).get(rt_name) or {})
     limit = ref.get("time_limit_hours")
     if isinstance(limit, dict):
         limit = limit.get(rt_name)
@@ -105,7 +107,7 @@ def mock_su_estimate(counts, stages, sector, rt_name, rcc):
             "su_low": None if rate is None else round(remaining * low * rate),
             "su_high": None if rate is None else round(remaining * high * rate),
             "source": "reference",
-            "basis": f"{remaining:,} units left × {low:g} to {high:g} h per unit (reference); {billed}"}
+            "basis": f"{remaining:,} units left × {f'{low:g}' if low == high else f'{low:g} to {high:g}'} h per unit (reference); {billed}"}
 
 
 def mock_active_jobs(rng, now):
@@ -147,8 +149,10 @@ GROUPS = ["projection", "costs", "levels", "aggregated"]
 
 
 def model_dir_for(sector, rt_name, rt_cfg, model):
-    """Same rule as the collector: the sector's layout, empty parts dropped."""
-    rel = sector.get("layout", "{run_type}/{model}/{subdir}").format(
+    """Same rule as the collector: the sector's layout (or its layout for
+    that run type), empty parts dropped."""
+    layout = (sector.get("layout_by_run_type") or {}).get(rt_name) or sector.get("layout", "{run_type}/{model}/{subdir}")
+    rel = layout.format(
         run_type=rt_name, model="" if model == "main" else model, subdir=rt_cfg.get("subdir") or "")
     return os.path.join(sector["output_root"], *[p for p in rel.split("/") if p])
 
@@ -324,6 +328,14 @@ def main():
             rt_cfg = manifest["run_types"][run_type]
             if not rt_cfg.get("enabled", True):
                 continue
+            files_key = (sector.get("files_by_run_type") or {}).get(run_type)
+            sector_spec = files_spec
+            files_spec = file_spec_for(manifest["files"], files_key) if files_key else sector_spec
+            # A run type inside another one (the delta method) draws from its
+            # own random sequence, so the other mock runs stay as they were.
+            main_rng = rng
+            if rt_cfg.get("parent"):
+                rng = random.Random(f"{args.seed}-{sector_name}-{run_type}")
             cells = cells_for(rt_cfg, manifest["scenarios"])
             rcp_gcms = gcms_for(rt_cfg, manifest["gcms"])
             batches = rt_cfg.get("batches")
@@ -336,7 +348,8 @@ def main():
             # Sectors with a main aggregation scenario also get one additional
             # scenario on some finished units, as the collector would find it.
             main_scen = sector.get("aggregation_scenario")
-            alt_scen = "MERGEETL60_{rcp}" if main_scen else None
+            # (Not the delta method: it is only aggregated with the main one.)
+            alt_scen = "MERGEETL60_{rcp}" if main_scen and not rt_cfg.get("parent") else None
             seen_alt = False
             for i, unit in enumerate(all_units):
                 state = pick_state(i, len(all_units), fractions, rng)
@@ -402,6 +415,12 @@ def main():
                     if counts["running"] else None,
                 "units": listed,
             }
+            if files_key:
+                run_types_out[run_type]["files_spec"] = files_spec
+            for k in ("label", "parent"):
+                if rt_cfg.get(k):
+                    run_types_out[run_type][k] = rt_cfg[k]
+            files_spec, rng = sector_spec, main_rng
             for (model, batch), cells_ in details.items():
                 name = f"{model}.json" if batch is None else f"{model}/batch{batch}.json"
                 path = os.path.join(args.out_dir, "details", sector_name, run_type, name)

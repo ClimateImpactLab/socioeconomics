@@ -228,8 +228,10 @@ DEFAULT_LAYOUT = "{run_type}/{model}/{subdir}"
 
 def model_dir_for(sector, rt_name, rt_cfg, model, root=None):
     """Folder of one sub-model and run type, down to where batch or rcp
-    folders start, following the sector's layout in the manifest."""
-    rel = sector.get("layout", DEFAULT_LAYOUT).format(
+    folders start, following the sector's layout in the manifest (or its
+    layout for that run type, when it has one)."""
+    layout = (sector.get("layout_by_run_type") or {}).get(rt_name) or sector.get("layout", DEFAULT_LAYOUT)
+    rel = layout.format(
         run_type=rt_name, model="" if model == "main" else model, subdir=rt_cfg.get("subdir") or "")
     return leaf_path(root or sector["output_root"], *rel.split("/"))
 
@@ -465,6 +467,14 @@ def plural(n, word):
     return f"{n:,} {word}" if n == 1 else f"{n:,} {word}s"
 
 
+def reference_for(sector, rt_name):
+    """The sector's reference in the manifest, with what its by_run_type
+    sets for this run type on top (the request keeps its own by_run_type)."""
+    ref = dict(sector.get("reference") or {})
+    ref.update((ref.pop("by_run_type", None) or {}).get(rt_name) or {})
+    return ref
+
+
 def estimate_sus(remaining, ut, sector, rt_name, req, rate):
     """Compute hours and RCC SUs to finish the units whose projections are not done.
 
@@ -475,7 +485,7 @@ def estimate_sus(remaining, ut, sector, rt_name, req, rate):
     RCC's rate for the run's request (see rcc_rate). A sector with no
     reference time is "not known yet".
     """
-    ref = sector.get("reference") or {}
+    ref = reference_for(sector, rt_name)
     billing = ref.get("billing", 1)
     limit = ref.get("time_limit_hours")
     if isinstance(limit, dict):
@@ -601,14 +611,14 @@ def run_since(sector, rt_name, timing):
         return sacct_time(str(started))
     if not timing["first_write"]:
         return None
-    limit = (sector.get("reference") or {}).get("time_limit_hours") or 36
+    limit = reference_for(sector, rt_name).get("time_limit_hours") or 36
     if isinstance(limit, dict):
         limit = limit.get(rt_name) or 36
     return timing["first_write"] - limit * 3600
 
 
 # A task matching several run types goes to the most specific one.
-RUN_TYPE_ORDER = ["montecarlo", "median", "quick_test", "single"]
+RUN_TYPE_ORDER = ["deltamethod", "montecarlo", "median", "quick_test", "single"]
 
 
 def name_matches(name, patterns):
@@ -713,7 +723,7 @@ def finish_estimates(manifest, sectors_out, all_tasks):
         for rt, out in rts.items():
             timing = out.pop("_timing")
             ut = unit_time(manifest["run_types"][rt], timing, matched[rt], startup,
-                           (sector.get("reference") or {}).get("hours_per_unit"))
+                           reference_for(sector, rt).get("hours_per_unit"))
             eta = projection_eta(timing["left"], timing["recent"], timing["running"], ut)
             out["eta_hours"], out["eta_method"], out["eta_basis"] = eta["hours"], eta["method"], eta["basis"]
             out["unit_time_source"] = ut["source"] if ut else None
@@ -1084,10 +1094,21 @@ def main():
         spec = file_spec_for(manifest["files"], sector_name)
         run_types_out = {}
         for rt_name in sector["run_types"]:
-            if not manifest["run_types"][rt_name].get("enabled", True):
+            rt_cfg = manifest["run_types"][rt_name]
+            if not rt_cfg.get("enabled", True):
                 continue
             details = {}
-            out = scan_run_type(sector, rt_name, manifest, spec, args.cil_root, now, details)
+            # A run type with its own expected files (files_by_run_type).
+            files_key = (sector.get("files_by_run_type") or {}).get(rt_name)
+            rt_spec = file_spec_for(manifest["files"], files_key) if files_key else spec
+            out = scan_run_type(sector, rt_name, manifest, rt_spec, args.cil_root, now, details)
+            if files_key:
+                out["files_spec"] = rt_spec
+            # A run type shown inside another one in the tree (the delta method
+            # under median), with its own label.
+            for k in ("label", "parent"):
+                if rt_cfg.get(k):
+                    out[k] = rt_cfg[k]
             write_details(args.out_dir, sector_name, rt_name, details)
             run_types_out[rt_name] = out
             c = out["counts"]
