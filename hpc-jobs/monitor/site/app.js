@@ -894,24 +894,39 @@ const SQ = { size: 4, gap: 0.5, cols: 4 };
 const sqCache = new Map();
 let sqColors = null;
 function squares(pres, groups) {
+  // The pattern of present and missing files, per group: the same in both
+  // themes, so a theme switch can repaint the pictures in place.
+  const q = groups.map((g) => pres[g].map((on) => (on ? 1 : 0)).join("")).join("|");
+  const st = sqImage(groups, q);
+  return `<i class="sq-img" data-g="${groups.join(",")}" data-q="${q}" style="width:${st.w}px;height:${st.h}px;background-image:${st.url}"></i>`;
+}
+function sqImage(groups, q) {
   if (!sqColors) {
     const css = getComputedStyle(document.documentElement);
     const v = (name) => css.getPropertyValue(name).trim();
     sqColors = { miss: v("--miss"), projection: v("--base"), costs: v("--agg-cost"), levels: v("--agg-lvl"), aggregated: v("--agg-agg") };
   }
-  const fills = groups.flatMap((g) => pres[g].map((on) => (on ? sqColors[g] : sqColors.miss)));
-  const key = fills.join(",");
-  let img = sqCache.get(key);
-  if (!img) {
+  const key = `${groups.join(",")}:${q}`;
+  let st = sqCache.get(key);
+  if (!st) {
+    const bits = q.split("|");
+    const fills = groups.flatMap((g, n) => [...bits[n]].map((b) => (b === "1" ? sqColors[g] : sqColors.miss)));
     const rows = Math.ceil(fills.length / SQ.cols), step = SQ.size + SQ.gap;
     const w = SQ.cols * step - SQ.gap, h = rows * step - SQ.gap;
     const rects = fills.map((f, i) => `<rect x="${(i % SQ.cols) * step}" y="${Math.floor(i / SQ.cols) * step}" width="${SQ.size}" ` +
       `height="${SQ.size}" rx="0.5" fill="${f}"/>`).join("");
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${rects}</svg>`;
-    img = `<i class="sq-img" style="width:${w}px;height:${h}px;background-image:url('data:image/svg+xml,${encodeURIComponent(svg)}')"></i>`;
-    sqCache.set(key, img);
+    st = { w, h, url: `url('data:image/svg+xml,${encodeURIComponent(svg)}')` };
+    sqCache.set(key, st);
   }
-  return img;
+  return st;
+}
+// After a theme switch: the same pictures in the new theme's colors, set
+// in place, without rebuilding the grid.
+function recolorSquares() {
+  sqCache.clear();
+  sqColors = null;
+  for (const e of document.querySelectorAll("#grid .sq-img")) e.style.backgroundImage = sqImage(e.dataset.g.split(","), e.dataset.q).url;
 }
 
 function cellHtml(key, unit, spec, hlCounts) {
@@ -1724,23 +1739,49 @@ function setup() {
     clearTimeout(fitTimer);
     fitTimer = setTimeout(() => { hideTip(); if (view.sector && !document.body.classList.contains("no-model")) fitGrid(); }, 120);
   });
-  $("theme-toggle").onclick = () => {
-    const root = document.documentElement;
-    const next = getComputedStyle(root).colorScheme.includes("dark") ? "light" : "dark";
-    root.dataset.theme = next;
-    try { localStorage.setItem("amel-theme", next); } catch (e) { /* storage may be blocked */ }
-    // The file squares are pictures in the theme's colors: redraw them.
-    sqCache.clear();
-    sqColors = null;
-    if (view.sector && view.runType && !document.body.classList.contains("no-model")) renderGrid();
-  };
+}
+
+// Light and dark. The mode showing is the saved choice, or else the
+// system's. The button is wired before the data loads, so no click is
+// lost; each click switches to the other mode, saves it, and the page
+// repaints at once; the grid's square pictures follow on the next frame.
+const THEME_KEY = "amel-theme";
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+function themeNow() {
+  const t = document.documentElement.dataset.theme;
+  return t === "dark" || t === "light" ? t : (systemDark.matches ? "dark" : "light");
+}
+// The button keeps its half-filled circle; its tooltip names the mode a
+// click switches to.
+function showThemeButton() {
+  const b = $("theme-toggle"), next = themeNow() === "dark" ? "light" : "dark";
+  b.title = `Switch to ${next} mode`;
+  b.setAttribute("aria-label", b.title);
+}
+function setupTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "dark" || saved === "light") document.documentElement.dataset.theme = saved;
+  } catch (e) { /* storage may be blocked */ }
+  showThemeButton();
+  const repaint = () => requestAnimationFrame(() => requestAnimationFrame(recolorSquares));
+  $("theme-toggle").addEventListener("click", () => {
+    const next = themeNow() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* storage may be blocked */ }
+    showThemeButton();
+    repaint();
+  });
+  // With no saved choice the page follows the system as it changes.
+  systemDark.addEventListener("change", () => {
+    if (document.documentElement.dataset.theme) return;
+    showThemeButton();
+    repaint();
+  });
 }
 
 async function boot() {
-  try {
-    const saved = localStorage.getItem("amel-theme");
-    if (saved) document.documentElement.dataset.theme = saved;
-  } catch (e) { /* storage may be blocked */ }
+  setupTheme();
 
   const load = async (base) => {
     const r = await fetch(`${base}status.json`, { cache: "no-store" });

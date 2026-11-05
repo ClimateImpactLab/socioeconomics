@@ -128,6 +128,14 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   it, which shows a small x on hover, or Escape, closes it (Escape closes
   an open "i" box first). The folder path sits under the header.
 - Resources and SLURM jobs start collapsed.
+- Light and dark: the button at the top right (a half-filled circle) has
+  a tooltip naming the mode it switches to ("Switch to dark mode" or
+  "Switch to light mode"). The page
+  starts in the saved choice, or else in the system's setting, and follows
+  the system while nothing is saved. The button works from the first
+  moment, before the data has loaded; each click switches to the other
+  mode and saves it. The grid is not rebuilt: its small square pictures
+  are repainted in the new colors on the next frame.
 - Loading: while a grid is built (after picking a sector, run type,
   sub-model or aggregation scenario; never on the first page load), a
   small see-through cube, 28 to 36 px following the screen width, with
