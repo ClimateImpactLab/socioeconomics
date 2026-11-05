@@ -135,10 +135,17 @@ The table lists only runs that finished, as a reference.
 
 | date | user | sector | run type | job id | partition | memory requested | peak memory | time | notes |
 |------|------|--------|----------|--------|-----------|------------------|-------------|------|-------|
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.49G | 01:59:41 | cassava |
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.53G | 02:17:04 | corn |
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 11.10G | 01:55:40 | rice |
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.65G | 01:29:58 | sorghum |
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.28G | 01:57:45 | soy |
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 16.40G | 02:50:00 | wheat_spring |
-| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 19.94G | 05:47:46 | wheat_winter; singles now request 28G |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.49G | 01:59:41 | cassava; 1 scenario, 4 files per folder |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.53G | 02:17:04 | corn; 1 scenario, 4 files per folder |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 11.10G | 01:55:40 | rice; 1 scenario, 4 files per folder |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.65G | 01:29:58 | sorghum; 1 scenario, 4 files per folder |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 9.28G | 01:57:45 | soy; 1 scenario, 4 files per folder |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 16.40G | 02:50:00 | wheat_spring; 1 scenario, 4 files per folder |
+| 2026-10-15 | Sebastian CS | agriculture | quick_test | 60760542 | amd | 40G | 19.94G | 05:47:46 | wheat_winter; 1 scenario, 4 files per folder; singles now request 28G |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 11.2G | 03:14:35 | cassava; 12 scenarios, 8 files per folder (with global) |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 13.9G | 04:18:18 | corn; 12 scenarios, 8 files per folder (with global) |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 13.7G | 04:07:29 | rice; 12 scenarios, 8 files per folder (with global) |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 11.4G | 03:17:40 | sorghum; 12 scenarios, 8 files per folder (with global) |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 14.0G | 04:42:49 | soy; 12 scenarios, 8 files per folder (with global) |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 18.0G | 06:25:05 | wheat_spring; 12 scenarios, 8 files per folder (with global) |
+| 2026-10-21 | Sebastian CS | agriculture | single | 61258866 | amd then caslake | 28G | 20.4G | 11:54:54 | wheat_winter; 12 scenarios, 8 files per folder (with global) |
