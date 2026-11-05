@@ -221,6 +221,14 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   hides columns, and a highlight only sets an attribute on the grid. On the
   largest grid (mortality montecarlo, about 6,000 cells) a click takes
   about 0.03 to 0.13 s.
+- Filter title: a small funnel in soft grey, and a "Compact view" switch,
+  on by default and remembered in the browser. On: with a filter other
+  than All, only the columns with at least one matching cell are shown
+  (and on runs with batches, such as montecarlo, only the batch columns
+  with a match; each column header spans the batches left); if nothing
+  matches, a short note says so. Off: every column shows, with the cells
+  that do not match left blank, so the gaps are visible. With All, every
+  column shows either way. The counts are the same in both.
 - Filter: equal badges in rows that wrap inside the box (one column on a
   desktop, more on a sideways phone), "All | Complete | Incomplete |
   Projection complete | Projection incomplete | Being written | Failed |

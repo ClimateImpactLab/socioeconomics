@@ -47,7 +47,7 @@ let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
 
 let DATA = null;
 const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], picks: null,
-  selected: null, aggScen: null, hl: "all" };
+  selected: null, aggScen: null, hl: "all", compact: true };
 const detailCache = new Map();
 let cellIndex = new Map();
 
@@ -563,7 +563,12 @@ function buildTreeLayout() {
   box.id = "scen-box";
   box.innerHTML = `<div class="sbx-title">Scenario</div>`;
   box.appendChild($("scen-graph"));
-  box.insertAdjacentHTML("beforeend", `<div class="sbx-title sbx-filter">Filter</div>`);
+  // Compact view, on unless turned off before (remembered in this browser).
+  try { view.compact = localStorage.getItem("amel-compact") !== "0"; } catch (e) { view.compact = true; }
+  box.insertAdjacentHTML("beforeend", `<div class="sbx-title sbx-filter"><span class="sbx-name">` +
+    `<svg class="sbx-ico" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 2.5h8.4L7 6.3v3.2L5 10.5V6.3z"/></svg>Filter</span>` +
+    `<label class="sw" title="Show only the columns with matching cells"><input type="checkbox" id="compact-view"${view.compact ? " checked" : ""}>` +
+    `<span class="sw-track" aria-hidden="true"></span>Compact view</label></div>`);
   box.appendChild($("hl-tabs"));
   $("tree-menu").appendChild(box);
   // The note where the grid would be, until a run type (and sub-model) is picked.
@@ -982,11 +987,12 @@ function recolorSquares() {
   for (const e of document.querySelectorAll("#grid .sq-img")) e.style.backgroundImage = sqImage(e.dataset.g.split(","), e.dataset.q).url;
 }
 
-function cellHtml(key, unit, spec, hlCounts) {
+function cellHtml(key, unit, spec, hlCounts, batchCounts) {
   const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
   const states = HIGHLIGHTS.map(([k]) => k).filter((k) => cellMatches(k, unit, cnt));
   if (hlCounts) for (const k of states) hlCounts[k] = (hlCounts[k] || 0) + 1;
+  if (batchCounts) for (const k of states) batchCounts[k] = (batchCounts[k] || 0) + 1;
   let html = `<div class="batch ${cls}" data-key="${esc(key)}" data-st="${states.join(" ")}">`;
   html += `<div class="batch-row">${squares(cnt.pres, ["projection"])}` +
     (cnt.proj ? `<span class="row-count proj">${cnt.proj}/${cnt.projTotal}</span>` : "") + `</div>`;
@@ -1017,7 +1023,10 @@ function renderGrid() {
     return (i === 0 ? ` edge-l${t}` : "") + (i === n - 1 ? ` edge-r${t}` : "");
   };
   const ck = (c) => `${c.ssp}|${c.rcp}|${c.iam}`;
-  gridCols = { keys: cells.map(ck), hl: new Map(cells.map((c) => [ck(c), {}])) };
+  // Counts per scenario column, and per batch column (`${column}#${batch}`)
+  // when the run has batches, for the filter and the compact view.
+  gridCols = { keys: cells.map(ck), hl: new Map(cells.map((c) => [ck(c), {}])), hlb: new Map(), batches: batches.length > 1 ? batches.length : 0 };
+  const bAttr = (bi) => (gridCols.batches ? ` data-b="${bi}"` : "");
 
   let h1 = `<thead><tr><th class="model-th">${kind === "gcms" ? "Climate model" : "Sub-model"}</th>`;
   let h2 = `<tr><th class="model-th sub">${batches[0] != null ? "batch" : ""}</th>`;
@@ -1031,7 +1040,7 @@ function renderGrid() {
       // Columns of one or two cells are too narrow for the counts: they go in the tooltip.
       `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3, true)}</span></th>`;
     batches.forEach((b, bi) => {
-      h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
+      h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}"${bAttr(bi)}>${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
   });
   h1 += `</tr>`; h2 += `</tr></thead>`;
@@ -1047,11 +1056,16 @@ function renderGrid() {
         const model = fixedModel || row;
         const gcm = kind === "gcms" ? row : rt.dims.gcms[c.rcp][0];
         const cls = `sc-cell${edge(c.rcp, bi, batches.length)}`;
-        if (!rt.dims.gcms[c.rcp].includes(gcm)) { body += `<td class="${cls}" data-c="${esc(k)}"></td>`; return; }
+        if (!rt.dims.gcms[c.rcp].includes(gcm)) { body += `<td class="${cls}" data-c="${esc(k)}"${bAttr(bi)}></td>`; return; }
         const key = [model, c.ssp, c.rcp, c.iam, gcm, b ?? ""].join("|");
         const unit = byKey.get(key) || null;
         cellIndex.set(key, { unit, model, ssp: c.ssp, rcp: c.rcp, iam: c.iam, gcm, batch: b });
-        body += `<td class="${cls}" data-c="${esc(k)}">${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k))}</td>`;
+        let perBatch = null;
+        if (gridCols.batches) {
+          perBatch = gridCols.hlb.get(`${k}#${bi}`);
+          if (!perBatch) gridCols.hlb.set(`${k}#${bi}`, (perBatch = {}));
+        }
+        body += `<td class="${cls}" data-c="${esc(k)}"${bAttr(bi)}>${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k), perBatch)}</td>`;
       });
     });
     body += `</tr>`;
@@ -1073,16 +1087,36 @@ function applyColumns() {
   let style = $("col-style");
   if (!style) { style = document.createElement("style"); style.id = "col-style"; document.head.appendChild(style); }
   const cells = runType().dims.cells;
-  const shown = cells.filter(cellOn).map((c) => `${c.ssp}|${c.rcp}|${c.iam}`);
+  const picked = cells.filter(cellOn).map((c) => `${c.ssp}|${c.rcp}|${c.iam}`);
+  // The filter's counts follow the SSP, RCP and IAM picks.
+  const counts = {};
+  for (const k of picked) for (const [st, n] of Object.entries(gridCols.hl.get(k) || {})) counts[st] = (counts[st] || 0) + n;
+  // Compact view: with a filter other than All, only the columns (and, on
+  // runs with batches, the batch columns) with at least one match.
+  const compact = view.compact && view.hl !== "all";
+  const shown = compact ? picked.filter((k) => (gridCols.hl.get(k) || {})[view.hl]) : picked;
   const hidden = gridCols.keys.filter((k) => !shown.includes(k));
-  style.textContent = hidden.map((k) => `#grid [data-c="${CSS.escape(k)}"]`).join(",") + (hidden.length ? "{display:none}" : "");
+  const rules = hidden.map((k) => `#grid [data-c="${CSS.escape(k)}"]`);
+  const extra = [];
+  const grid = $("grid");
+  for (const k of picked) {
+    const th = grid.querySelector(`th.sc-hdr[data-c="${CSS.escape(k)}"]`);
+    if (!gridCols.batches || !th) continue;
+    const keep = [...Array(gridCols.batches).keys()].filter((bi) => !compact || (gridCols.hlb.get(`${k}#${bi}`) || {})[view.hl]);
+    th.colSpan = keep.length || gridCols.batches;
+    if (!compact || !shown.includes(k)) continue;
+    for (let bi = 0; bi < gridCols.batches; bi++) if (!keep.includes(bi)) rules.push(`#grid [data-c="${CSS.escape(k)}"][data-b="${bi}"]`);
+    // The column's edge lines move to its first and last batch shown.
+    const t = k.includes("rcp45") ? "rgba(106, 158, 200, 0.25)" : "rgba(200, 112, 112, 0.25)";
+    if (keep[0] > 0) extra.push(`#grid [data-c="${CSS.escape(k)}"][data-b="${keep[0]}"]{border-left:0.5px solid ${t}}`);
+    if (keep[keep.length - 1] < gridCols.batches - 1) extra.push(`#grid [data-c="${CSS.escape(k)}"][data-b="${keep[keep.length - 1]}"]{border-right:0.5px solid ${t}}`);
+  }
+  style.textContent = (rules.length ? rules.join(",") + "{display:none}" : "") + extra.join("");
   // The first shown column needs no separator before it.
   if (shown.length) style.textContent += `#grid .sep-col[data-c="${CSS.escape(shown[0])}"]{display:none}`;
-  const grid = $("grid");
   grid.classList.toggle("no-cols", !shown.length);
+  $("grid-empty").textContent = picked.length ? "No cells match this filter." : "Turn on an SSP with at least one RCP and IAM under it to see columns.";
   $("grid-empty").classList.toggle("hidden", !!shown.length);
-  const counts = {};
-  for (const k of shown) for (const [st, n] of Object.entries(gridCols.hl.get(k) || {})) counts[st] = (counts[st] || 0) + n;
   renderHighlight(counts);
   fitGrid();
 }
@@ -1678,7 +1712,13 @@ function setup() {
     if (!b) return;
     view.hl = b.dataset.hl;
     $("grid").dataset.hl = view.hl;
-    for (const o of document.querySelectorAll(".hl-opt")) o.classList.toggle("active", o.dataset.hl === view.hl);
+    if (view.compact) applyColumns();
+    else for (const o of document.querySelectorAll(".hl-opt")) o.classList.toggle("active", o.dataset.hl === view.hl);
+  });
+  $("compact-view").addEventListener("change", (e) => {
+    view.compact = e.target.checked;
+    try { localStorage.setItem("amel-compact", view.compact ? "1" : "0"); } catch (err) { /* storage may be blocked */ }
+    if (view.sector && view.runType && !document.body.classList.contains("no-model")) applyColumns();
   });
   $("pa-info-btn").addEventListener("click", () => {
     const open = $("pa-info").classList.toggle("hidden") === false;

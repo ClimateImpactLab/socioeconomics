@@ -696,7 +696,21 @@ body.no-sector .main-note { display: none; }
 /* No border: it lines up with the list and the note above it. */
 .scen-box { margin-top: 12px; padding: 0; background: transparent; }
 .sbx-title { font-size: 11px; font-weight: 700; color: var(--tx); margin: 0 0 6px; }
-.sbx-title.sbx-filter { margin-top: 12px; }
+.sbx-title.sbx-filter { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sbx-name { display: inline-flex; align-items: center; gap: 5px; }
+/* A small funnel in soft grey, drawn like the page's other line icons. */
+.sbx-ico { width: 11px; height: 11px; fill: none; stroke: var(--tx3); stroke-width: 1.3; stroke-linejoin: round; opacity: 0.8; }
+/* Compact view: a small switch. */
+.sw { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 400; color: var(--tx2); cursor: pointer; user-select: none; }
+.sw input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.sw-track { position: relative; width: 22px; height: 12px; border-radius: 999px; background: var(--bd2); transition: background-color 0.2s ease; flex: none; }
+.sw-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--bg);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08); transition: transform 0.2s ease; }
+.sw input:checked + .sw-track { background: var(--tx3); }
+.sw input:checked + .sw-track::after { transform: translateX(10px); }
+.sw input:focus-visible + .sw-track { outline: 2px solid var(--blue); outline-offset: 1px; }
+.sw:hover .sw-track { filter: brightness(0.95); }
+@media (prefers-reduced-motion: reduce) { .sw-track, .sw-track::after { transition: none; } }
 .scen-graph { display: flex; flex-direction: column; gap: 5px; }
 body.no-sector #scen-box, body.no-model #scen-box { display: none; }
 .sb-row { display: flex; flex-wrap: wrap; gap: 4px; }
