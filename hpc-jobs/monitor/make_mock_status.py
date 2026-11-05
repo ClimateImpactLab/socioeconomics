@@ -77,9 +77,6 @@ def mock_su_estimate(counts, stages, sector, rt_name, rcc):
     request in the manifest, since the mock has no jobs or file dates."""
     ref = dict(sector.get("reference") or {})
     ref.update((ref.pop("by_run_type", None) or {}).get(rt_name) or {})
-    limit = ref.get("time_limit_hours")
-    if isinstance(limit, dict):
-        limit = limit.get(rt_name)
     req = dict(ref.get("request") or {})
     req.update((req.pop("by_run_type", None) or {}).get(rt_name) or {})
     req = {"partition": req.get("partition"), "cpus": req.get("cpus", 1), "mem_gb": req.get("mem_gb"),
@@ -99,7 +96,7 @@ def mock_su_estimate(counts, stages, sector, rt_name, rcc):
         return {**base, "remaining": remaining, "compute_low": None, "compute_high": None,
                 "su_low": None, "su_high": None, "source": "unknown",
                 "basis": "not known yet: no reference time per unit"}
-    high = max(ref.get("hours_per_unit_max") or limit or low, low)
+    high = max(ref.get("hours_per_unit_max") or low, low)   # never the job time limit
     billed = "request not known" if rate is None else (f"{req['partition']} is not billed by RCC" if rate == 0 else
         f"{req['partition']}, {req['cpus']:g} core and {req['mem_gb']:g} GB (manifest), {rate:g} SU per hour")
     return {**base, "remaining": remaining, "hours_low": low, "hours_high": high,
@@ -370,7 +367,7 @@ def main():
                         base = spec_m["projection"][0][:-len(".nc4")]
                         details.setdefault((made["model"], made["batch"]), {})[f"extra#{key}"] = [
                             [f"{base}{v}.nc4", int(rng.uniform(12, 14) * 1e6), int(now.timestamp()) - rng.randint(0, 86400)]
-                            for v in ["-global-histclim", "-global", "-incadapt-histclim", "-noadapt-histclim"]]
+                            for v in ["-incadapt-histclim", "-noadapt-histclim"]]
                     n_agg = len(made["bits"]) - n_proj
                     if alt_scen and n_agg and made["bits"][:n_proj] == "1" * n_proj and rng.random() < 0.6:
                         # Half of these have both scenarios complete; the rest a

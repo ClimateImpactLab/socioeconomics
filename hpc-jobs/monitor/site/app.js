@@ -287,6 +287,7 @@ function defaultRunType(sec) {
 function renderAll() {
   // Nothing below the sector tabs shows until a sector is picked, and the
   // grid waits for a sub-model when the sector has several (crops, fuels).
+  stopGridLoader();
   document.body.classList.toggle("no-sector", !view.sector);
   if (DATA) renderCamel();
   pickDefaults();
@@ -304,7 +305,178 @@ function renderAll() {
   if (needModel) return;
   renderSspTabs();
   renderLegend();
-  renderGrid();
+  scheduleGrid();
+}
+
+// Grid loading: a small see-through cube. Nine squares in shades of the
+// loading sector's color start partly on the front and partly on the other
+// sides, and travel around the edges onto the front, each by a quarter
+// turn about the cube's center, as a layer turn would carry it. While the
+// grid is still being built, a square may travel back out, so the face is
+// never complete too early. Once the grid is built and the minimum time
+// has passed, the last squares come in, they settle into the full color,
+// and the cube turns smoothly from its spin to face the front, with a soft
+// pulse at the end; then the loader and the grid cross-fade. The cube
+// sways from side to side meanwhile, so the front is never far away. Every move is
+// a browser animation with easing, timed on the page's animation clock,
+// so the moves flow into one another and keep going while the page builds
+// the grid. With reduced motion the cube stands still, facing front, and
+// the squares fade into the color.
+const LD = { beat: 110, travel: 300, minTime: 450, buildAt: 120, ease: "cubic-bezier(0.45, 0, 0.55, 1)",
+  // The sway: the cube turns from side to side around the front.
+  swayMs: 3600, swayDeg: 42, swayMid: -10, tiltDeg: -20 };
+let ldRun = null;
+function stopGridLoader() {
+  if (!ldRun) return;
+  ldRun.cancel();
+  ldRun = null;
+  $("grid-loader").classList.add("hidden");
+  document.body.classList.remove("grid-loading");
+}
+function scheduleGrid() {
+  stopGridLoader();
+  const run = { off: false, anims: [], cancel() { this.off = true; this.anims.forEach((a) => a.cancel()); } };
+  ldRun = run;
+  const ld = $("grid-loader"), view_ = ld.querySelector(".ld-view"), spin = ld.querySelector(".ld-spin");
+  const cube = ld.querySelector(".ld-cube"), bar = ld.querySelector(".ld-bar i");
+  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const keep = (a) => { run.anims.push(a); return a; };
+  // A pause on the animation clock, so the rhythm follows the animation speed.
+  const wait = (ms) => keep(cube.animate([], { duration: ms })).finished.catch(() => {});
+  // The sway, as one browser animation sampled from a sine, so its angle
+  // and speed at any moment are known for the final turn.
+  const swayAt = (u) => LD.swayMid + LD.swayDeg * Math.sin(2 * Math.PI * u);
+  spin.style.transform = `rotateX(${LD.tiltDeg}deg) rotateY(${LD.swayMid}deg)`;
+  const sway = calm ? null : keep(spin.animate(Array.from({ length: 33 }, (_, k) =>
+    ({ transform: `rotateX(${LD.tiltDeg}deg) rotateY(${swayAt(k / 32)}deg)` })),
+    { duration: LD.swayMs, iterations: Infinity, easing: "linear" }));
+  cube.querySelectorAll(".ld-tile").forEach((e) => e.remove());
+  ld.classList.toggle("ld-calm", calm);
+  ld.querySelector(".ld-text").textContent = `Building the grid (${fmtN(runType().counts.total)} units)`;
+  bar.style.transition = "none";
+  bar.style.transform = "scaleX(0)";
+  ld.classList.remove("hidden");
+  document.body.classList.add("grid-loading");
+  requestAnimationFrame(() => { bar.style.transition = ""; bar.style.transform = "scaleX(0.6)"; });
+
+  // Nine squares, each with its place on the front face. Where a square
+  // is: the turn about x (a) and about y (b) that carries the front place
+  // there; a = 90 is the top, -90 the bottom, b = 90 the right, -90 the left.
+  const size = view_.getBoundingClientRect().width || 32, gap = 1.5, pad = 2;
+  const cell = (size - 2 * pad - 2 * gap) / 3, half = size / 2 + 0.3;
+  const sides = [[90, 0], [-90, 0], [0, 90], [0, -90]];
+  const tf = (t, a, b) => `rotateY(${b}deg) rotateX(${a}deg) translate3d(${(t.col - 1) * (cell + gap)}px, ${(t.row - 1) * (cell + gap)}px, ${half}px)`;
+  const order = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5);
+  const tiles = order.map((slot, m) => {
+    const el = document.createElement("span");
+    el.className = "ld-tile";
+    Object.assign(el.style, { width: `${cell}px`, height: `${cell}px`, left: `${(size - cell) / 2}px`, top: `${(size - cell) / 2}px` });
+    el.style.setProperty("--c", `var(--sec-${view.sector})`);
+    cube.appendChild(el);
+    const [a, b] = calm || m < 3 ? [0, 0] : sides[m % 4];
+    const t = { el, row: Math.floor(slot / 3), col: slot % 3, a, b, moving: false };
+    el.style.setProperty("--k", a || b ? 40 : 70);
+    el.style.transform = tf(t, a, b);
+    return t;
+  });
+  const t0 = performance.now();
+  let built = false;
+  const finish = () => {
+    ld.classList.add("hidden");
+    // Clear the finished animations (the fade holds the loader at 0).
+    run.anims.forEach((a) => a.cancel());
+    document.body.classList.remove("grid-loading");
+    if (ldRun === run) ldRun = null;
+  };
+  const build = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (run.off) return;
+    try { renderGrid(); } finally { built = true; resolve(); }
+  })));
+
+  if (calm) {
+    // Still cube: the squares fade into the color.
+    setTimeout(() => build().then(() => {
+      tiles.forEach((t) => t.el.style.setProperty("--k", 100));
+      bar.style.transform = "scaleX(1)";
+      setTimeout(() => { if (!run.off) finish(); }, Math.max(900, 1200 - (performance.now() - t0)));
+    }), LD.buildAt);
+    return;
+  }
+
+  // A square travels to (a, b): one eased quarter (or half) turn.
+  const travel = (t, a, b) => {
+    t.moving = true;
+    const anim = keep(t.el.animate([{ transform: tf(t, t.a, t.b) }, { transform: tf(t, a, b) }],
+      { duration: LD.travel * (Math.abs(a - t.a) + Math.abs(b - t.b) > 90 ? 1.5 : 1), easing: LD.ease, fill: "forwards" }));
+    t.a = a; t.b = b;
+    anim.finished.then(() => {
+      t.moving = false;
+      t.el.style.transform = tf(t, a, b);
+      anim.cancel();
+      if (!a && !b) t.el.style.setProperty("--k", 85);
+    }).catch(() => {});
+    if (a || b) t.el.style.setProperty("--k", 40);
+    return anim.finished.catch(() => {});
+  };
+  const outside = () => tiles.filter((t) => (t.a || t.b) && !t.moving);
+  const inside = () => tiles.filter((t) => !t.a && !t.b && !t.moving);
+
+  // The final turn: from the sway's angle and speed now, one smooth curve
+  // (speed carried over, easing to a stop) to the front, with a soft pulse
+  // at its end.
+  const turnToFront = () => {
+    const u = ((sway.currentTime || 0) % LD.swayMs) / LD.swayMs;
+    const y0 = swayAt(u), v0 = LD.swayDeg * Math.cos(2 * Math.PI * u) * (2 * Math.PI / LD.swayMs);   // degrees per ms
+    const y1 = -14, dur = 460, m0 = v0 * dur;
+    const frames = [];
+    for (let k = 0; k <= 24; k++) {
+      const s_ = k / 24, h00 = 2 * s_ ** 3 - 3 * s_ ** 2 + 1, h10 = s_ ** 3 - 2 * s_ ** 2 + s_, h01 = -2 * s_ ** 3 + 3 * s_ ** 2;
+      const y = h00 * y0 + h10 * m0 + h01 * y1, x = LD.tiltDeg + (-12 - LD.tiltDeg) * h01;
+      frames.push({ transform: `rotateX(${x}deg) rotateY(${y}deg)` });
+    }
+    spin.style.transform = frames[frames.length - 1].transform;
+    sway.cancel();
+    const turn = keep(spin.animate(frames, { duration: dur, easing: "linear" }));
+    const pulse = keep(cube.animate([{ transform: "scale(1)" }, { transform: "scale(1.07)" }, { transform: "scale(1)" }],
+      { duration: 360, delay: Math.max(0, dur - 240), easing: "ease-in-out" }));
+    // The grid fades in only once the cube is still, so its first paint
+    // never holds up a moving frame.
+    return Promise.all([turn.finished, pulse.finished]).catch(() => {});
+  };
+
+  (async () => {
+    wait(LD.buildAt).then(() => { if (!run.off) build(); });
+    const minDone = wait(LD.minTime);
+    let minPassed = false;
+    minDone.then(() => { minPassed = true; });
+    for (;;) {
+      await wait(LD.beat);
+      if (run.off) return;
+      const ready = built && minPassed;
+      const out = outside();
+      // Every square on or coming to the front: the cube starts its turn
+      // while the last ones land.
+      if (ready && tiles.every((t) => !t.a && !t.b)) break;
+      if (out.length && (ready || out.length > 2)) {
+        // A square comes in.
+        travel(out[0], 0, 0);
+      } else if (!ready && inside().length) {
+        // Still building: a square goes back out to a side.
+        const t = inside()[Math.floor(Math.random() * inside().length)];
+        const [a, b] = sides[Math.floor(Math.random() * 4)];
+        travel(t, a, b);
+      }
+    }
+    if (run.off) return;
+    bar.style.transform = "scaleX(1)";
+    tiles.forEach((t) => t.el.style.setProperty("--k", 100));
+    await turnToFront();
+    if (run.off) return;
+    // Cross-fade: the loader fades out while the grid fades in.
+    document.body.classList.remove("grid-loading");
+    await keep(ld.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: "ease-out", fill: "forwards" })).finished.catch(() => {});
+    if (!run.off) finish();
+  })();
 }
 
 /* ---------- tree navigation ---------- */
@@ -1579,7 +1751,7 @@ async function boot() {
     DATA = await load(BASE);
   } catch (err) {
     if (BASE !== REMOTE_BASE) {
-      document.body.insertAdjacentHTML("afterbegin",
+          document.body.insertAdjacentHTML("afterbegin",
         `<div class="error">Could not load ${esc(BASE)}status.json (${esc(err.message)}).</div>`);
       return;
     }
@@ -1588,7 +1760,7 @@ async function boot() {
       DATA = await load(BASE);
       localCopy = true;
     } catch (err2) {
-      document.body.insertAdjacentHTML("afterbegin",
+          document.body.insertAdjacentHTML("afterbegin",
         `<div class="error">Could not load the status data (${esc(err2.message)}).</div>`);
       return;
     }

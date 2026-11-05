@@ -274,6 +274,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     counts = {s: 0 for s in ["not_started", "running", "partial", "done", "failed"]}
     units = []
     gen_done = 0
+    proj_left = 0.0     # units left, from the missing projection files
     gen_recent = 0      # projections finished in the last PACE_WINDOW_HOURS
     gen_running = 0     # projections being written now
     agg_done = 0
@@ -314,6 +315,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     hits = {n: lookup(n, cell["rcp"], leaf_files, twin_files) for n in names}
                     alt = other_scenarios(patterns, main_scen, cell["rcp"], leaf_files) if patterns else {}
                     scenarios_seen.update(alt)
+                    proj_left += sum(1 for n in spec[model]["projection"] if not hits[n]) / n_proj
                     for n in spec[model]["projection"]:
                         if hits[n]:
                             last_projection_write = max(last_projection_write, hits[n][1])
@@ -413,7 +415,9 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
         "counts": counts,
         "aggregation": {"started": agg_started, "done": agg_done},
         # Filled in by finish_estimates once Slurm has been read.
-        "_timing": {"left": counts["total"] - gen_done, "done": gen_done, "recent": gen_recent,
+        # Units left: missing projection files over the files per unit, so a
+        # unit half written counts as half a unit (its finished files are kept).
+        "_timing": {"left": round(proj_left), "done": gen_done, "recent": gen_recent,
                     "running": gen_running, "file_hours": unit_hours,
                     "first_write": first_projection_write},
         # Newest projection file date, for the "active sector" sign on the tabs.
@@ -478,18 +482,16 @@ def reference_for(sector, rt_name):
 def estimate_sus(remaining, ut, sector, rt_name, req, rate):
     """Compute hours and RCC SUs to finish the units whose projections are not done.
 
+    Units left: the missing projection files over the files per unit.
     Hours per unit: from the run's time per unit (see unit_time), median (low)
-    to longest (high); without one, the manifest reference time and its
-    longest reference time (or the job time limit). Compute hours = units
-    left x hours x billing, as Slurm counts them. SUs = units left x hours x
-    RCC's rate for the run's request (see rcc_rate). A sector with no
-    reference time is "not known yet".
+    to 90th percentile (high); without one, the manifest reference time and
+    its longest reference time, never the job time limit. Compute hours =
+    units left x hours x billing, as Slurm counts them. SUs = units left x
+    hours x RCC's rate for the run's requests, weighted by tasks (see
+    rcc_rate). A sector with no reference time is "not known yet".
     """
     ref = reference_for(sector, rt_name)
     billing = ref.get("billing", 1)
-    limit = ref.get("time_limit_hours")
-    if isinstance(limit, dict):
-        limit = limit.get(rt_name)
     base = {"request": req, "rate": None if rate is None else round(rate, 3)}
     if remaining <= 0:
         return {**base, "remaining": 0, "compute_low": 0, "compute_high": 0, "su_low": 0, "su_high": 0,
@@ -504,11 +506,13 @@ def estimate_sus(remaining, ut, sector, rt_name, req, rate):
             return {**base, "remaining": remaining, "compute_low": None, "compute_high": None,
                     "su_low": None, "su_high": None, "source": "unknown",
                     "basis": "not known yet: no reference time per unit"}
+        # The high end is the longest reference time, never the job time
+        # limit: a limit is a ceiling, not what a unit takes.
         ref_max = ref.get("hours_per_unit_max")
-        high_h = max(ref_max or limit or low_h, low_h)
+        high_h = max(ref_max or low_h, low_h)
         c_lo, c_hi = low_h * billing, high_h * billing
         source = "reference"
-        why = f"reference {low_h:g} h to {high_h:g} h ({'longest reference' if ref_max else 'job limit'})"
+        why = f"reference {low_h:g} h" + (f" to {high_h:g} h (longest reference)" if high_h != low_h else "")
     hours = f"{low_h:.1f} h" if round(low_h, 1) == round(high_h, 1) else f"{low_h:.1f} to {high_h:.1f} h"
     if rate is None:
         billed = "request not known"
@@ -517,6 +521,10 @@ def estimate_sus(remaining, ut, sector, rt_name, req, rate):
     else:
         billed = (f"{req['partition']}, {req['cpus']:g} core and {req['mem_gb']:g} GB "
                   f"({req['source']}), {rate:g} SU per hour")
+        if len(req.get("mix") or []) > 1:
+            parts = [f"{r['tasks']:,} tasks on {r['partition']} with {r['cpus']:g} core and {r['mem_gb']:g} GB"
+                     for r in req["mix"]]
+            billed = f"{'; '.join(parts)} (sacct): {rate:.2f} SU per hour, weighted by tasks"
     return {**base, "remaining": remaining, "hours_low": round(low_h, 2), "hours_high": round(high_h, 2),
             "compute_low": round(remaining * c_lo), "compute_high": round(remaining * c_hi),
             "su_low": None if rate is None else round(remaining * low_h * rate),
@@ -549,11 +557,14 @@ def tres_mem_gb(tres):
 
 def run_request(sector, rt_name, tasks):
     """Partition, cores and memory a run's tasks ask for: the most common
-    among its matched tasks, or else the reference in the manifest."""
-    seen = [(t["partition"], t["cpus"], t["mem_gb"]) for t in tasks if t.get("cpus") and t.get("mem_gb")]
+    among its matched tasks, with every request seen and its number of tasks
+    (mix), or else the reference in the manifest."""
+    seen = [(t["partition"], t["cpus"], round(t["mem_gb"], 2)) for t in tasks if t.get("cpus") and t.get("mem_gb")]
     if seen:
-        (part, cpus, mem), _ = collections.Counter(seen).most_common(1)[0]
-        return {"partition": part, "cpus": cpus, "mem_gb": round(mem, 2), "source": "sacct"}
+        counted = collections.Counter(seen).most_common()
+        (part, cpus, mem), _ = counted[0]
+        return {"partition": part, "cpus": cpus, "mem_gb": mem, "source": "sacct",
+                "mix": [{"partition": p_, "cpus": c_, "mem_gb": m_, "tasks": n_} for (p_, c_, m_), n_ in counted]}
     req = dict((sector.get("reference") or {}).get("request") or {})
     req.update((req.pop("by_run_type", None) or {}).get(rt_name) or {})
     if not req:
@@ -564,9 +575,13 @@ def run_request(sector, rt_name, tasks):
 
 def rcc_rate(req, rcc):
     """SUs RCC bills per hour of one task: max(cores, memory / RAM per core) on
-    a billed partition, 0 elsewhere. None when the request is not known."""
+    a billed partition, 0 elsewhere. With several requests (mix), their rates
+    weighted by how many tasks use each. None when the request is not known."""
     if not req:
         return None
+    if req.get("mix"):
+        total = sum(r["tasks"] for r in req["mix"])
+        return sum(rcc_rate({**r, "mix": None}, rcc) * r["tasks"] for r in req["mix"]) / total
     if req["partition"] not in rcc.get("billed_partitions", []):
         return 0.0
     ram = (rcc.get("ram_per_core_gb") or {}).get(req["partition"])
@@ -653,6 +668,12 @@ def one_unit_each(rt_cfg, timing, tasks):
     return bool(tasks) and started > 0 and 0.8 <= len(tasks) / started <= 1.25
 
 
+def high_end(values):
+    """A high but realistic time: the 90th percentile of sorted values, so a
+    few units slowed by restarts or a busy node do not set the range."""
+    return values[min(len(values) - 1, int(0.9 * (len(values) - 1) + 0.5))]
+
+
 def unit_time(rt_cfg, timing, tasks, startup_h, ref_h):
     """Time and SUs per unit for one run, with the source used, or None.
 
@@ -660,12 +681,13 @@ def unit_time(rt_cfg, timing, tasks, startup_h, ref_h):
     units of the run, and only when they are within a factor of 2 of the
     reference time (when there is one); otherwise the reference is used.
     - Tasks of one unit each: elapsed x billing of the finished tasks only,
-      median to longest. Running tasks are left out, since their unit is
+      median to 90th percentile. Running tasks are left out, since their unit is
       not done yet.
     - Tasks of several units each: the SUs of all the run's tasks over the
       units finished, only once none of them is still running.
-    - Otherwise: file dates (first to last file of a unit), plus the start
-      up time measured from the sector's singles, which file dates miss.
+    - Otherwise: file dates (first to last file of a finished unit), median
+      to 90th percentile, plus the start up time measured from the sector's
+      singles, which file dates miss.
     """
     def plausible(hours):
         return ref_h is None or ref_h / 2 <= hours <= ref_h * 2
@@ -677,7 +699,7 @@ def unit_time(rt_cfg, timing, tasks, startup_h, ref_h):
         if one_unit_each(rt_cfg, timing, tasks):
             done = sorted(t["hours"] * t["billing"] for t in finished)
             if len(done) >= MIN_OBSERVED_UNITS:
-                lo, hi = statistics.median(done), done[-1]
+                lo, hi = statistics.median(done), high_end(done)
                 if plausible(lo / billing):
                     return {"low_h": lo / billing, "high_h": hi / billing, "su_low": lo, "su_high": hi,
                             "source": "sacct", "basis": f"sacct, {len(done)} finished tasks of one unit each"}
@@ -694,7 +716,7 @@ def unit_time(rt_cfg, timing, tasks, startup_h, ref_h):
     if len(hours) >= MIN_OBSERVED_UNITS:
         hours = sorted(hours)
         add = startup_h or 0
-        lo, hi = statistics.median(hours) + add, hours[-1] + add
+        lo, hi = statistics.median(hours) + add, high_end(hours) + add
         if plausible(lo):
             note = (f"file dates of {len(hours)} units plus {add:.1f} h start up time from the singles"
                     if startup_h is not None else f"file dates of {len(hours)} units, start up time not known")

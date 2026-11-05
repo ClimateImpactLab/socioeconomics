@@ -729,3 +729,47 @@ body.no-sector #scen-box, body.no-model #scen-box { display: none; }
 #grid-empty { padding: 18px 8px; color: var(--tx3); font-size: 11px; }
 body.no-model #grid-empty { display: none; }
 .sq-img { display: inline-block; flex-shrink: 0; background-repeat: no-repeat; background-size: 100% 100%; }
+
+/* Grid loading: a small see-through cube, its edges thin dashed lines.
+   Nine soft rounded squares, in shades of the loading sector's color and
+   in the style of the grid cells, travel around its edges onto one face
+   (see scheduleGrid), while the cube sways gently; it then turns that
+   face to the front. The
+   moves are browser animations, so they flow and keep going while the
+   page builds the grid. Its size follows the screen. */
+:root { --ld-size: clamp(28px, 2.4vw, 36px); }
+.loader { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  min-height: 140px; color: var(--tx3); font-size: 10px; }
+.ld-view { width: var(--ld-size); height: var(--ld-size); perspective: calc(var(--ld-size) * 9); margin: 6px 0 2px; }
+.ld-spin, .ld-cube { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; }
+.ld-spin { transform: rotateX(-20deg) rotateY(-10deg); }
+.ld-side { position: absolute; inset: 0; box-sizing: border-box; border-radius: 3px;
+  border: 1px dashed color-mix(in srgb, var(--tx3) 45%, transparent); }
+.ld-front { transform: translateZ(calc(var(--ld-size) / 2)); border-style: solid;
+  border-color: color-mix(in srgb, var(--tx3) 30%, transparent); }
+.ld-back { transform: rotateY(180deg) translateZ(calc(var(--ld-size) / 2)); }
+.ld-right { transform: rotateY(90deg) translateZ(calc(var(--ld-size) / 2)); }
+.ld-left { transform: rotateY(-90deg) translateZ(calc(var(--ld-size) / 2)); }
+.ld-top { transform: rotateX(90deg) translateZ(calc(var(--ld-size) / 2)); }
+.ld-bottom { transform: rotateX(-90deg) translateZ(calc(var(--ld-size) / 2)); }
+.ld-tile { position: absolute; border-radius: 2px; box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--c) calc(var(--k) * 0.8%), transparent);
+  background: color-mix(in srgb, var(--c) calc(var(--k) * 0.6%), transparent);
+  transition: background-color 0.3s ease, border-color 0.3s ease; }
+.ld-text { opacity: 0.85; }
+.ld-bar { width: 64px; height: 1.5px; border-radius: 2px; background: color-mix(in srgb, var(--bd) 70%, transparent); overflow: hidden; }
+.ld-bar i { display: block; height: 100%; width: 100%; border-radius: 2px; background: var(--tx3); opacity: 0.7;
+  transform-origin: left; transform: scaleX(0); transition: transform 0.35s ease-out; }
+/* The grid is built under the loader, laid out but not shown, so it fits
+   the width when it appears. */
+.grid-wrap { transition: opacity 0.25s ease; }
+body.grid-loading .grid-wrap { opacity: 0; pointer-events: none; }
+body.grid-loading #grid-empty { display: none; }
+body.no-model #grid-loader, body.no-sector #grid-loader { display: none !important; }
+/* Reduced motion: the cube stands still, facing front, and the squares,
+   already in place, fade into the sector color. */
+.ld-calm .ld-spin { transform: rotateX(-12deg) rotateY(-14deg) !important; }
+.ld-calm .ld-tile { transition: background-color 1s ease, border-color 1s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .ld-bar i, .grid-wrap { transition: none; }
+}

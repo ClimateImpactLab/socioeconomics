@@ -522,9 +522,12 @@ files:
         - "winsorized/wheat_combined-280823-histclim-aggregated.nc4"
         - "winsorized/wheat_combined-280823-incadapt-aggregated.nc4"
         - "winsorized/wheat_combined-280823-noadapt-aggregated.nc4"
-  # energy_pixel_interaction/impacts-blueghost/median: 4 projection,
-  # 8 aggregation at the price014 price scenario: levels and aggregated for
-  # the main variant, histclim, global and global-histclim.
+  # energy_pixel_interaction/impacts-blueghost/median: 6 projection (the
+  # four variants, plus global and global-histclim, which the singles and
+  # medians write with do_farmers 'always'), 8 aggregation at the price014
+  # price scenario: levels and aggregated for the main variant, histclim,
+  # global and global-histclim. Each aggregation file has its projection
+  # file in the list, so a missing global file shows on the projection.
   energy:
     electricity:
       projection:
@@ -532,6 +535,8 @@ files:
         - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-histclim.nc4"
         - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-incadapt.nc4"
         - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-noadapt.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-global.nc4"
+        - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-global-histclim.nc4"
       costs: []
       levels:
         - "FD_FGLS_inter_OTHERIND_electricity_TINV_clim-price014-levels.nc4"
@@ -549,6 +554,8 @@ files:
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-histclim.nc4"
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-incadapt.nc4"
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-noadapt.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-global.nc4"
+        - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-global-histclim.nc4"
       costs: []
       levels:
         - "FD_FGLS_inter_OTHERIND_other_energy_TINV_clim-price014-levels.nc4"

@@ -119,8 +119,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   set `aggregation_scenario` for it.
 - Other files: the cell details also list, under the projection files,
   any `.nc4` file in the folder that is not expected and is not another
-  scenario's aggregation file (for energy: `-global.nc4`,
-  `-global-histclim.nc4`, `-incadapt-histclim.nc4` and
+  scenario's aggregation file (for energy: `-incadapt-histclim.nc4` and
   `-noadapt-histclim.nc4`), in a grey group "Other files (not counted)"
   with sizes and dates. They never count toward the progress.
 - Cell details panel: the arrow at the right of its header folds it to
@@ -129,6 +128,24 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   it, which shows a small x on hover, or Escape, closes it (Escape closes
   an open "i" box first). The folder path sits under the header.
 - Resources and SLURM jobs start collapsed.
+- Loading: while a grid is built (after picking a sector, run type,
+  sub-model or aggregation scenario; never on the first page load), a
+  small see-through cube, 28 to 36 px following the screen width, with
+  thin dashed edges, sways gently from side to side. Nine soft rounded
+  squares in shades of the loading sector's color, in the style of the
+  grid cells, start partly on the front and partly on the other sides,
+  and travel around the edges onto the front, each by a quarter turn as
+  a layer turn would carry it. Once the face is complete they settle into
+  the full color, the cube eases from its sway into facing the front, a
+  soft pulse, and the loader and the grid cross-fade. Every move is an
+  eased browser animation on the page's animation clock, so the steps
+  flow into one another, keep their proportions when the animation speed
+  is slowed, and keep going while the page builds the grid. It runs for
+  at least about 1.2 seconds; while the grid takes longer, a square may
+  travel back out so the face is not complete too early. A short line
+  ("Building the grid (5,850 units)") and a thin bar sit below it. For
+  people who ask for reduced motion, the cube stands still, facing front,
+  and the squares fade into the color.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: not in the tree, and not in any count,
   percent, card or SU estimate. Set it back to true to show it again.
@@ -241,7 +258,7 @@ in the `files:` section of `manifest.yml`.
 |---|---|---|---|
 | Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 36: 4 costs (`<age>-costs`), 16 levels, 16 aggregated |
 | Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder). Spring and winter wheat are not aggregated themselves: 2 costs (`adaptation_costs` and the winsorized `fulladaptcosts`), no aggregated. They are combined into `wheat_combined`, tracked as its own sub-model with the full 12. |
-| Energy | `energy_pixel_interaction/impacts-blueghost/median` | 4: the four variants per fuel | 8: levels and aggregated at the price014 price scenario, for the main variant, histclim, global and global-histclim |
+| Energy | `energy_pixel_interaction/impacts-blueghost/median` | 6: the four variants per fuel, plus global and global-histclim (the source of the four global aggregation files) | 8: levels and aggregated at the price014 price scenario, for the main variant, histclim, global and global-histclim |
 | Energy, delta method | the median's names, from the delta method run (`do_farmers: false`) | 2: the main file and its histclim version per fuel | 4: price014 levels and aggregated for those two |
 | Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 4: full adaptation, histclim, incadapt, noadapt | 31: 15 levels and 16 aggregated (each variant weighted by gdp, pop and wage, plus the histclim-noadapt file, which a separate step after the projection builds with `make_noadapt_histclim.py`) |
 
@@ -255,7 +272,8 @@ production leaves: every expected file is there, for every type.
 Not counted: mortality's polymins .csv files, its `-costs-levels` and
 `-costs-aggregated` files (the old monitor did not count them either),
 the winsorized copies of the agriculture projection and adaptation_costs
-files, and energy's `-global` files, which belong only to the global run.
+files, and energy's `-incadapt-histclim` and `-noadapt-histclim` files,
+which no aggregation file uses.
 
 Agriculture crop ids: cassava 110221; corn, rice, sorghum, soy 160221;
 wheat 280823. If the new aggregation configs use another price scenario
@@ -350,7 +368,7 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     `one_unit_per_task` in the manifest, or any run with about as many
     tasks as units started, such as the mortality montecarlo): sacct,
     elapsed hours x billing of the finished tasks only, median (low) to
-    longest (high). Running tasks are left out, since their unit is not
+    90th percentile (high), so a few slow tasks do not set the range. Running tasks are left out, since their unit is not
     done yet; counting their time so far against the finished units alone
     roughly doubled the mortality figure;
   - tasks of several units each (such as the energy median): sacct, the
@@ -365,13 +383,15 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     and it started since the run's start: `run_started` when set, or else
     the run's first projection file less the job time limit;
   - otherwise, file dates: the time from the first to the last projection
-    file of each finished unit (times n / (n - 1) for n files), plus the
+    file of each finished unit (times n / (n - 1) for n files), median
+    (low) to 90th percentile (high), plus the
     start up time measured from the same sector's singles (a single task's
     elapsed time less its file span), which file dates miss;
   - with none of these, the reference time per unit in the manifest
-    (`reference:`), and its longest reference time (or the job time limit)
-    as the upper bound: mortality 20.5 h (longest 23.7 h), energy 6.5 h
-    (job limit 12 h or 36 h), labor 1.4 h (longest 1.42 h). Agriculture has
+    (`reference:`), and its longest reference time as the upper bound,
+    never the job time limit (a ceiling, not what a unit takes): mortality
+    20.5 h (longest 23.7 h), energy 6.5 h, the energy delta method 9.5 h,
+    labor 1.4 h (longest 1.42 h). Agriculture has
     no reference time yet, so it shows "not known yet".
   The tooltips of the time to finish and SUs to finish cards say which
   source was used.
@@ -381,8 +401,10 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   finished in the last 6 hours ("recent", used with at least 3 of them).
   With less data than that it shows "not enough data yet". A unit's finish
   time is its status marker, or else its newest projection file.
-- SUs to finish, per sector and run type, for the units whose projections
-  are not done yet, as two numbers:
+- SUs to finish, per sector and run type, for the projection units left,
+  counted from the missing projection files over the files per unit (a
+  unit half written counts as half, since its finished files are kept),
+  as two numbers:
   - compute hours: units left x hours per unit x billing, as Slurm counts
     them;
   - SUs, with RCC's billing formula: units left x hours per unit x
@@ -392,7 +414,9 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     `account.rcc_billing.ram_per_core_gb`: 3.75 GB for caslake, which
     matches RCC's bills exactly (1 core and 15G billed 4 SUs per hour, 1
     core and 45G billed 12). The partition, cores and memory come from the
-    run's matched jobs in sacct, which take priority, or else from the
+    run's matched jobs in sacct, which take priority (when they use
+    several requests, such as 36G and 45G, each request's rate is weighted
+    by its number of tasks, and the tooltip lists them), or else from the
     sector's `request` in the manifest, from the jobs in use: agriculture
     amd, 1 core, 28G; labor amd, 1 core, 60G; energy single amd, 1 core,
     15G; energy median caslake, 1 core, 15G; mortality caslake, 1 core, 45G.
@@ -471,7 +495,7 @@ The contract between the collector and the page; the mock follows it.
                           "request": {"partition": "caslake", "cpus": 1, "mem_gb": 45, "source": "manifest"},   // or "sacct"
                           "rate": 12.0,                                  // SUs per hour of one task
                           "source": "reference",   // "sacct", "file dates", "reference" or "unknown"
-                          "basis": "520 units left x 20.5 h (reference) to 36 h (job limit), 1 SU per hour"},
+                          "basis": "520 units left x 20.5 to 23.7 h per unit (reference), 12 SU per hour"},
           "units": [                 // only units with something on disk
             {"model": "main", "ssp": "SSP3", "rcp": "rcp45", "iam": "low", "gcm": "CCSM4", "batch": null,
              "state": "partial",     // not_started|running|partial|done|failed, from the folder
