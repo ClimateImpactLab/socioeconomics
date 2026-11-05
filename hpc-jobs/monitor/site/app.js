@@ -251,9 +251,15 @@ function paFiles(sec, rt, units, expUnits, models, scen) {
 
 // "P 54% (4,174/7,680), A 0% (0/17,280)", or with short set the percents
 // only, for narrow columns.
-function paText(n, short) {
-  const part = (name, a, exp) => `${name} ${fmtPctShort(pctOf(a, exp))}` + (short ? "" : ` (${fmtN(a)}/${fmtN(exp)})`);
-  return `${part("P", n.p, n.pExp)}, ${part("A", n.a, n.aExp)}`;
+// For the column headers: plain text for tooltips, or HTML with the
+// percents in bold; short leaves out the counts and sizes (narrow columns).
+function paText(n, short, html) {
+  const size = (b) => (b == null ? "" : `, ${fmtBytes(b)}`);
+  const part = (name, a, exp, b) => {
+    const pct = fmtPctShort(pctOf(a, exp)), more = short ? null : `${fmtN(a)}/${fmtN(exp)}${size(b)}`;
+    return html ? paFig(name, pct, more) : `${name} ${pct}` + (more ? ` (${more})` : "");
+  };
+  return part("P", n.p, n.pExp, n.pB) + (html ? PA_SEP : " | ") + part("A", n.a, n.aExp, n.aB);
 }
 
 function gridKind(rt) {
@@ -489,11 +495,42 @@ const PHONE = matchMedia("(max-width: 600px), (max-height: 500px)");
 const RUN_TYPE_ORDER = ["single", "median", "montecarlo"];
 
 // "P 18% · A 13%" for a set of files.
-function paShort(f) {
+// "P 18% (745.9 GB) | A 13% (390.1 GB)", as HTML: the percent in bold and
+// the disk space of its files in brackets when the sizes are known
+// (z = [projection, aggregation] bytes).
+const PA_SEP = ` <span class="pa-sep">|</span> `;
+function paFig(name, pct, size) {
+  return `${name} <b>${pct}</b>` + (size == null ? "" : ` <span class="pa-size">(${size})</span>`);
+}
+function paShort(f, z) {
   const bits = [];
-  if (f.projExp) bits.push(`P ${fmtPctShort(pctOf(f.proj, f.projExp))}`);
-  if (f.aggExp) bits.push(`A ${fmtPctShort(pctOf(f.agg, f.aggExp))}`);
-  return bits.join(" · ");
+  if (f.projExp) bits.push(paFig("P", fmtPctShort(pctOf(f.proj, f.projExp)), z ? fmtBytes(z[0]) : null));
+  if (f.aggExp) bits.push(paFig("A", fmtPctShort(pctOf(f.agg, f.aggExp)), z ? fmtBytes(z[1]) : null));
+  return bits.join(PA_SEP);
+}
+// The same with the counts, for tooltips.
+function paLong(f, z) {
+  const part = (name, n, exp, b) => `${name} ${fmtPctShort(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)}${z ? `, ${fmtBytes(b)}` : ""})`;
+  return [f.projExp ? part("P", f.proj, f.projExp, z && z[0]) : null, f.aggExp ? part("A", f.agg, f.aggExp, z && z[1]) : null]
+    .filter(Boolean).join(" | ");
+}
+// Disk space, short: MB, GB or TB with one decimal (1 GB = 1,000 MB).
+function fmtBytes(b) {
+  if (!b) return "0 MB";
+  if (b >= 1e12) return `${(b / 1e12).toFixed(1)} TB`;
+  if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
+  return b < 5e4 ? "<0.1 MB" : `${(b / 1e6).toFixed(1)} MB`;
+}
+// Bytes of a run's files, added up by the collector: for the whole run or
+// one sub-model, with the aggregation of the scenario picked. Null when the
+// data has no sizes (an older scan).
+function runSize(rt, model, scen) {
+  const z = rt && rt.sizes;
+  if (!z) return null;
+  const main = model ? z.models[model] || [0, 0] : z.total;
+  if (!scen) return main;
+  const sc = z.scen[scen];
+  return [main[0], sc ? (model ? sc.models[model] || 0 : sc.total) : 0];
 }
 
 // Moves the cards, SSP row and grid into a right-hand column, with the tree
@@ -590,7 +627,7 @@ function treePick(act, key) {
 function tnode(act, key, label, figure, { on = false, off = false, cls = "", style = "", leaf = false, title = "" } = {}) {
   return `<button class="tnode ${cls}${on ? " on" : ""}${off ? " off" : ""}" ${off ? "disabled" : ""}
     data-act="${act}" data-key="${esc(key)}" data-leaf="${leaf ? 1 : 0}" style="${style}"${title ? ` title="${esc(title)}"` : ""}>
-    <span class="tlabel">${label}</span>${figure ? `<span class="tfig">${esc(figure)}</span>` : ""}</button>`;
+    <span class="tlabel">${label}</span>${figure ? `<span class="tfig">${figure}</span>` : ""}</button>`;
 }
 
 // One run type in the tree: its node, and when open its sub-models, its
@@ -604,8 +641,9 @@ function runBranch(sec, k) {
   const nested = Object.keys(sec.run_types).filter((c) => sec.run_types[c].parent === k);
   const inside = nested.includes(view.runType);
   const hasModels = usable && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
-  let html = tnode("run", k, esc((rt && rt.label) || k), rt ? (usable ? paShort(filesOf(sec, rt)) : "no files yet") : "n/a",
-    { on: here, off: !usable, leaf: usable && !hasModels && !nested.length, title: why });
+  const rf = usable ? filesOf(sec, rt) : null, rz = usable ? runSize(rt) : null;
+  let html = tnode("run", k, esc((rt && rt.label) || k), rt ? (usable ? paShort(rf, rz) : "no files yet") : "n/a",
+    { on: here, off: !usable, leaf: usable && !hasModels && !nested.length, title: why || (rf ? paLong(rf, rz) : "") });
   // A run type with nothing yet still shows what is nested in it.
   if (!here && !inside && !(nested.length && !usable)) return html;
   html += `<div class="tkids">`;
@@ -615,8 +653,9 @@ function runBranch(sec, k) {
       for (const m of rt.dims.models) {
         const units = rt.units.filter((u) => u.model === m);
         const n = paFiles(sec, rt, units, perModel, [m], curScen());
-        html += tnode("model", m, esc(m), units.length ? paShort({ proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }) : "no files yet",
-          { on: view.model === m, off: !units.length, leaf: true, title: units.length ? "" : "no files yet" });
+        const mf = { proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }, mz = runSize(rt, m, curScen());
+        html += tnode("model", m, esc(m), units.length ? paShort(mf, mz) : "no files yet",
+          { on: view.model === m, off: !units.length, leaf: true, title: units.length ? paLong(mf, mz) : "no files yet" });
       }
     }
     // Aggregation scenarios, as the selector shows them.
@@ -628,7 +667,10 @@ function runBranch(sec, k) {
       html += tnode("scen", "", "Aggregation", sc.main ? "none yet" : "-", { off: true, cls: "tfold", title: "no aggregation files yet" });
     } else {
       const cur = curScen();
-      const aggPct = (scen) => { const f = filesOf(sec, rt, scen); return f.aggExp ? `A ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : ""; };
+      const aggPct = (scen) => {
+        const f = filesOf(sec, rt, scen), z = runSize(rt, null, scen);
+        return f.aggExp ? paFig("A", fmtPctShort(pctOf(f.agg, f.aggExp)), z ? fmtBytes(z[1]) : null) : "";
+      };
       html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
       html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main", aggPct(null), { on: !cur, leaf: true });
       for (const o of sc.others) html += tnode("scen", o, esc(scenLabel(o)), aggPct(o), { on: cur === o, leaf: true });
@@ -649,7 +691,9 @@ function renderTree() {
       continue;
     }
     const open = view.sector === cs.key;
-    html += tnode("sector", cs.key, esc(sec.label), paShort(sectorFiles(sec)), { on: open, cls: "tsector", style: color });
+    const main = sec.run_types[defaultRunType(sec)], sf = sectorFiles(sec), sz = main ? runSize(main) : null;
+    html += tnode("sector", cs.key, esc(sec.label), paShort(sf, sz), { on: open, cls: "tsector", style: color,
+      title: `${sec.label}, main run: ${paLong(sf, sz)}` });
     if (!open) continue;
     html += `<div class="tkids">`;
     // Run types; one with a parent (the delta method under median) sits
@@ -797,6 +841,15 @@ function cellStats(rt, sec, models, scen) {
     const c = unitCounts(u, specOf(sec, u.model, rt), scen);
     t.p += c.proj;
     t.a += c.agg;
+  }
+  // Disk space per column, added up by the collector.
+  const z = rt.sizes, key = models.length > 1 ? "*" : models[0];
+  if (z) {
+    const cells = (z.cells[key] || {}), alt = scen ? ((z.scen[scen] || {}).cells || {})[key] || {} : null;
+    for (const [col, t] of out) {
+      t.pB = (cells[col] || [0, 0])[0];
+      t.aB = alt ? alt[col] || 0 : (cells[col] || [0, 0])[1];
+    }
   }
   statsCache.set(sig, out);
   return out;
@@ -976,7 +1029,7 @@ function renderGrid() {
       `<span class="sb on hb ssp-${esc(c.ssp)}">${esc(c.ssp)}</span><span class="sb on hb sb-${esc(c.rcp)}">${esc(c.rcp)}</span>` +
       `<span class="sb on hb sb-iam sb-iam-${esc(c.iam)}">${esc(c.iam)}</span></span>` +
       // Columns of one or two cells are too narrow for the counts: they go in the tooltip.
-      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3)}</span></th>`;
+      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3, true)}</span></th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}">${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
@@ -1521,13 +1574,13 @@ function renderCamel() {
   // per run type; the run types being written now; and the SUs to finish.
   const cell = (n, exp) => exp
     ? `<span class="ck-pct">${fmtPctShort(pctOf(n, exp))}</span> <span class="ck-n">(${fmtN(n)}/${fmtN(exp)})</span>` : "";
-  const totals = { low: 0, high: 0 };
+  const totals = { low: 0, high: 0, bytes: 0 };
   const rows = prog.map((s) => {
     const sec = DATA.sectors[s.key];
     const on = s.tracked && sectorActive(sec);
     const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">` +
       `<span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
-    if (!s.tracked) return `<tr>${mark}<td colspan="6" class="ck-none">not tracked (yet)</td></tr>`;
+    if (!s.tracked) return `<tr>${mark}<td colspan="7" class="ck-none">not tracked (yet)</td></tr>`;
     const runs = RUN_TYPE_ORDER.map((k) => {
       const rt = sec.run_types[k];
       if (!rt) return `<td class="ck-sym" title="${esc(k)}: does not apply">${ICON.na}</td>`;
@@ -1541,16 +1594,21 @@ function renderCamel() {
     }).join("");
     const su = sectorSUs(sec);
     if (su) { totals.low += su.low; totals.high += su.high; }
-    return `<tr>${mark}<td>${cell(s.files.proj, s.files.projExp)}</td><td>${cell(s.files.agg, s.files.aggExp)}</td>${runs}` +
+    const z = sectorSize(sec);
+    if (z) totals.bytes += z[0] + z[1];
+    const size = z ? `<td class="ck-size" title="${esc(`projection ${fmtBytes(z[0])}, aggregation ${fmtBytes(z[1])}, all run types`)}">${fmtBytes(z[0] + z[1])}</td>`
+      : `<td class="ck-size"><span class="ck-n">no data</span></td>`;
+    return `<tr>${mark}<td>${cell(s.files.proj, s.files.projExp)}</td><td>${cell(s.files.agg, s.files.aggExp)}</td>${size}${runs}` +
       `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
   }).join("");
   const a = DATA.account;
   const avail = a.allocation_status === "ok" && a.balance_su != null ? ` <span class="ck-n">of ${fmtN(a.balance_su)} available</span>` : "";
   $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th></th><th>Projection</th>
-      <th>Aggregation${mainMark()}</th><th class="ck-sym">Single</th><th class="ck-sym">Median</th><th class="ck-sym">Montecarlo</th>
+      <th>Aggregation${mainMark()}</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th><th class="ck-sym">Single</th><th class="ck-sym">Median</th><th class="ck-sym">Montecarlo</th>
       <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>Total</td><td colspan="5"></td><td class="ck-su">${suShort(totals.low, totals.high)}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
-    </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${avail}</div>
+    <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="3"></td><td class="ck-su">${suShort(totals.low, totals.high)}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
+    </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${avail}
+    <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
     <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median for energy).</div>`;
 }
 
@@ -1570,6 +1628,14 @@ function runActive(rt) {
   const scan = new Date(DATA.generated_at).getTime();
   return rt.units.some((u) => u.stages.generate && u.stages.generate.state === "running") ||
     (rt.last_projection_write && scan - new Date(rt.last_projection_write).getTime() < 24 * 3.6e6);
+}
+
+// Disk space of a sector: its run types' [projection, aggregation] bytes,
+// summed; null when the data has no sizes.
+function sectorSize(sec) {
+  const rts = Object.values(sec.run_types).filter((rt) => rt.sizes);
+  if (!rts.length) return null;
+  return rts.reduce((t, rt) => [t[0] + rt.sizes.total[0], t[1] + rt.sizes.total[1]], [0, 0]);
 }
 
 // SUs to finish a sector, summed over its run types; null when one of them

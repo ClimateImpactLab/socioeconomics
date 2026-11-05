@@ -2,11 +2,15 @@
 #SBATCH --job-name=amel-monitor
 #SBATCH --account=cil
 #SBATCH --partition=cil
-#SBATCH --time=00:15:00
+#SBATCH --time=00:30:00
 #SBATCH --mem=2G
 #SBATCH --output=/project/cil/home_dirs/scadavidsanchez/projects/socioeconomics-update/cil2/hpc-jobs/logs/monitor/monitor_%j.log
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=cadavidsanchez@uchicago.edu
+#
+# A scan usually takes about 1.5 minutes; on some early mornings the file
+# system is slow and it took over 15, so the limit is 30 (still well before
+# the next hourly run). Each log ends with the scan's time and peak memory.
 #
 # Self-scheduling monitor run (scrontab is disabled on Midway3). It first
 # queues its own next run for the next full hour (America/Chicago), then

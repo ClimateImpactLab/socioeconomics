@@ -31,11 +31,16 @@ import fnmatch
 import json
 import os
 import re
+import resource
 import shutil
 import statistics
 import subprocess
+import sys
+import time
 
 import yaml
+
+T_START = time.monotonic()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -285,6 +290,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
 
     main_scen = sector.get("aggregation_scenario")
     scenarios_seen = set()
+    sizes = {"cells": {}, "scen": {}}
     for model in models:
         names = flat_names(spec[model])
         agg_names = [n for g in GROUPS[1:] for n in spec[model][g]]
@@ -315,6 +321,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     hits = {n: lookup(n, cell["rcp"], leaf_files, twin_files) for n in names}
                     alt = other_scenarios(patterns, main_scen, cell["rcp"], leaf_files) if patterns else {}
                     scenarios_seen.update(alt)
+                    add_sizes(sizes, model, cell, hits, spec[model]["projection"], agg_names, alt)
                     proj_left += sum(1 for n in spec[model]["projection"] if not hits[n]) / n_proj
                     for n in spec[model]["projection"]:
                         if hits[n]:
@@ -423,7 +430,51 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
         # Newest projection file date, for the "active sector" sign on the tabs.
         "last_projection_write": iso_utc(last_projection_write) if last_projection_write else None,
         "units": units,
+        # Disk space of the expected files, added up here once per scan.
+        "sizes": finish_sizes(sizes),
     }
+
+
+def add_sizes(sizes, model, cell, hits, proj_names, agg_names, alt):
+    """Adds one unit's file sizes to its sub-model and scenario column:
+    projection and aggregation bytes, and the aggregation bytes of each
+    other aggregation scenario. Only expected files count."""
+    col = f"{cell['ssp']}|{cell['rcp']}|{cell['iam']}"
+    p = sum(hits[n][0] for n in proj_names if hits[n])
+    a = sum(hits[n][0] for n in agg_names if hits[n])
+    if p or a:
+        t = sizes["cells"].setdefault(model, {}).setdefault(col, [0, 0])
+        t[0] += p
+        t[1] += a
+    for scen, found in alt.items():
+        c = sizes["scen"].setdefault(scen, {}).setdefault(model, {})
+        c[col] = c.get(col, 0) + sum(h[0] for h in found.values())
+
+
+def finish_sizes(sizes):
+    """Sizes per sub-model and column, with "*" the sum over sub-models, and
+    totals per sub-model and for the run: [projection, aggregation] bytes,
+    or aggregation bytes only for the other scenarios."""
+    def with_all(cells, n):
+        cells = {m: dict(c) for m, c in cells.items()}
+        both = {}
+        for c in cells.values():
+            for col, v in c.items():
+                both[col] = [x + y for x, y in zip(both.get(col, [0] * n), v)] if n > 1 else both.get(col, 0) + v
+        cells["*"] = both
+        return cells
+    def total(c):
+        vals = list(c.values())
+        if not vals:
+            return 0
+        return [sum(v[0] for v in vals), sum(v[1] for v in vals)] if isinstance(vals[0], list) else sum(vals)
+    cells = with_all(sizes["cells"], 2)
+    out = {"cells": cells, "models": {m: total(c) for m, c in cells.items() if m != "*"}, "total": total(cells["*"]) or [0, 0]}
+    out["scen"] = {}
+    for scen, by_model in sizes["scen"].items():
+        sc = with_all(by_model, 1)
+        out["scen"][scen] = {"cells": sc, "models": {m: total(c) for m, c in sc.items() if m != "*"}, "total": total(sc["*"])}
+    return out
 
 
 def unit_generate_hours(projection_names, hits):
@@ -1199,6 +1250,9 @@ def main():
     with open(path, "w") as f:
         json.dump(status, f, separators=(",", ":"))
     log(f"wrote {path} ({os.path.getsize(path) / 1024:.0f} KB)")
+    # How long the scan took and its peak memory, to check the job's limits.
+    peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 * 1024 if sys.platform == "darwin" else 1024)
+    log(f"scan took {time.monotonic() - T_START:.0f} s, peak memory {peak_mb:.0f} MB")
 
 
 if __name__ == "__main__":

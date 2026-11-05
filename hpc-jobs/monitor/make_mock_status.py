@@ -18,6 +18,8 @@ import shutil
 
 import yaml
 
+from collect_status import finish_sizes
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 # How far along each sector and run type is in the mock, as rough fractions
@@ -391,6 +393,24 @@ def main():
                         seen_alt = True
             counts["total"] = len(all_units)
 
+            # Disk space per sub-model and column, from the mock file sizes,
+            # added up as the collector does.
+            sizes = {"cells": {}, "scen": {}}
+            for (model, _batch), recs in details.items():
+                n_proj = len(files_spec[model]["projection"])
+                for key, rec in recs.items():
+                    if key.startswith("extra#"):
+                        continue
+                    scen, _, cell = key.rpartition("#")
+                    col = "|".join(cell.split("|")[:3])
+                    bytes_ = [r[0] if r else 0 for r in rec]
+                    if scen:
+                        c = sizes["scen"].setdefault(scen, {}).setdefault(model, {})
+                        c[col] = c.get(col, 0) + sum(bytes_)
+                    else:
+                        t = sizes["cells"].setdefault(model, {}).setdefault(col, [0, 0])
+                        t[0] += sum(bytes_[:n_proj])
+                        t[1] += sum(bytes_[n_proj:])
             eta, agg = eta_for(counts, sector["stages"], rng)
             run_types_out[run_type] = {
                 "dims": {
@@ -411,6 +431,7 @@ def main():
                 "last_projection_write": (now - datetime.timedelta(hours=rng.uniform(1, 12))).strftime("%Y-%m-%dT%H:%M:%SZ")
                     if counts["running"] else None,
                 "units": listed,
+                "sizes": finish_sizes(sizes),
             }
             if files_key:
                 run_types_out[run_type]["files_spec"] = files_spec

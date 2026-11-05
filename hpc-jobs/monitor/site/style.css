@@ -566,7 +566,7 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .ssp-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .ssp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 /* ---------- tree navigation ---------- */
-.tree-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tree-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
 .tree-menu > summary { display: none; }
 .tree-side { position: sticky; top: 8px; }
 .tree { display: flex; flex-direction: column; gap: 3px; }
@@ -580,6 +580,17 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tnode .tlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tnode .tlabel .muted { color: var(--tx3); font-weight: 400; }
 .tnode .tfig { flex-shrink: 0; font-family: var(--mono); font-size: 9px; color: var(--tx3); font-weight: 400; }
+/* P and A figures: the percent in bold, the size in brackets in normal
+   weight, a thin bar between P and A. */
+.tfig b, .sc-count b { font-weight: 700; color: var(--tx2); }
+.pa-size { font-weight: 400; }
+.pa-sep { opacity: 0.45; font-weight: 300; }
+/* With the disk space added the figure is longer: the name keeps its full
+   width, and the figure moves under it, right-aligned, when both do not
+   fit on one line (as in the narrow tree on a desktop). */
+.tnode { flex-wrap: wrap; row-gap: 1px; }
+.tnode .tlabel { flex: 0 1 auto; max-width: 100%; }
+.tnode .tfig { margin-left: auto; white-space: nowrap; }
 /* Sectors: badges in their camel colors. */
 .tnode.tsector { font-size: 12px; font-weight: 600; color: var(--tx); padding: 6px 9px;
   border: 1px solid color-mix(in srgb, var(--tc) 45%, transparent); border-left: 4px solid var(--tc);
@@ -590,7 +601,7 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tkids { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px 10px; padding-left: 8px; border-left: 1px solid var(--bd); }
 .tgroup { font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tx3); margin: 5px 0 1px 8px; }
 .tree-path { font-size: 12px; font-weight: 600; color: var(--tx); margin: 0 0 8px; min-height: 16px; }
-@media (max-width: 900px) { .tree-layout { grid-template-columns: 200px minmax(0, 1fr); } }
+@media (max-width: 1100px) { .tree-layout { grid-template-columns: 300px minmax(0, 1fr); } }
 /* Phones, held upright or sideways: the tree folds into a menu at the top. */
 @media (max-width: 600px), (max-height: 500px) {
   .tree-layout { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -614,6 +625,7 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
 .ck-table .ck-n { font-family: var(--mono); color: var(--tx3); font-size: 9px; }
 .ck-table td.ck-none { color: var(--tx3); }
 .ck-table .ck-sym { text-align: center; padding-right: 10px; }
+.ck-table td.ck-size { font-family: var(--mono); color: var(--tx); }
 .ck-ico { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -1.5px; }
 .ck-yes { color: var(--st-done); }
 .ck-no { color: var(--tx3); }

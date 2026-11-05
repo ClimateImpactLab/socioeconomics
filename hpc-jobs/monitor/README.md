@@ -128,6 +128,23 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   it, which shows a small x on hover, or Escape, closes it (Escape closes
   an open "i" box first). The folder path sits under the header.
 - Resources and SLURM jobs start collapsed.
+- Disk space: the tree shows, after each P and A figure, the space those
+  files take in brackets ("P 18% (745.9 GB) | A 13% (390.1 GB)"; MB, GB or
+  TB with one decimal, 1 GB = 1,000 MB), the percent in bold and a thin
+  bar between P and A; its tooltip adds the counts. The tree is 320 px
+  wide (300 px under 1,100 px), so the figures fit on one line next to
+  each name; a figure that does not fit moves under the name. The column
+  headers show the same, with the counts: "P 91% (6,970/7,680, 313.5 GB)";
+  in narrow headers the counts and sizes are in the tooltip. The table
+  next to the camel has a Size column: each sector's disk space,
+  projection plus aggregation over all its run types, and the total of
+  all sectors in the Total row (on phones, on the total line under the
+  table). Only expected files count; with another aggregation scenario
+  picked, A is that scenario's files. The collector adds the sizes up
+  once per scan from the sizes it already reads when listing each folder,
+  per sub-model and scenario column (`sizes` in each run type), so the
+  page only reads them. They add about 1 to 2 KB per run type to
+  `status.json`.
 - Light and dark: the button at the top right (a half-filled circle) has
   a tooltip naming the mode it switches to ("Switch to dark mode" or
   "Switch to light mode"). The page
@@ -505,6 +522,10 @@ The contract between the collector and the page; the mock follows it.
                           "rate": 12.0,                                  // SUs per hour of one task
                           "source": "reference",   // "sacct", "file dates", "reference" or "unknown"
                           "basis": "520 units left x 20.5 to 23.7 h per unit (reference), 12 SU per hour"},
+          "sizes": {                 // bytes of the expected files, added up once per scan
+            "cells": {"main": {"SSP3|rcp45|low": [1234567890, 456789012]}, "*": {...}},   // [projection, aggregation] per column; "*" all sub-models
+            "models": {"main": [1234567890, 456789012]}, "total": [1234567890, 456789012],
+            "scen": {"MERGEETL60_{rcp}": {"cells": {...}, "models": {...}, "total": 98765432}}},   // other aggregation scenarios
           "units": [                 // only units with something on disk
             {"model": "main", "ssp": "SSP3", "rcp": "rcp45", "iam": "low", "gcm": "CCSM4", "batch": null,
              "state": "partial",     // not_started|running|partial|done|failed, from the folder
