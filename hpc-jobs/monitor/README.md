@@ -140,10 +140,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   soft pulse, and the loader and the grid cross-fade. Every move is an
   eased browser animation on the page's animation clock, so the steps
   flow into one another, keep their proportions when the animation speed
-  is slowed, and keep going while the page builds the grid. It runs for
-  at least about 1.2 seconds; while the grid takes longer, a square may
-  travel back out so the face is not complete too early. A short line
-  ("Building the grid (5,850 units)") and a thin bar sit below it. For
+  is slowed, and keep going while the page builds the grid. For a fast
+  grid the whole sequence takes about 1 second; while the grid takes
+  longer, a square may travel back out so the face is not complete too
+  early. A short line ("Loading the grid (5,850 units)") and a thin bar
+  sit below it. For
   people who ask for reduced motion, the cube stands still, facing front,
   and the squares fade into the color.
 - Run types can be left out with `enabled: false` under `run_types` in the

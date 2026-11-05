@@ -314,7 +314,7 @@ function renderAll() {
 // turn about the cube's center, as a layer turn would carry it. While the
 // grid is still being built, a square may travel back out, so the face is
 // never complete too early. Once the grid is built and the minimum time
-// has passed, the last squares come in, they settle into the full color,
+// has passed (fast grids show after about 1 s), the last squares come in, they settle into the full color,
 // and the cube turns smoothly from its spin to face the front, with a soft
 // pulse at the end; then the loader and the grid cross-fade. The cube
 // sways from side to side meanwhile, so the front is never far away. Every move is
@@ -322,7 +322,8 @@ function renderAll() {
 // so the moves flow into one another and keep going while the page builds
 // the grid. With reduced motion the cube stands still, facing front, and
 // the squares fade into the color.
-const LD = { beat: 110, travel: 300, minTime: 450, buildAt: 120, ease: "cubic-bezier(0.45, 0, 0.55, 1)",
+// Fast grids show after about 1 s; larger ones wait for the grid.
+const LD = { beat: 60, travel: 240, minTime: 220, buildAt: 90, turn: 360, fade: 140, ease: "cubic-bezier(0.45, 0, 0.55, 1)",
   // The sway: the cube turns from side to side around the front.
   swayMs: 3600, swayDeg: 42, swayMid: -10, tiltDeg: -20 };
 let ldRun = null;
@@ -352,7 +353,7 @@ function scheduleGrid() {
     { duration: LD.swayMs, iterations: Infinity, easing: "linear" }));
   cube.querySelectorAll(".ld-tile").forEach((e) => e.remove());
   ld.classList.toggle("ld-calm", calm);
-  ld.querySelector(".ld-text").textContent = `Building the grid (${fmtN(runType().counts.total)} units)`;
+  ld.querySelector(".ld-text").textContent = `Loading the grid (${fmtN(runType().counts.total)} units)`;
   bar.style.transition = "none";
   bar.style.transform = "scaleX(0)";
   ld.classList.remove("hidden");
@@ -373,7 +374,7 @@ function scheduleGrid() {
     Object.assign(el.style, { width: `${cell}px`, height: `${cell}px`, left: `${(size - cell) / 2}px`, top: `${(size - cell) / 2}px` });
     el.style.setProperty("--c", `var(--sec-${view.sector})`);
     cube.appendChild(el);
-    const [a, b] = calm || m < 3 ? [0, 0] : sides[m % 4];
+    const [a, b] = calm || m < 4 ? [0, 0] : sides[m % 4];
     const t = { el, row: Math.floor(slot / 3), col: slot % 3, a, b, moving: false };
     el.style.setProperty("--k", a || b ? 40 : 70);
     el.style.transform = tf(t, a, b);
@@ -398,7 +399,7 @@ function scheduleGrid() {
     setTimeout(() => build().then(() => {
       tiles.forEach((t) => t.el.style.setProperty("--k", 100));
       bar.style.transform = "scaleX(1)";
-      setTimeout(() => { if (!run.off) finish(); }, Math.max(900, 1200 - (performance.now() - t0)));
+      setTimeout(() => { if (!run.off) finish(); }, Math.max(700, 1000 - (performance.now() - t0)));
     }), LD.buildAt);
     return;
   }
@@ -427,7 +428,7 @@ function scheduleGrid() {
   const turnToFront = () => {
     const u = ((sway.currentTime || 0) % LD.swayMs) / LD.swayMs;
     const y0 = swayAt(u), v0 = LD.swayDeg * Math.cos(2 * Math.PI * u) * (2 * Math.PI / LD.swayMs);   // degrees per ms
-    const y1 = -14, dur = 460, m0 = v0 * dur;
+    const y1 = -14, dur = LD.turn, m0 = v0 * dur;
     const frames = [];
     for (let k = 0; k <= 24; k++) {
       const s_ = k / 24, h00 = 2 * s_ ** 3 - 3 * s_ ** 2 + 1, h10 = s_ ** 3 - 2 * s_ ** 2 + s_, h01 = -2 * s_ ** 3 + 3 * s_ ** 2;
@@ -438,7 +439,7 @@ function scheduleGrid() {
     sway.cancel();
     const turn = keep(spin.animate(frames, { duration: dur, easing: "linear" }));
     const pulse = keep(cube.animate([{ transform: "scale(1)" }, { transform: "scale(1.07)" }, { transform: "scale(1)" }],
-      { duration: 360, delay: Math.max(0, dur - 240), easing: "ease-in-out" }));
+      { duration: 300, delay: Math.max(0, dur - 220), easing: "ease-in-out" }));
     // The grid fades in only once the cube is still, so its first paint
     // never holds up a moving frame.
     return Promise.all([turn.finished, pulse.finished]).catch(() => {});
@@ -474,7 +475,7 @@ function scheduleGrid() {
     if (run.off) return;
     // Cross-fade: the loader fades out while the grid fades in.
     document.body.classList.remove("grid-loading");
-    await keep(ld.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: "ease-out", fill: "forwards" })).finished.catch(() => {});
+    await keep(ld.animate([{ opacity: 1 }, { opacity: 0 }], { duration: LD.fade, easing: "ease-out", fill: "forwards" })).finished.catch(() => {});
     if (!run.off) finish();
   })();
 }
