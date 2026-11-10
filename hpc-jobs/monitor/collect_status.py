@@ -1004,6 +1004,8 @@ def finish_estimates(manifest, sectors_out, all_tasks, rows=None):
             # time for every unit left, as if all were submitted now.
             if covered is not None:
                 out["eta_cover"] = {"covered": covered, "units_left": units_left}
+                # The run's tasks running or queued, so the page can tell "no jobs".
+                out["live_tasks"] = len(tasks)
             out["eta_all"] = all_units_eta(timing, ut, now, covered)
             out["eta_hours"], out["eta_method"], out["eta_basis"] = eta["hours"], eta["method"], eta["basis"]
             out["agg_eta"] = aggregation_eta(timing["agg"], now)

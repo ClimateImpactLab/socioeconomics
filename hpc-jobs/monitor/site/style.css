@@ -147,6 +147,9 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .eta-line { grid-column: 1; grid-row: 2; font-size: 9px; color: var(--tx3); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eta-val { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; text-align: right; white-space: nowrap; }
 .eta-card .info-btn { width: 13px; height: 13px; font-size: 8px; margin-left: 3px; }
+/* Warnings, in the page's warning orange (as for time left under 2 hours). */
+.eta-card .eta-warn { color: var(--st-pend); font-weight: 600; }
+.eta-card .eta-val .eta-warn { display: block; white-space: nowrap; text-align: right; line-height: 1.05; }
 .card-label { font-size: 9px; color: var(--tx2); }
 .card-val { font-size: 14px; font-weight: 500; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .card-sub { font-size: 9px; color: var(--tx3); margin-top: 2px; line-height: 1.2;

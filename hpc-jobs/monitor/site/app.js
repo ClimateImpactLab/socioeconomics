@@ -790,28 +790,39 @@ function etaCards(rt, total) {
     : ag.state === "not_started" ? "Aggregation not started." : ag.state === "done" ? "Aggregation done."
     : `Aggregation ${ag.hours != null ? fmtEta(ag.hours) : "running"}: ${sentence(ag.basis)}`;
   const stopped = rt.stopped ? ` ${fmtN(rt.stopped)} stopped ${rt.stopped === 1 ? "unit is" : "units are"} not counted; they need a restart.` : "";
-  const row = (name, info, val, line) =>
-    `<div class="eta-row"><div class="eta-name">${name}${info}</div><div class="card-val eta-val">${val}</div><div class="eta-line" title="${esc(line)}">${line}</div></div>`;
+  const row = (name, info, val, line, warnLine) =>
+    `<div class="eta-row"><div class="eta-name">${name}${info}</div><div class="card-val eta-val">${val}</div>` +
+    `<div class="eta-line${warnLine ? " eta-warn" : ""}" title="${esc(line)}">${line}</div></div>`;
 
   // 1. Running jobs: the units they cover.
+  // No jobs running or queued for the run (live_tasks, or the "no_jobs"
+  // method in scans before it): a warning instead of a time; a unit still
+  // being written without a job is most likely a stopped task.
   const c = rt.eta_cover;
-  const waiting = rt.eta_method === "no_jobs" || (c && !c.covered && rt.eta_hours !== 0);
-  const val1 = rt.eta_hours === 0 ? "done" : waiting ? "\u2013" : rt.eta_method === "stopped" ? small("stopped")
+  const noJobs = rt.eta_hours !== 0 && (rt.live_tasks === 0 || rt.eta_method === "no_jobs");
+  const writingNoJob = noJobs && rt.counts.running > 0;
+  const warn = (t) => `<span class="card-val-small eta-warn">${t}</span>`;
+  const val1 = rt.eta_hours === 0 ? "done" : writingNoJob ? warn("writing, but<br>no job running") : noJobs ? warn("No jobs<br>running")
+    : c && !c.covered ? "\u2013" : rt.eta_method === "stopped" ? small("stopped")
     : rt.eta_hours == null ? small("n/a") : fmtEta(rt.eta_hours);
-  const line1 = rt.eta_hours === 0 ? "nothing left" : waiting ? "waiting for jobs"
-    : c ? `${fmtN(c.covered)} of ${fmtN(c.units_left)} units` : "jobs not known";
+  const line1 = rt.eta_hours === 0 ? "nothing left"
+    : c ? `${fmtN(c.covered)} of ${fmtN(c.units_left)} units` : noJobs ? "waiting for jobs" : "jobs not known";
   const info1 = infoPop("Running jobs", "Only counts units that running or queued jobs will cover. Based on the time per unit " +
-    `and the time each running task has been going. ${sentence(rt.eta_basis)} ${agg}${stopped}`);
+    "and the time each running task has been going. In orange: \u201cNo jobs running\u201d when no jobs are running or queued " +
+    "for the run, and \u201cwriting, but no job running\u201d when a unit is still being written without a job (most likely a stopped task). " +
+    `${sentence(rt.eta_basis)} ${agg}${stopped}`);
 
   // 2. Every unit left, as if all were submitted now.
   const a = rt.eta_all;
   const val2 = !a ? small("n/a") : a.hours === 0 ? "done" : a.hours == null ? small("n/a") : fmtEta(a.hours);
-  const line2 = !a ? "after the next scan" : a.hours === 0 ? "nothing left" : a.needs_jobs ? `${fmtN(a.needs_jobs)} need jobs`
+  const line2 = !a ? "after the next scan" : a.hours === 0 ? "nothing left" : a.needs_jobs ? `needs jobs for ${fmtN(a.needs_jobs)} units`
     : a.needs_jobs === 0 ? "all have jobs" : `${fmtN(a.units_left)} units`;
   const info2 = infoPop("All units left", "Assumes every unit left starts now, at the number of tasks the run has kept running " +
-    `at once in the last 48 hours. One round takes one time per unit. ${a ? sentence(a.basis) : ""} ${agg}${stopped}`);
+    "at once in the last 48 hours. One round takes one time per unit. The line under the time turns orange when some units " +
+    `left have no jobs. ${a ? sentence(a.basis) : ""} ${agg}${stopped}`);
 
-  return `<div class="card eta-card">${row("Running jobs", info1, val1, line1)}${row("All units left", info2, val2, line2)}</div>`;
+  return `<div class="card eta-card">${row("Running jobs", info1, val1, line1, false)}` +
+    `${row("All units left", info2, val2, line2, !!(a && a.hours !== 0 && a.needs_jobs))}</div>`;
 }
 
 function renderCards() {

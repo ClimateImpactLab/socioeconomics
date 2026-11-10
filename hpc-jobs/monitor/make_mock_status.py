@@ -472,6 +472,7 @@ def main():
                 "aggregation": agg,
                 "agg_eta": agg_eta,
                 "eta_cover": eta_cover,
+                "live_tasks": eta_cover["covered"],
                 "eta_all": eta_all,
                 "stopped": counts["failed"],
                 "unit_time_source": "sacct" if eta["method"] == "writing" else None,
