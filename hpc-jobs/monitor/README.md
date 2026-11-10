@@ -168,8 +168,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   is slowed, and keep going while the page builds the grid. For a fast
   grid the whole sequence takes about 1 second; while the grid takes
   longer, a square may travel back out so the face is not complete too
-  early. A short line ("Loading the grid (5,850 units)") and a thin bar
-  sit below it. For
+  early. A thin bar sits below it, with no text; screen readers hear
+  "Loading the grid (5,850 units)". For
   people who ask for reduced motion, the cube stands still, facing front,
   and the squares fade into the color.
 - Run types can be left out with `enabled: false` under `run_types` in the
@@ -429,6 +429,8 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     no reference time yet, so it shows "not known yet".
   The tooltips of the time to finish and SUs to finish cards say which
   source was used.
+- The time to finish card has a small "i" that says in short how the
+  estimate works (the cases below).
 - The time to finish covers the projection units left, from the missing
   projection files. Stopped units (their projection ended or went quiet
   before the end) are counted apart, shown under the card as "N stopped,

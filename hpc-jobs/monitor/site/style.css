@@ -782,7 +782,6 @@ body.no-model #grid-empty { display: none; }
   border: 1px solid color-mix(in srgb, var(--c) calc(var(--k) * 0.8%), transparent);
   background: color-mix(in srgb, var(--c) calc(var(--k) * 0.6%), transparent);
   transition: background-color 0.3s ease, border-color 0.3s ease; }
-.ld-text { opacity: 0.85; }
 .ld-bar { width: 64px; height: 1.5px; border-radius: 2px; background: color-mix(in srgb, var(--bd) 70%, transparent); overflow: hidden; }
 .ld-bar i { display: block; height: 100%; width: 100%; border-radius: 2px; background: var(--tx3); opacity: 0.7;
   transform-origin: left; transform: scaleX(0); transition: transform 0.35s ease-out; }

@@ -359,7 +359,8 @@ function scheduleGrid() {
     { duration: LD.swayMs, iterations: Infinity, easing: "linear" }));
   cube.querySelectorAll(".ld-tile").forEach((e) => e.remove());
   ld.classList.toggle("ld-calm", calm);
-  ld.querySelector(".ld-text").textContent = `Loading the grid (${fmtN(runType().counts.total)} units)`;
+  // No text under the cube; screen readers get the same words.
+  ld.setAttribute("aria-label", `Loading the grid (${fmtN(runType().counts.total)} units)`);
   bar.style.transition = "none";
   bar.style.transform = "scaleX(0)";
   ld.classList.remove("hidden");
@@ -792,7 +793,10 @@ function etaCard(rt, total) {
   const sub = `projection${cover}; ${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped, not counted` : "");
   const tip = [rt.eta_basis, ETA_METHOD[rt.eta_method], rt.eta_method === "writing" ? UNIT_SOURCE[rt.unit_time_source] : null,
     ag && ag.basis].filter(Boolean).map((t) => t.replace(/\.$/, "")).join(". ") + ".";
-  return card("Time to finish", val, sub, "", tip);
+  const info = infoPop("About the time to finish", "Based on the units finished in the last 48 hours and the time per unit. " +
+    "It checks the running and queued jobs: \u201cwaiting for jobs\u201d when nothing is running, and \u201cjobs cover N of M units left\u201d " +
+    "when they do not cover all the units left. Projection and aggregation are estimated separately.");
+  return card(`Time to finish${info}`, val, sub, "", tip);
 }
 
 function renderCards() {
