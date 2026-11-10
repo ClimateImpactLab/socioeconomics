@@ -429,12 +429,24 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     no reference time yet, so it shows "not known yet".
   The tooltips of the time to finish and SUs to finish cards say which
   source was used.
-- The time to finish covers the projection units left only. The pace is
-  either the units being written now over the time per unit ("writing",
-  steady because it does not jump with bursts of finishes), or the units
-  finished in the last 6 hours ("recent", used with at least 3 of them).
-  With less data than that it shows "not enough data yet". A unit's finish
-  time is its status marker, or else its newest projection file.
+- The time to finish covers the projection units left, from the missing
+  projection files. Stopped units (their projection ended or went quiet
+  before the end) are counted apart, shown under the card as "N stopped,
+  not counted", and left out, since they need a restart. Then:
+  - every unit left is being written ("tail"): the longest time any of
+    them still needs, the time per unit less the time since its claim
+    file appeared (or, without one, the share of its files missing);
+  - no jobs running or queued for the run (from squeue, matched by the
+    run's job names) while units wait to start: "waiting for jobs", no
+    time, since nothing will start them;
+  - otherwise ("pace"): the units left over the units finished in the last
+    48 hours (each unit's finish time is its status marker, or else its
+    newest projection file), never less than the tail;
+  - with fewer than 3 finished in 48 hours, the units being written over
+    the time per unit ("writing"), or else "not enough data yet".
+  The aggregation has its own estimate under the card: "not started"
+  while nothing has run, else its units left over its units finished in
+  the last 48 hours, or "running" with too few finishes.
 - SUs to finish, per sector and run type, for the projection units left,
   counted from the missing projection files over the files per unit (a
   unit half written counts as half, since its finished files are kept),

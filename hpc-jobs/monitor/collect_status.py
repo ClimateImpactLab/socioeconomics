@@ -57,7 +57,10 @@ STALE_HOURS = 6
 
 # Time to finish the projections: the pace over this many recent hours, and
 # the fewest units finished in that window to trust it.
-PACE_WINDOW_HOURS = 6
+# The pace for the time to finish: units finished over this many hours. A
+# long window, so the few units that finish at the tail of a run do not
+# make the pace look tiny.
+PACE_WINDOW_HOURS = 48
 MIN_RECENT_UNITS = 3
 
 # Observed times per unit replace the manifest reference only from this many
@@ -280,8 +283,13 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     units = []
     gen_done = 0
     proj_left = 0.0     # units left, from the missing projection files
-    gen_recent = 0      # projections finished in the last PACE_WINDOW_HOURS
     gen_running = 0     # projections being written now
+    finished = []       # finish time of each unit whose projection is done
+    running_units = []  # start (claim file time) and files written, per unit being written
+    run_left = 0.0      # units left among those being written (missing files / files per unit)
+    stopped = 0         # units whose projection stopped before the end
+    stopped_left = 0.0  # their missing files, in units
+    agg_finished, agg_running = [], 0
     agg_done = 0
     agg_started = False
     unit_hours = []
@@ -336,8 +344,22 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                         fail_reason = fail_reason or reason
 
                     gen_state = stage_recs["generate"]["state"]
+                    missing = sum(1 for n in spec[model]["projection"] if not hits[n])
                     if gen_state == "running":
                         gen_running += 1
+                        claim = (info["files"].get("status-generate.txt") or (0, 0))[1] if info else 0
+                        running_units.append({"start": claim or None, "found": n_proj - missing, "total": n_proj})
+                        run_left += missing / n_proj
+                    elif gen_state == "failed" and missing:
+                        stopped += 1
+                        stopped_left += missing / n_proj
+                    for stage in model_stages[1:]:
+                        rec = stage_recs[stage]
+                        if rec["state"] == "running":
+                            agg_running += 1
+                        mark = info["markers"].get(stage) if info else None
+                        if rec["state"] == "done" and stage == model_stages[-1] and mark and mark[1]:
+                            agg_finished.append(mark[1])
                     for stage in model_stages:
                         if stage == "generate":
                             continue
@@ -353,8 +375,8 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                         fin = info["markers"].get("generate", (None, None))[1] if info else None
                         if not fin:
                             fin = max((hits[n][1] for n in spec[model]["projection"] if hits[n]), default=None)
-                        if fin and now - fin < PACE_WINDOW_HOURS * 3600:
-                            gen_recent += 1
+                        if fin:
+                            finished.append(fin)
                         gen_done += 1
                         hours = unit_generate_hours(spec[model]["projection"], hits)
                         if hours:
@@ -424,8 +446,12 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
         # Filled in by finish_estimates once Slurm has been read.
         # Units left: missing projection files over the files per unit, so a
         # unit half written counts as half a unit (its finished files are kept).
-        "_timing": {"left": round(proj_left), "done": gen_done, "recent": gen_recent,
+        "_timing": {"left": round(proj_left), "left_units": proj_left, "done": gen_done,
                     "running": gen_running, "file_hours": unit_hours,
+                    "finished": finished, "running_units": running_units, "run_left": run_left,
+                    "stopped": stopped, "stopped_left": stopped_left,
+                    "agg": {"left": counts["total"] - agg_done if len(stages) > 1 else 0, "started": agg_started,
+                            "finished": agg_finished, "running": agg_running},
                     "first_write": first_projection_write},
         # Newest projection file date, for the "active sector" sign on the tabs.
         "last_projection_write": iso_utc(last_projection_write) if last_projection_write else None,
@@ -491,31 +517,107 @@ def unit_generate_hours(projection_names, hits):
     return span * len(times) / (len(times) - 1) if span > 0 else None
 
 
-def projection_eta(left, recent, running, ut):
-    """Hours to finish the projections left, with the pace used.
+def projection_eta(t, ut, now, live):
+    """Hours to finish the projections left, with the method and the numbers used.
 
-    Two paces: the units being written now over the time per unit (method
-    "writing", steady because it does not move with bursts of finishes),
-    used when a time per unit is known; or the units finished in the last
-    PACE_WINDOW_HOURS (method "recent"), used with at least
-    MIN_RECENT_UNITS of them. Otherwise there is not enough data yet and
-    hours is None.
+    Units left come from the missing projection files. Stopped units are
+    counted apart (they need a restart) and left out. Then:
+    - every unit left is being written ("tail"): the longest time any of
+      them still needs, the typical time per unit less the time since its
+      claim (or, without a claim time, the share of its files missing);
+    - no jobs running or queued for the run while units wait to start
+      ("no_jobs"): no time, since nothing will start them;
+    - otherwise ("pace"): the units left over the units finished in the
+      last PACE_WINDOW_HOURS, and never less than the tail;
+    - with too few finishes, the units being written over the time per unit
+      ("writing"), or else "not enough data yet".
+    live is the number of the run's tasks running or queued, or None when
+    Slurm could not be read.
     """
-    if left <= 0:
+    left = t["left_units"]
+    stop = (f"; {plural(t['stopped'], 'stopped unit')} not counted (they need a restart)"
+            if t["stopped"] else "")
+    if left - t["stopped_left"] < 0.5:
+        if t["stopped"]:
+            return {"hours": None, "method": "stopped",
+                    "basis": f"only stopped units are left: {plural(t['stopped'], 'unit')} need a restart"}
         return {"hours": 0, "method": None, "basis": "all projections done"}
-    if running and ut:
-        pace = running / ut["low_h"]
-        return {"hours": round(left / pace, 1), "method": "writing",
-                "basis": f"{left:,} projection units left; {running:,} being written now at "
-                         f"{ut['low_h']:.1f} h per unit ({ut['basis']}), so {pace:.1f} units per hour"}
+    typical = ut["low_h"] if ut else None
+    rem = []
+    for u in t["running_units"]:
+        if typical is None:
+            continue
+        if u["start"]:
+            rem.append(max(0.0, typical - (now - u["start"]) / 3600))
+        else:
+            rem.append(typical * (u["total"] - u["found"]) / u["total"])
+    tail = max(rem) if rem else None
+    waiting = max(0.0, left - t["stopped_left"] - t["run_left"])
+    running = len(t["running_units"])
+    n_left = round(left - t["stopped_left"])
+    if waiting < 0.5 and running:
+        if tail is None:
+            return {"hours": None, "method": None,
+                    "basis": f"every unit left is being written now ({plural(running, 'unit')}); time per unit not known yet{stop}"}
+        return {"hours": round(tail, 1), "method": "tail",
+                "basis": f"every unit left is being written now ({plural(running, 'unit')}); the longest needs about "
+                         f"{tail:.1f} h more ({typical:.1f} h per unit less the time since it started){stop}"}
+    if live == 0:
+        writing = (f"; the {running:,} being written need about {tail:.1f} h more" if tail is not None and running else "")
+        return {"hours": None, "method": "no_jobs",
+                "basis": f"{plural(round(waiting), 'unit')} not started and no jobs running or queued for this run, "
+                         f"so they wait until jobs are submitted{writing}{stop}"}
+    recent = sum(1 for f in t["finished"] if now - f < PACE_WINDOW_HOURS * 3600)
     if recent >= MIN_RECENT_UNITS:
         pace = recent / PACE_WINDOW_HOURS
-        return {"hours": round(left / pace, 1), "method": "recent",
-                "basis": f"{left:,} projection units left; {recent:,} finished in the last "
-                         f"{PACE_WINDOW_HOURS} h, so {pace:.1f} units per hour"}
+        hours = max((left - t["stopped_left"]) / pace, tail or 0)
+        return {"hours": round(hours, 1), "method": "pace",
+                "basis": f"{plural(n_left, 'projection unit')} left; {recent:,} finished in the last "
+                         f"{PACE_WINDOW_HOURS} h, so {pace:.1f} units per hour{stop}"}
+    if running and typical:
+        pace = running / typical
+        return {"hours": round(max((left - t["stopped_left"]) / pace, tail or 0), 1), "method": "writing",
+                "basis": f"{plural(n_left, 'projection unit')} left; {running:,} being written now at "
+                         f"{typical:.1f} h per unit ({ut['basis']}), so {pace:.1f} units per hour{stop}"}
     return {"hours": None, "method": None,
-            "basis": f"{left:,} projection units left; not enough data yet "
-                     f"({recent:,} finished in the last {PACE_WINDOW_HOURS} h, no time per unit known)"}
+            "basis": f"{plural(n_left, 'projection unit')} left; not enough data yet ({recent:,} finished in the "
+                     f"last {PACE_WINDOW_HOURS} h, no time per unit known){stop}"}
+
+
+def aggregation_eta(a, now):
+    """The aggregation's own estimate: "not started" while nothing has run,
+    else the units left over the units finished in the last
+    PACE_WINDOW_HOURS, or no time with too few finishes."""
+    if not a["started"]:
+        return {"state": "not_started", "hours": None, "basis": "aggregation not started"}
+    if a["left"] <= 0:
+        return {"state": "done", "hours": 0, "basis": "aggregation done"}
+    recent = sum(1 for f in a["finished"] if now - f < PACE_WINDOW_HOURS * 3600)
+    if recent >= MIN_RECENT_UNITS:
+        pace = recent / PACE_WINDOW_HOURS
+        return {"state": "running", "hours": round(a["left"] / pace, 1),
+                "basis": f"aggregation: {plural(a['left'], 'unit')} left; {recent:,} finished in the last "
+                         f"{PACE_WINDOW_HOURS} h, so {pace:.1f} units per hour"}
+    return {"state": "running", "hours": None,
+            "basis": f"aggregation: {plural(a['left'], 'unit')} left; not enough finished yet to estimate"}
+
+
+def live_counts(sector, rts, rows, exclude):
+    """Tasks running or queued per run type, matched by job name as for
+    sacct; None when squeue could not be read."""
+    if rows is None:
+        return None
+    out = {rt: 0 for rt in rts}
+    names = sector.get("job_names") or {}
+    order = [rt for rt in RUN_TYPE_ORDER if rt in rts] + [rt for rt in rts if rt not in RUN_TYPE_ORDER]
+    for r in rows:
+        if name_matches(r["name"], exclude):
+            continue
+        for rt in order:
+            if name_matches(r["name"], names.get(rt) or []):
+                out[rt] += 1
+                break
+    return out
 
 
 def plural(n, word):
@@ -778,13 +880,14 @@ def unit_time(rt_cfg, timing, tasks, startup_h, ref_h):
     return None
 
 
-def finish_estimates(manifest, sectors_out, all_tasks):
+def finish_estimates(manifest, sectors_out, all_tasks, rows=None):
     """Fill in each run's time to finish and SUs to finish from its time per unit."""
     exclude = manifest["account"].get("job_names_exclude", [])
     for name, sector in manifest["sectors"].items():
         rts = sectors_out[name]["run_types"]
         starts = {rt: run_since(sector, rt, out["_timing"]) for rt, out in rts.items()}
         matched = matched_tasks(sector, list(rts), all_tasks, starts, exclude)
+        live = live_counts(sector, list(rts), rows, exclude)
         # Start up time: a single task's elapsed time less its first to last file span.
         startup = None
         single = rts.get("single")
@@ -797,8 +900,11 @@ def finish_estimates(manifest, sectors_out, all_tasks):
             timing = out.pop("_timing")
             ut = unit_time(manifest["run_types"][rt], timing, matched[rt], startup,
                            reference_for(sector, rt).get("hours_per_unit"))
-            eta = projection_eta(timing["left"], timing["recent"], timing["running"], ut)
+            now = time.time()
+            eta = projection_eta(timing, ut, now, live[rt] if live else None)
             out["eta_hours"], out["eta_method"], out["eta_basis"] = eta["hours"], eta["method"], eta["basis"]
+            out["agg_eta"] = aggregation_eta(timing["agg"], now)
+            out["stopped"] = timing["stopped"]
             out["unit_time_source"] = ut["source"] if ut else None
             req = run_request(sector, rt, matched[rt])
             out["su_estimate"] = estimate_sus(timing["left"], ut, sector, rt, req,
@@ -1216,7 +1322,7 @@ def main():
         starts = [t for t in starts if t]
         if starts:
             all_tasks = run_tasks(account, min(starts))
-    finish_estimates(manifest, sectors_out, all_tasks)
+    finish_estimates(manifest, sectors_out, all_tasks, rows)
 
     # Every user with jobs or billed use on the account, by cluster username;
     # the list gives each user a stable color on the page.

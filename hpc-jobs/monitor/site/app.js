@@ -769,17 +769,26 @@ function pbar(pct, color) {
 
 // Time to finish the projections only, with the pace used in the tooltip.
 const ETA_METHOD = {
-  writing: "Pace: units being written now, at the time per unit.",
-  recent: "Pace: projection units finished in the last 6 hours.",
+  tail: "Every unit left is being written: the longest time any of them still needs.",
+  pace: "Pace: projection units finished in the last 48 hours, never less than the slowest unit being written.",
+  writing: "Pace: units being written now, at the time per unit (too few finished in the last 48 hours).",
+  no_jobs: "No jobs are running or queued for this run, so the units not started wait until jobs are submitted.",
+  stopped: "Only stopped units are left; they need a restart.",
 };
+// The time to finish covers the projection; the aggregation and any
+// stopped units are shown apart, under it.
 function etaCard(rt, total) {
   if (rt.eta_method === undefined) return card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : "");
-  const val = rt.eta_hours === 0 ? "done" : rt.eta_hours == null ? `<span class="card-val-small">not enough data yet</span>` : fmtEta(rt.eta_hours);
-  const ag = rt.aggregation || {};
-  const sub = ag.started ? `projection only; aggregation ${fmtN(ag.done)}/${fmtN(total)} units, not estimated`
-    : "projection only; aggregation not started";
+  const small = (t) => `<span class="card-val-small">${t}</span>`;
+  const val = rt.eta_hours === 0 ? "done" : rt.eta_method === "no_jobs" ? small("waiting for jobs")
+    : rt.eta_method === "stopped" ? small("stopped") : rt.eta_hours == null ? small("not enough data yet") : fmtEta(rt.eta_hours);
+  const ag = rt.agg_eta;
+  const agg = !ag ? ((rt.aggregation || {}).started ? `aggregation ${fmtN((rt.aggregation || {}).done)}/${fmtN(total)} units` : "aggregation not started")
+    : ag.state === "not_started" ? "aggregation not started" : ag.state === "done" ? "aggregation done"
+    : ag.hours != null ? `aggregation ${fmtEta(ag.hours)}` : "aggregation running";
+  const sub = `projection; ${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped, not counted` : "");
   const tip = [rt.eta_basis, ETA_METHOD[rt.eta_method], rt.eta_method === "writing" ? UNIT_SOURCE[rt.unit_time_source] : null,
-    sub[0].toUpperCase() + sub.slice(1)].filter(Boolean).join(". ");
+    ag && ag.basis].filter(Boolean).map((t) => t.replace(/\.$/, "")).join(". ") + ".";
   return card("Time to finish", val, sub, "", tip);
 }
 

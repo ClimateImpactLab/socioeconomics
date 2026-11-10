@@ -290,20 +290,37 @@ def make_unit(stages, unit, state, rng, now):
 
 
 def eta_for(counts, stages, rng):
-    """Plausible estimate in the collector's terms: projection units left at
-    the pace of the units being written now, and aggregation apart."""
-    left = counts["not_started"] + counts["running"] + counts["failed"]
+    """Plausible estimates in the collector's terms: projection units left
+    (stopped units apart) by the pace over the last 48 hours, or the tail of
+    the units being written; aggregation apart."""
+    left = counts["not_started"] + counts["running"]
+    stopped = counts["failed"]
     agg = {"started": counts["done"] > 0, "done": counts["done"]}
+    agg_left = counts["total"] - counts["done"]
+    agg_eta = ({"state": "not_started", "hours": None, "basis": "aggregation not started"} if not agg["started"]
+               else {"state": "done", "hours": 0, "basis": "aggregation done"} if agg_left <= 0
+               else {"state": "running", "hours": round(agg_left * 0.05, 1),
+                     "basis": f"aggregation: {agg_left:,} units left; finished in the last 48 h at 20.0 units per hour"})
+    stop = f"; {stopped:,} stopped unit{'' if stopped == 1 else 's'} not counted (they need a restart)" if stopped else ""
     if left == 0:
-        return {"hours": 0, "method": None, "basis": "all projections done"}, agg
+        if stopped:
+            return {"hours": None, "method": "stopped", "basis": f"only stopped units are left: {stopped:,} need a restart"}, agg, agg_eta
+        return {"hours": 0, "method": None, "basis": "all projections done"}, agg, agg_eta
     if counts["running"] == 0:
-        return {"hours": None, "method": None,
-                "basis": f"{left:,} projection units left; not enough data yet"}, agg
+        return {"hours": None, "method": "no_jobs",
+                "basis": f"{left:,} units not started and no jobs running or queued for this run, "
+                         f"so they wait until jobs are submitted{stop}"}, agg, agg_eta
     per_unit = round(rng.uniform(2, 24), 1)
-    pace = counts["running"] / per_unit
-    return {"hours": round(left / pace, 1), "method": "writing",
-            "basis": f"{left:,} projection units left; {counts['running']:,} being written now at "
-                     f"{per_unit} h per unit (sacct), so {pace:.1f} units per hour"}, agg
+    tail = round(per_unit * 0.6, 1)
+    if left <= counts["running"]:
+        return {"hours": tail, "method": "tail",
+                "basis": f"every unit left is being written now ({counts['running']:,} unit{'' if counts['running'] == 1 else 's'}); the longest needs about "
+                         f"{tail:.1f} h more ({per_unit} h per unit less the time since it started){stop}"}, agg, agg_eta
+    recent = max(3, round(counts["running"] * 48 / per_unit))
+    pace = recent / 48
+    return {"hours": round(max(left / pace, tail), 1), "method": "pace",
+            "basis": f"{left:,} projection units left; {recent:,} finished in the last 48 h, "
+                     f"so {pace:.1f} units per hour{stop}"}, agg, agg_eta
 
 
 def main():
@@ -411,7 +428,7 @@ def main():
                         t = sizes["cells"].setdefault(model, {}).setdefault(col, [0, 0])
                         t[0] += sum(bytes_[:n_proj])
                         t[1] += sum(bytes_[n_proj:])
-            eta, agg = eta_for(counts, sector["stages"], rng)
+            eta, agg, agg_eta = eta_for(counts, sector["stages"], rng)
             run_types_out[run_type] = {
                 "dims": {
                     "models": sector["models"],
@@ -426,6 +443,8 @@ def main():
                 "eta_method": eta["method"],
                 "eta_basis": eta["basis"],
                 "aggregation": agg,
+                "agg_eta": agg_eta,
+                "stopped": counts["failed"],
                 "unit_time_source": "sacct" if eta["method"] == "writing" else None,
                 "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type, manifest["account"].get("rcc_billing") or {}),
                 "last_projection_write": (now - datetime.timedelta(hours=rng.uniform(1, 12))).strftime("%Y-%m-%dT%H:%M:%SZ")
