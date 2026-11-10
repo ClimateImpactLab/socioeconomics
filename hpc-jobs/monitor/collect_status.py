@@ -290,6 +290,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
     stopped = 0         # units whose projection stopped before the end
     stopped_left = 0.0  # their missing files, in units
     agg_finished, agg_running = [], 0
+    left_cells = collections.Counter()   # unfinished units, not stopped, per (ssp, rcp, iam, batch)
     agg_done = 0
     agg_started = False
     unit_hours = []
@@ -353,6 +354,8 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     elif gen_state == "failed" and missing:
                         stopped += 1
                         stopped_left += missing / n_proj
+                    if gen_state != "done" and not (gen_state == "failed" and missing):
+                        left_cells[(cell["ssp"], cell["rcp"], cell["iam"], batch_num)] += 1
                     for stage in model_stages[1:]:
                         rec = stage_recs[stage]
                         if rec["state"] == "running":
@@ -450,6 +453,7 @@ def scan_run_type(sector, rt_name, manifest, spec, cil_root, now, details):
                     "running": gen_running, "file_hours": unit_hours,
                     "finished": finished, "running_units": running_units, "run_left": run_left,
                     "stopped": stopped, "stopped_left": stopped_left,
+                    "left_cells": [[*k, n] for k, n in left_cells.items()],
                     "agg": {"left": counts["total"] - agg_done if len(stages) > 1 else 0, "started": agg_started,
                             "finished": agg_finished, "running": agg_running},
                     "first_write": first_projection_write},
@@ -517,7 +521,7 @@ def unit_generate_hours(projection_names, hits):
     return span * len(times) / (len(times) - 1) if span > 0 else None
 
 
-def projection_eta(t, ut, now, live):
+def projection_eta(t, ut, now, live, cover=None):
     """Hours to finish the projections left, with the method and the numbers used.
 
     Units left come from the missing projection files. Stopped units are
@@ -531,6 +535,9 @@ def projection_eta(t, ut, now, live):
       last PACE_WINDOW_HOURS, and never less than the tail;
     - with too few finishes, the units being written over the time per unit
       ("writing"), or else "not enough data yet".
+    - jobs running or queued cover fewer units than are left ("partial_jobs",
+      cover = (units covered, units left)): the time for the covered units
+      only, as above, with "jobs cover N of M units left".
     live is the number of the run's tasks running or queued, or None when
     Slurm could not be read.
     """
@@ -563,20 +570,46 @@ def projection_eta(t, ut, now, live):
                 "basis": f"every unit left is being written now ({plural(running, 'unit')}); the longest needs about "
                          f"{tail:.1f} h more ({typical:.1f} h per unit less the time since it started){stop}"}
     if live == 0:
-        writing = (f"; the {running:,} being written need about {tail:.1f} h more" if tail is not None and running else "")
+        writing = (f"; the {plural(running, 'unit')} being written {'needs' if running == 1 else 'need'} about {tail:.1f} h more"
+                   if tail is not None and running else "")
         return {"hours": None, "method": "no_jobs",
                 "basis": f"{plural(round(waiting), 'unit')} not started and no jobs running or queued for this run, "
                          f"so they wait until jobs are submitted{writing}{stop}"}
     recent = sum(1 for f in t["finished"] if now - f < PACE_WINDOW_HOURS * 3600)
+    # A unit not started yet needs at least one full time per unit once it
+    # starts, however fast the run went before; the units being written
+    # need at least their tail.
+    def floor(starting):
+        return max(tail or 0, typical if starting and typical else 0)
+    if cover and cover[0] < cover[1]:
+        covered, n_units = cover
+        part = f"jobs cover {covered:,} of {n_units:,} units left"
+        extra = {"covered": covered, "units_left": n_units}
+        if covered <= running:
+            if tail is None:
+                return {"hours": None, "method": "partial_jobs", **extra, "basis": f"{part}; time per unit not known yet{stop}"}
+            return {"hours": round(tail, 1), "method": "partial_jobs", **extra,
+                    "basis": f"{part}, all being written now; the longest needs about {tail:.1f} h more{stop}"}
+        if recent >= MIN_RECENT_UNITS:
+            pace = recent / PACE_WINDOW_HOURS
+            return {"hours": round(max(covered / pace, floor(True)), 1), "method": "partial_jobs", **extra,
+                    "basis": f"{part}; {recent:,} finished in the last {PACE_WINDOW_HOURS} h, so {pace:.1f} units "
+                             f"per hour, and at least {typical or 0:.1f} h for a unit not started yet; "
+                             f"for the covered units only{stop}"}
+        if running and typical:
+            pace = running / typical
+            return {"hours": round(max(covered / pace, floor(True)), 1), "method": "partial_jobs", **extra,
+                    "basis": f"{part}; {running:,} being written now at {typical:.1f} h per unit, for the covered units only{stop}"}
+        return {"hours": None, "method": "partial_jobs", **extra, "basis": f"{part}; not enough data yet to time them{stop}"}
     if recent >= MIN_RECENT_UNITS:
         pace = recent / PACE_WINDOW_HOURS
-        hours = max((left - t["stopped_left"]) / pace, tail or 0)
+        hours = max((left - t["stopped_left"]) / pace, floor(waiting >= 0.5))
         return {"hours": round(hours, 1), "method": "pace",
                 "basis": f"{plural(n_left, 'projection unit')} left; {recent:,} finished in the last "
                          f"{PACE_WINDOW_HOURS} h, so {pace:.1f} units per hour{stop}"}
     if running and typical:
         pace = running / typical
-        return {"hours": round(max((left - t["stopped_left"]) / pace, tail or 0), 1), "method": "writing",
+        return {"hours": round(max((left - t["stopped_left"]) / pace, floor(waiting >= 0.5)), 1), "method": "writing",
                 "basis": f"{plural(n_left, 'projection unit')} left; {running:,} being written now at "
                          f"{typical:.1f} h per unit ({ut['basis']}), so {pace:.1f} units per hour{stop}"}
     return {"hours": None, "method": None,
@@ -603,11 +636,12 @@ def aggregation_eta(a, now):
 
 
 def live_counts(sector, rts, rows, exclude):
-    """Tasks running or queued per run type, matched by job name as for
-    sacct; None when squeue could not be read."""
+    """Job names of the tasks running or queued per run type (one per array
+    task), matched by job name as for sacct; None when squeue could not be
+    read."""
     if rows is None:
         return None
-    out = {rt: 0 for rt in rts}
+    out = {rt: [] for rt in rts}
     names = sector.get("job_names") or {}
     order = [rt for rt in RUN_TYPE_ORDER if rt in rts] + [rt for rt in rts if rt not in RUN_TYPE_ORDER]
     for r in rows:
@@ -615,9 +649,40 @@ def live_counts(sector, rts, rows, exclude):
             continue
         for rt in order:
             if name_matches(r["name"], names.get(rt) or []):
-                out[rt] += 1
+                out[rt].append(r["name"])
                 break
     return out
+
+
+def task_scope(name):
+    """The units a task can work on, from its job name: (SSP, RCP, IAM,
+    batch), None where the name does not say (mort-mc-ssp4-rcp45-low covers
+    every GCM and batch of SSP4, rcp45, low)."""
+    n = name.lower()
+    ssp, rcp = re.search(r"ssp(\d)", n), re.search(r"rcp(\d\d)", n)
+    iam, batch = re.search(r"(?:^|[-_])(low|high)(?:$|[-_])", n), re.search(r"batch[-_]?(\d+)", n)
+    return (f"SSP{ssp.group(1)}" if ssp else None, f"rcp{rcp.group(1)}" if rcp else None,
+            iam.group(1) if iam else None, int(batch.group(1)) if batch else None)
+
+
+def jobs_cover(left_cells, task_names, per_task):
+    """How many of the unfinished units the live tasks will work on: each
+    task takes up to per_task units within its scope; tasks with a narrower
+    scope are placed first."""
+    remaining = {tuple(c[:4]): c[4] for c in left_cells}
+    groups = collections.Counter(task_scope(n) for n in task_names)
+    covered = 0
+    for scope, n_tasks in sorted(groups.items(), key=lambda kv: -sum(x is not None for x in kv[0])):
+        cap = n_tasks * per_task
+        for cell in remaining:
+            if cap <= 0:
+                break
+            if all(want is None or want == have for want, have in zip(scope, cell)):
+                take = min(cap, remaining[cell])
+                remaining[cell] -= take
+                cap -= take
+                covered += take
+    return covered
 
 
 def plural(n, word):
@@ -901,8 +966,18 @@ def finish_estimates(manifest, sectors_out, all_tasks, rows=None):
             ut = unit_time(manifest["run_types"][rt], timing, matched[rt], startup,
                            reference_for(sector, rt).get("hours_per_unit"))
             now = time.time()
-            eta = projection_eta(timing, ut, now, live[rt] if live else None)
+            tasks = live[rt] if live is not None else None
+            # Units each task can do within its time limit, at the time per unit.
+            limit = reference_for(sector, rt).get("time_limit_hours") or 36
+            if isinstance(limit, dict):
+                limit = limit.get(rt) or 36
+            per_task = max(1, int(limit // ut["low_h"])) if ut and ut.get("low_h") else 1
+            units_left = sum(c[4] for c in timing["left_cells"])
+            cover = (jobs_cover(timing["left_cells"], tasks, per_task), units_left) if tasks else None
+            eta = projection_eta(timing, ut, now, len(tasks) if tasks is not None else None, cover)
             out["eta_hours"], out["eta_method"], out["eta_basis"] = eta["hours"], eta["method"], eta["basis"]
+            if "covered" in eta:
+                out["eta_cover"] = {"covered": eta["covered"], "units_left": eta["units_left"]}
             out["agg_eta"] = aggregation_eta(timing["agg"], now)
             out["stopped"] = timing["stopped"]
             out["unit_time_source"] = ut["source"] if ut else None

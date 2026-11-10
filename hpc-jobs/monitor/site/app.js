@@ -773,6 +773,7 @@ const ETA_METHOD = {
   pace: "Pace: projection units finished in the last 48 hours, never less than the slowest unit being written.",
   writing: "Pace: units being written now, at the time per unit (too few finished in the last 48 hours).",
   no_jobs: "No jobs are running or queued for this run, so the units not started wait until jobs are submitted.",
+  partial_jobs: "The jobs running or queued cover only part of the units left (each task takes the units of its job's scenario that fit in its time limit); the time is for those units only.",
   stopped: "Only stopped units are left; they need a restart.",
 };
 // The time to finish covers the projection; the aggregation and any
@@ -786,7 +787,9 @@ function etaCard(rt, total) {
   const agg = !ag ? ((rt.aggregation || {}).started ? `aggregation ${fmtN((rt.aggregation || {}).done)}/${fmtN(total)} units` : "aggregation not started")
     : ag.state === "not_started" ? "aggregation not started" : ag.state === "done" ? "aggregation done"
     : ag.hours != null ? `aggregation ${fmtEta(ag.hours)}` : "aggregation running";
-  const sub = `projection; ${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped, not counted` : "");
+  const cover = rt.eta_method === "partial_jobs" && rt.eta_cover
+    ? `; jobs cover ${fmtN(rt.eta_cover.covered)} of ${fmtN(rt.eta_cover.units_left)} units left` : "";
+  const sub = `projection${cover}; ${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped, not counted` : "");
   const tip = [rt.eta_basis, ETA_METHOD[rt.eta_method], rt.eta_method === "writing" ? UNIT_SOURCE[rt.unit_time_source] : null,
     ag && ag.basis].filter(Boolean).map((t) => t.replace(/\.$/, "")).join(". ") + ".";
   return card("Time to finish", val, sub, "", tip);

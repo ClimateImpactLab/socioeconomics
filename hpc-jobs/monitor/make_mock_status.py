@@ -318,6 +318,14 @@ def eta_for(counts, stages, rng):
                          f"{tail:.1f} h more ({per_unit} h per unit less the time since it started){stop}"}, agg, agg_eta
     recent = max(3, round(counts["running"] * 48 / per_unit))
     pace = recent / 48
+    # Large runs: the jobs queued cover only part of the units left.
+    if left > 1000:
+        covered = counts["running"] * 2
+        return {"hours": round(max(covered / pace, per_unit), 1), "method": "partial_jobs",
+                "covered": covered, "units_left": left,
+                "basis": f"jobs cover {covered:,} of {left:,} units left; {recent:,} finished in the last 48 h, "
+                         f"so {pace:.1f} units per hour, and at least {per_unit} h for a unit not started yet; "
+                         f"for the covered units only{stop}"}, agg, agg_eta
     return {"hours": round(max(left / pace, tail), 1), "method": "pace",
             "basis": f"{left:,} projection units left; {recent:,} finished in the last 48 h, "
                      f"so {pace:.1f} units per hour{stop}"}, agg, agg_eta
@@ -444,6 +452,7 @@ def main():
                 "eta_basis": eta["basis"],
                 "aggregation": agg,
                 "agg_eta": agg_eta,
+                **({"eta_cover": {"covered": eta["covered"], "units_left": eta["units_left"]}} if "covered" in eta else {}),
                 "stopped": counts["failed"],
                 "unit_time_source": "sacct" if eta["method"] == "writing" else None,
                 "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type, manifest["account"].get("rcc_billing") or {}),

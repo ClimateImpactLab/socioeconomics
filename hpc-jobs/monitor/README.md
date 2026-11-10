@@ -439,9 +439,18 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
   - no jobs running or queued for the run (from squeue, matched by the
     run's job names) while units wait to start: "waiting for jobs", no
     time, since nothing will start them;
+  - jobs running or queued cover fewer units than are left ("jobs cover N
+    of M units left" on the card): the time for the covered units only.
+    Each task (squeue lists array tasks one by one, matched to the run by
+    job name) can work on the units of the scenario in its job name
+    (mort-mc-ssp4-rcp45-low: every GCM and batch of SSP4, rcp45, low; a
+    batch in the name narrows it), up to as many as fit in its time limit
+    at the time per unit (1 for mortality: 36 h at 22.6 h). A name with no
+    scenario covers the whole run;
   - otherwise ("pace"): the units left over the units finished in the last
     48 hours (each unit's finish time is its status marker, or else its
-    newest projection file), never less than the tail;
+    newest projection file), never less than the tail, nor than one time
+    per unit while units wait to start;
   - with fewer than 3 finished in 48 hours, the units being written over
     the time per unit ("writing"), or else "not enough data yet".
   The aggregation has its own estimate under the card: "not started"
