@@ -777,42 +777,41 @@ const ETA_METHOD = {
   partial_jobs: "The jobs running or queued cover only part of the units left (each task takes the units of its job's scenario that fit in its time limit); the time is for those units only.",
   stopped: "Only stopped units are left; they need a restart.",
 };
-// Two time to finish cards, one under the other: for the units the running
-// and queued jobs cover, and for every unit left as if all were submitted
-// now. Both cover the projection; the aggregation and any stopped units
-// are shown apart, under each.
+// Time to finish: one card with two short rows, the units the running and
+// queued jobs cover, and every unit left as if all were submitted now.
+// Both are for the projection; the aggregation, stopped units and method
+// are in each row's "i".
 function etaCards(rt, total) {
   if (rt.eta_method === undefined) return card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : "");
   const small = (t) => `<span class="card-val-small">${t}</span>`;
+  const sentence = (t) => (t ? esc(t.charAt(0).toUpperCase() + t.slice(1).replace(/\.$/, "")) + "." : "");
   const ag = rt.agg_eta;
-  const agg = !ag ? ((rt.aggregation || {}).started ? `aggregation ${fmtN((rt.aggregation || {}).done)}/${fmtN(total)} units` : "aggregation not started")
-    : ag.state === "not_started" ? "aggregation not started" : ag.state === "done" ? "aggregation done"
-    : ag.hours != null ? `aggregation ${fmtEta(ag.hours)}` : "aggregation running";
-  const more = `<br>${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped` : "");
-  const tipOf = (parts) => parts.filter(Boolean).map((t) => t.replace(/\.$/, "")).join(". ") + ".";
+  const agg = !ag ? ((rt.aggregation || {}).started ? `Aggregation: ${fmtN((rt.aggregation || {}).done)}/${fmtN(total)} units.` : "Aggregation not started.")
+    : ag.state === "not_started" ? "Aggregation not started." : ag.state === "done" ? "Aggregation done."
+    : `Aggregation ${ag.hours != null ? fmtEta(ag.hours) : "running"}: ${sentence(ag.basis)}`;
+  const stopped = rt.stopped ? ` ${fmtN(rt.stopped)} stopped ${rt.stopped === 1 ? "unit is" : "units are"} not counted; they need a restart.` : "";
+  const row = (name, info, val, line) =>
+    `<div class="eta-row"><div class="eta-name">${name}${info}</div><div class="card-val eta-val">${val}</div><div class="eta-line" title="${esc(line)}">${line}</div></div>`;
 
   // 1. Running jobs: the units they cover.
   const c = rt.eta_cover;
   const waiting = rt.eta_method === "no_jobs" || (c && !c.covered && rt.eta_hours !== 0);
-  const val1 = rt.eta_hours === 0 ? "done" : waiting ? small("waiting for jobs") : rt.eta_method === "stopped" ? small("stopped")
-    : rt.eta_hours == null ? small("not enough data yet") : fmtEta(rt.eta_hours);
+  const val1 = rt.eta_hours === 0 ? "done" : waiting ? "\u2013" : rt.eta_method === "stopped" ? small("stopped")
+    : rt.eta_hours == null ? small("n/a") : fmtEta(rt.eta_hours);
   const line1 = rt.eta_hours === 0 ? "nothing left" : waiting ? "waiting for jobs"
-    : c ? `covers ${fmtN(c.covered)} of ${fmtN(c.units_left)} units left` : "jobs not known";
-  const info1 = infoPop("About this time", "Only counts units that running or queued jobs will cover. " +
-    "Based on the time per unit and the time each running task has been going.");
-  const card1 = card(`Time to finish, running jobs${info1}`, val1, line1 + more, "",
-    tipOf([rt.eta_basis, ETA_METHOD[rt.eta_method], ag && ag.basis]));
+    : c ? `${fmtN(c.covered)} of ${fmtN(c.units_left)} units` : "jobs not known";
+  const info1 = infoPop("Running jobs", "Only counts units that running or queued jobs will cover. Based on the time per unit " +
+    `and the time each running task has been going. ${sentence(rt.eta_basis)} ${agg}${stopped}`);
 
   // 2. Every unit left, as if all were submitted now.
   const a = rt.eta_all;
-  const val2 = !a ? small("n/a") : a.hours === 0 ? "done" : a.hours == null ? small("not enough data yet") : fmtEta(a.hours);
-  const line2 = !a ? "" : a.hours === 0 ? "nothing left" : a.needs_jobs ? `needs jobs for ${fmtN(a.needs_jobs)} units`
-    : a.needs_jobs === 0 ? "every unit left has jobs" : `${fmtN(a.units_left)} units left`;
-  const info2 = infoPop("About this time", "Assumes every unit left starts now, at the number of tasks the run has kept " +
-    "running at once in the last 48 hours. One round takes one time per unit.");
-  const card2 = card(`Time to finish, if all units left were submitted now${info2}`, val2, line2 + more, "",
-    tipOf([a && a.basis, ag && ag.basis]));
-  return `<div class="card-pair">${card1}${card2}</div>`;
+  const val2 = !a ? small("n/a") : a.hours === 0 ? "done" : a.hours == null ? small("n/a") : fmtEta(a.hours);
+  const line2 = !a ? "after the next scan" : a.hours === 0 ? "nothing left" : a.needs_jobs ? `${fmtN(a.needs_jobs)} need jobs`
+    : a.needs_jobs === 0 ? "all have jobs" : `${fmtN(a.units_left)} units`;
+  const info2 = infoPop("All units left", "Assumes every unit left starts now, at the number of tasks the run has kept running " +
+    `at once in the last 48 hours. One round takes one time per unit. ${a ? sentence(a.basis) : ""} ${agg}${stopped}`);
+
+  return `<div class="card eta-card">${row("Running jobs", info1, val1, line1)}${row("All units left", info2, val2, line2)}</div>`;
 }
 
 function renderCards() {

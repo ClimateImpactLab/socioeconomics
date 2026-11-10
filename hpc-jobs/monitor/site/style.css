@@ -137,10 +137,16 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 /* Cards */
 .cards { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; }
 .card { background: var(--bg2); border-radius: 6px; padding: 4px 8px; min-width: 0; }
-/* Two cards in one grid cell, one under the other (the time to finish pair). */
-.card-pair { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.card-pair .card { flex: 1; }
-.card-pair .card-sub { white-space: normal; overflow: visible; }
+/* Time to finish: one card with two short rows, each a name and a line
+   (the sizes of a card's label and sub line) beside the value. Its column
+   is a little wider so the rows fit without wrapping. */
+.cards { grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(0, 1.55fr) minmax(0, 1.25fr); }
+.eta-card { display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+.eta-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; align-items: center; }
+.eta-name { grid-column: 1; grid-row: 1; font-size: 9px; color: var(--tx2); display: flex; align-items: center; white-space: nowrap; }
+.eta-line { grid-column: 1; grid-row: 2; font-size: 9px; color: var(--tx3); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eta-val { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; text-align: right; white-space: nowrap; }
+.eta-card .info-btn { width: 13px; height: 13px; font-size: 8px; margin-left: 3px; }
 .card-label { font-size: 9px; color: var(--tx2); }
 .card-val { font-size: 14px; font-weight: 500; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .card-sub { font-size: 9px; color: var(--tx3); margin-top: 2px; line-height: 1.2;
