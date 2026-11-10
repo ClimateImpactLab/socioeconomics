@@ -137,6 +137,10 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 /* Cards */
 .cards { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; }
 .card { background: var(--bg2); border-radius: 6px; padding: 4px 8px; min-width: 0; }
+/* Two cards in one grid cell, one under the other (the time to finish pair). */
+.card-pair { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.card-pair .card { flex: 1; }
+.card-pair .card-sub { white-space: normal; overflow: visible; }
 .card-label { font-size: 9px; color: var(--tx2); }
 .card-val { font-size: 14px; font-weight: 500; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .card-sub { font-size: 9px; color: var(--tx3); margin-top: 2px; line-height: 1.2;

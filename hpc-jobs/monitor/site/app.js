@@ -777,26 +777,42 @@ const ETA_METHOD = {
   partial_jobs: "The jobs running or queued cover only part of the units left (each task takes the units of its job's scenario that fit in its time limit); the time is for those units only.",
   stopped: "Only stopped units are left; they need a restart.",
 };
-// The time to finish covers the projection; the aggregation and any
-// stopped units are shown apart, under it.
-function etaCard(rt, total) {
+// Two time to finish cards, one under the other: for the units the running
+// and queued jobs cover, and for every unit left as if all were submitted
+// now. Both cover the projection; the aggregation and any stopped units
+// are shown apart, under each.
+function etaCards(rt, total) {
   if (rt.eta_method === undefined) return card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : "");
   const small = (t) => `<span class="card-val-small">${t}</span>`;
-  const val = rt.eta_hours === 0 ? "done" : rt.eta_method === "no_jobs" ? small("waiting for jobs")
-    : rt.eta_method === "stopped" ? small("stopped") : rt.eta_hours == null ? small("not enough data yet") : fmtEta(rt.eta_hours);
   const ag = rt.agg_eta;
   const agg = !ag ? ((rt.aggregation || {}).started ? `aggregation ${fmtN((rt.aggregation || {}).done)}/${fmtN(total)} units` : "aggregation not started")
     : ag.state === "not_started" ? "aggregation not started" : ag.state === "done" ? "aggregation done"
     : ag.hours != null ? `aggregation ${fmtEta(ag.hours)}` : "aggregation running";
-  const cover = rt.eta_method === "partial_jobs" && rt.eta_cover
-    ? `; jobs cover ${fmtN(rt.eta_cover.covered)} of ${fmtN(rt.eta_cover.units_left)} units left` : "";
-  const sub = `projection${cover}; ${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped, not counted` : "");
-  const tip = [rt.eta_basis, ETA_METHOD[rt.eta_method], rt.eta_method === "writing" ? UNIT_SOURCE[rt.unit_time_source] : null,
-    ag && ag.basis].filter(Boolean).map((t) => t.replace(/\.$/, "")).join(". ") + ".";
-  const info = infoPop("About the time to finish", "Based on the units finished in the last 48 hours and the time per unit. " +
-    "It checks the running and queued jobs: \u201cwaiting for jobs\u201d when nothing is running, and \u201cjobs cover N of M units left\u201d " +
-    "when they do not cover all the units left. Projection and aggregation are estimated separately.");
-  return card(`Time to finish${info}`, val, sub, "", tip);
+  const more = `<br>${agg}` + (rt.stopped ? `; ${fmtN(rt.stopped)} stopped` : "");
+  const tipOf = (parts) => parts.filter(Boolean).map((t) => t.replace(/\.$/, "")).join(". ") + ".";
+
+  // 1. Running jobs: the units they cover.
+  const c = rt.eta_cover;
+  const waiting = rt.eta_method === "no_jobs" || (c && !c.covered && rt.eta_hours !== 0);
+  const val1 = rt.eta_hours === 0 ? "done" : waiting ? small("waiting for jobs") : rt.eta_method === "stopped" ? small("stopped")
+    : rt.eta_hours == null ? small("not enough data yet") : fmtEta(rt.eta_hours);
+  const line1 = rt.eta_hours === 0 ? "nothing left" : waiting ? "waiting for jobs"
+    : c ? `covers ${fmtN(c.covered)} of ${fmtN(c.units_left)} units left` : "jobs not known";
+  const info1 = infoPop("About this time", "Only counts units that running or queued jobs will cover. " +
+    "Based on the time per unit and the time each running task has been going.");
+  const card1 = card(`Time to finish, running jobs${info1}`, val1, line1 + more, "",
+    tipOf([rt.eta_basis, ETA_METHOD[rt.eta_method], ag && ag.basis]));
+
+  // 2. Every unit left, as if all were submitted now.
+  const a = rt.eta_all;
+  const val2 = !a ? small("n/a") : a.hours === 0 ? "done" : a.hours == null ? small("not enough data yet") : fmtEta(a.hours);
+  const line2 = !a ? "" : a.hours === 0 ? "nothing left" : a.needs_jobs ? `needs jobs for ${fmtN(a.needs_jobs)} units`
+    : a.needs_jobs === 0 ? "every unit left has jobs" : `${fmtN(a.units_left)} units left`;
+  const info2 = infoPop("About this time", "Assumes every unit left starts now, at the number of tasks the run has kept " +
+    "running at once in the last 48 hours. One round takes one time per unit.");
+  const card2 = card(`Time to finish, if all units left were submitted now${info2}`, val2, line2 + more, "",
+    tipOf([a && a.basis, ag && ag.basis]));
+  return `<div class="card-pair">${card1}${card2}</div>`;
 }
 
 function renderCards() {
@@ -812,7 +828,7 @@ function renderCards() {
     card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card(`Aggregation${mainMark()}`, fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(f.running)}</span>`, f.failed ? `${fmtN(f.failed)} stopped` : "units being written") +
-    etaCard(rt, total) +
+    etaCards(rt, total) +
     suCard(rt.su_estimate);
 }
 

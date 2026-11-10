@@ -437,6 +437,25 @@ def main():
                         t[0] += sum(bytes_[:n_proj])
                         t[1] += sum(bytes_[n_proj:])
             eta, agg, agg_eta = eta_for(counts, sector["stages"], rng)
+            # What the jobs cover, and every unit left as if all were
+            # submitted now, at the concurrency the run has shown.
+            units_left = counts["not_started"] + counts["running"]
+            covered = eta.get("covered", units_left if counts["running"] else 0)
+            eta_cover = {"covered": covered, "units_left": units_left}
+            all_left = units_left + counts["failed"]
+            if not all_left:
+                eta_all = {"units_left": 0, "needs_jobs": 0, "hours": 0, "basis": "all projections done"}
+            elif not counts["running"]:
+                eta_all = {"units_left": all_left, "needs_jobs": all_left - covered, "hours": None,
+                           "basis": f"{all_left:,} units left; not enough finished in the last 48 h to know how many tasks the run keeps going"}
+            else:
+                per_unit = 22.6 if sector_name == "mortality" else 6.5
+                at_once = max(1, counts["running"] * 2)
+                rounds = -(-all_left // at_once)
+                eta_all = {"units_left": all_left, "needs_jobs": all_left - covered, "hours": round(rounds * per_unit, 1),
+                           "concurrent": at_once, "rounds": rounds,
+                           "basis": f"{all_left:,} units left; about {at_once:,} tasks at once at {per_unit} h per unit; "
+                                    f"{rounds} round{'' if rounds == 1 else 's'} of {per_unit} h"}
             run_types_out[run_type] = {
                 "dims": {
                     "models": sector["models"],
@@ -452,7 +471,8 @@ def main():
                 "eta_basis": eta["basis"],
                 "aggregation": agg,
                 "agg_eta": agg_eta,
-                **({"eta_cover": {"covered": eta["covered"], "units_left": eta["units_left"]}} if "covered" in eta else {}),
+                "eta_cover": eta_cover,
+                "eta_all": eta_all,
                 "stopped": counts["failed"],
                 "unit_time_source": "sacct" if eta["method"] == "writing" else None,
                 "su_estimate": mock_su_estimate(counts, sector["stages"], sector, run_type, manifest["account"].get("rcc_billing") or {}),

@@ -429,8 +429,19 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     no reference time yet, so it shows "not known yet".
   The tooltips of the time to finish and SUs to finish cards say which
   source was used.
-- The time to finish card has a small "i" that says in short how the
-  estimate works (the cases below).
+- Two time to finish cards, one under the other in the same column, each
+  with its own "i":
+  - "Time to finish, running jobs": the estimate below, only for the
+    units the running and queued jobs cover; under it "covers N of M
+    units left", or "waiting for jobs" when nothing is running.
+  - "Time to finish, if all units left were submitted now": every unit
+    left (stopped ones included) as if the missing jobs started now, at
+    the concurrency the run has shown: units finished in the last 48 hours
+    / 48 x time per unit tasks at once, and rounds of one time per unit
+    (mortality montecarlo on Nov 10: 626 finished, 22.6 h per unit, about
+    295 tasks at once, so the 100 units left take one round, about 23 h).
+    Under it "needs jobs for K units" when some units have no jobs.
+  Both show the aggregation estimate and the stopped units apart.
 - The time to finish covers the projection units left, from the missing
   projection files. Stopped units (their projection ended or went quiet
   before the end) are counted apart, shown under the card as "N stopped,

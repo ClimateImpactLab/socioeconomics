@@ -617,6 +617,30 @@ def projection_eta(t, ut, now, live, cover=None):
                      f"last {PACE_WINDOW_HOURS} h, no time per unit known){stop}"}
 
 
+def all_units_eta(t, ut, now, covered):
+    """Time to finish every unit left, as if the missing jobs started now.
+    The run's concurrency is the number of tasks it has kept running at once
+    in the last PACE_WINDOW_HOURS: units finished there / hours x time per
+    unit. Every unit left, stopped ones included, starts in rounds of that
+    many; each round takes one time per unit. covered is how many units the
+    live jobs cover (None when Slurm could not be read)."""
+    units = sum(c[4] for c in t["left_cells"]) + t["stopped"]
+    out = {"units_left": units, "needs_jobs": None if covered is None else max(0, units - covered)}
+    if units <= 0:
+        return {**out, "hours": 0, "basis": "all projections done"}
+    typical = ut["low_h"] if ut else None
+    recent = sum(1 for f in t["finished"] if now - f < PACE_WINDOW_HOURS * 3600)
+    if not typical or recent < MIN_RECENT_UNITS:
+        return {**out, "hours": None, "basis": f"{plural(units, 'unit')} left; not enough finished in the last "
+                                                 f"{PACE_WINDOW_HOURS} h to know how many tasks the run keeps going"}
+    tasks = recent / PACE_WINDOW_HOURS * typical
+    rounds = max(1, -(-units // max(1, int(tasks))))
+    return {**out, "hours": round(rounds * typical, 1), "concurrent": round(tasks), "rounds": rounds,
+            "basis": f"{plural(units, 'unit')} left; {recent:,} finished in the last {PACE_WINDOW_HOURS} h at "
+                     f"{typical:.1f} h per unit, so about {tasks:,.0f} tasks at once; "
+                     f"{plural(rounds, 'round')} of {typical:.1f} h"}
+
+
 def aggregation_eta(a, now):
     """The aggregation's own estimate: "not started" while nothing has run,
     else the units left over the units finished in the last
@@ -973,11 +997,15 @@ def finish_estimates(manifest, sectors_out, all_tasks, rows=None):
                 limit = limit.get(rt) or 36
             per_task = max(1, int(limit // ut["low_h"])) if ut and ut.get("low_h") else 1
             units_left = sum(c[4] for c in timing["left_cells"])
-            cover = (jobs_cover(timing["left_cells"], tasks, per_task), units_left) if tasks else None
+            covered = jobs_cover(timing["left_cells"], tasks, per_task) if tasks else (0 if tasks is not None else None)
+            cover = (covered, units_left) if tasks else None
             eta = projection_eta(timing, ut, now, len(tasks) if tasks is not None else None, cover)
+            # What the live jobs cover, always when Slurm was read; and the
+            # time for every unit left, as if all were submitted now.
+            if covered is not None:
+                out["eta_cover"] = {"covered": covered, "units_left": units_left}
+            out["eta_all"] = all_units_eta(timing, ut, now, covered)
             out["eta_hours"], out["eta_method"], out["eta_basis"] = eta["hours"], eta["method"], eta["basis"]
-            if "covered" in eta:
-                out["eta_cover"] = {"covered": eta["covered"], "units_left": eta["units_left"]}
             out["agg_eta"] = aggregation_eta(timing["agg"], now)
             out["stopped"] = timing["stopped"]
             out["unit_time_source"] = ut["source"] if ut else None
