@@ -777,52 +777,40 @@ const ETA_METHOD = {
   partial_jobs: "The jobs running or queued cover only part of the units left (each task takes the units of its job's scenario that fit in its time limit); the time is for those units only.",
   stopped: "Only stopped units are left; they need a restart.",
 };
-// Time to finish: one card with two short rows, the units the running and
-// queued jobs cover, and every unit left as if all were submitted now.
-// Both are for the projection; the aggregation, stopped units and method
-// are in each row's "i".
-function etaCards(rt, total) {
+// Time to finish: one card like the SUs card. The time for the units the
+// running and queued jobs cover, with how many of the units left they are;
+// with no jobs for the run, "No jobs running" in orange and the units left.
+// One "i" on the title; the method, aggregation and stopped units are in
+// the card's tooltip.
+function etaCard(rt, total) {
   if (rt.eta_method === undefined) return card("ETA", fmtEta(rt.eta_hours), rt.eta_basis ? esc(rt.eta_basis) : "");
   const small = (t) => `<span class="card-val-small">${t}</span>`;
-  const sentence = (t) => (t ? esc(t.charAt(0).toUpperCase() + t.slice(1).replace(/\.$/, "")) + "." : "");
+  const sentence = (t) => (t ? t.charAt(0).toUpperCase() + t.slice(1).replace(/\.$/, "") + "." : "");
   const ag = rt.agg_eta;
   const agg = !ag ? ((rt.aggregation || {}).started ? `Aggregation: ${fmtN((rt.aggregation || {}).done)}/${fmtN(total)} units.` : "Aggregation not started.")
     : ag.state === "not_started" ? "Aggregation not started." : ag.state === "done" ? "Aggregation done."
     : `Aggregation ${ag.hours != null ? fmtEta(ag.hours) : "running"}: ${sentence(ag.basis)}`;
-  const stopped = rt.stopped ? ` ${fmtN(rt.stopped)} stopped ${rt.stopped === 1 ? "unit is" : "units are"} not counted; they need a restart.` : "";
-  const row = (name, info, val, line, warnLine) =>
-    `<div class="eta-row"><div class="eta-name">${name}${info}</div><div class="card-val eta-val">${val}</div>` +
-    `<div class="eta-line${warnLine ? " eta-warn" : ""}" title="${esc(line)}">${line}</div></div>`;
+  const stopped = rt.stopped ? `${fmtN(rt.stopped)} stopped ${rt.stopped === 1 ? "unit is" : "units are"} not counted; they need a restart.` : "";
+  const info = infoPop("About the time to finish", "Time for the units that running or queued jobs will cover, from the time " +
+    "per unit and how long each task has been going.<br>\u201cNo jobs running\u201d, in orange, when no jobs are running or " +
+    "queued for the run; a unit still being written without a job is most likely a stopped task.<br>Projection only; " +
+    "hover the card for the method and the aggregation.");
+  // The method already names the stopped units when there are any.
+  const tip = [sentence(rt.eta_basis), agg, /stopped/.test(rt.eta_basis || "") ? "" : stopped].filter(Boolean).join(" ");
 
-  // 1. Running jobs: the units they cover.
   // No jobs running or queued for the run (live_tasks, or the "no_jobs"
-  // method in scans before it): a warning instead of a time; a unit still
-  // being written without a job is most likely a stopped task.
+  // method in scans before it): a warning and the units left, no hours.
   const c = rt.eta_cover;
+  const left = c ? c.units_left : rt.eta_all ? rt.eta_all.units_left : null;
   const noJobs = rt.eta_hours !== 0 && (rt.live_tasks === 0 || rt.eta_method === "no_jobs");
-  const writingNoJob = noJobs && rt.counts.running > 0;
-  const warn = (t) => `<span class="card-val-small eta-warn">${t}</span>`;
-  const val1 = rt.eta_hours === 0 ? "done" : writingNoJob ? warn("writing, but<br>no job running") : noJobs ? warn("No jobs<br>running")
+  const val = rt.eta_hours === 0 ? "done"
+    : noJobs ? `<span class="eta-warn">No jobs running</span>`
     : c && !c.covered ? "\u2013" : rt.eta_method === "stopped" ? small("stopped")
     : rt.eta_hours == null ? small("n/a") : fmtEta(rt.eta_hours);
-  const line1 = rt.eta_hours === 0 ? "nothing left"
-    : c ? `${fmtN(c.covered)} of ${fmtN(c.units_left)} units` : noJobs ? "waiting for jobs" : "jobs not known";
-  const info1 = infoPop("Running jobs", "Only counts units that running or queued jobs will cover. Based on the time per unit " +
-    "and the time each running task has been going. In orange: \u201cNo jobs running\u201d when no jobs are running or queued " +
-    "for the run, and \u201cwriting, but no job running\u201d when a unit is still being written without a job (most likely a stopped task). " +
-    `${sentence(rt.eta_basis)} ${agg}${stopped}`);
-
-  // 2. Every unit left, as if all were submitted now.
-  const a = rt.eta_all;
-  const val2 = !a ? small("n/a") : a.hours === 0 ? "done" : a.hours == null ? small("n/a") : fmtEta(a.hours);
-  const line2 = !a ? "after the next scan" : a.hours === 0 ? "nothing left" : a.needs_jobs ? `needs jobs for ${fmtN(a.needs_jobs)} units`
-    : a.needs_jobs === 0 ? "all have jobs" : `${fmtN(a.units_left)} units`;
-  const info2 = infoPop("All units left", "Assumes every unit left starts now, at the number of tasks the run has kept running " +
-    "at once in the last 48 hours. One round takes one time per unit. The line under the time turns orange when some units " +
-    `left have no jobs. ${a ? sentence(a.basis) : ""} ${agg}${stopped}`);
-
-  return `<div class="card eta-card">${row("Running jobs", info1, val1, line1, false)}` +
-    `${row("All units left", info2, val2, line2, !!(a && a.hours !== 0 && a.needs_jobs))}</div>`;
+  const sub = rt.eta_hours === 0 ? "nothing left"
+    : noJobs ? (left != null ? `${fmtN(left)} units left` : "waiting for jobs")
+    : c ? `${fmtN(c.covered)} of ${fmtN(c.units_left)} units running` : "jobs not known";
+  return card(`Time to finish${info}`, val, esc(sub), "", tip);
 }
 
 function renderCards() {
@@ -838,7 +826,7 @@ function renderCards() {
     card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card(`Aggregation${mainMark()}`, fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(f.running)}</span>`, f.failed ? `${fmtN(f.failed)} stopped` : "units being written") +
-    etaCards(rt, total) +
+    etaCard(rt, total) +
     suCard(rt.su_estimate);
 }
 

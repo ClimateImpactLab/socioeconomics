@@ -429,24 +429,16 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     no reference time yet, so it shows "not known yet".
   The tooltips of the time to finish and SUs to finish cards say which
   source was used.
-- Time to finish: one card with two short rows, each with its own "i",
-  no taller than the other cards (its column is a little wider):
-  - "Running jobs": the estimate below, only for the units the running
-    and queued jobs cover; under it "1 of 99 units". When no jobs are
-    running or queued for the run (the collector saves the count as
-    `live_tasks`), it shows "No jobs running" in orange instead of a time,
-    or "writing, but no job running" when a unit is still being written
-    without a job (most likely a stopped task).
-  - "All units left": every unit left (stopped ones included) as if the
-    missing jobs started now, at the concurrency the run has shown: units
-    finished in the last 48 hours / 48 x time per unit tasks at once, and
-    rounds of one time per unit (mortality montecarlo on Nov 10: 626
-    finished, 22.6 h per unit, about 295 tasks at once, so the 100 units
-    left take one round, about 23 h). Under it "needs jobs for 99 units",
-    in orange, when some units have no jobs.
-  The orange is the page's warning color (`--st-pend`, as for time left
-  under 2 hours). The method, the aggregation estimate, the stopped units
-  and these warnings are explained in each row's "i".
+- Time to finish: one card like the SUs card, one value and one gray line,
+  with a single "i" on its title:
+  - with jobs running or queued for the run: the estimate below, only for
+    the units those jobs cover, and under it "1 of 99 units running";
+  - with none (the collector saves the count as `live_tasks`): "No jobs
+    running" in the page's warning orange (`--st-pend`, as for time left
+    under 2 hours), and under it "99 units left", with no hours.
+  The method, the aggregation estimate and the stopped units are in the
+  card's tooltip. The collector still saves `eta_all` (every unit left as
+  if all were submitted now); the page no longer shows it.
 - The time to finish covers the projection units left, from the missing
   projection files. Stopped units (their projection ended or went quiet
   before the end) are counted apart, shown under the card as "N stopped,
