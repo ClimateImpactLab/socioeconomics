@@ -721,7 +721,7 @@ def reference_for(sector, rt_name):
     return ref
 
 
-def estimate_sus(remaining, ut, sector, rt_name, req, rate):
+def estimate_sus(remaining, ut, sector, rt_name, req, rate, billed_req=None):
     """Compute hours and RCC SUs to finish the units whose projections are not done.
 
     Units left: the missing projection files over the files per unit.
@@ -731,6 +731,10 @@ def estimate_sus(remaining, ut, sector, rt_name, req, rate):
     units left x hours x billing, as Slurm counts them. SUs = units left x
     hours x RCC's rate for the run's requests, weighted by tasks (see
     rcc_rate). A sector with no reference time is "not known yet".
+    When some of the run's tasks ran on a partition RCC does not bill,
+    billed_req (the manifest request on a billed partition, with its rate)
+    gives a second number: every unit left run there, at the median time
+    per unit, so the range goes from the current mix to all billed.
     """
     ref = reference_for(sector, rt_name)
     billing = ref.get("billing", 1)
@@ -767,12 +771,34 @@ def estimate_sus(remaining, ut, sector, rt_name, req, rate):
             parts = [f"{r['tasks']:,} tasks on {r['partition']} with {r['cpus']:g} core and {r['mem_gb']:g} GB"
                      for r in req["mix"]]
             billed = f"{'; '.join(parts)} (sacct): {rate:.2f} SU per hour, weighted by tasks"
-    return {**base, "remaining": remaining, "hours_low": round(low_h, 2), "hours_high": round(high_h, 2),
-            "compute_low": round(remaining * c_lo), "compute_high": round(remaining * c_hi),
-            "su_low": None if rate is None else round(remaining * low_h * rate),
-            "su_high": None if rate is None else round(remaining * high_h * rate),
-            "source": source,
-            "basis": f"{plural(remaining, 'unit')} left × {hours} per unit ({why}); {billed}"}
+    out = {**base, "remaining": remaining, "hours_low": round(low_h, 2), "hours_high": round(high_h, 2),
+           "compute_low": round(remaining * c_lo), "compute_high": round(remaining * c_hi),
+           "su_low": None if rate is None else round(remaining * low_h * rate),
+           "su_high": None if rate is None else round(remaining * high_h * rate),
+           "source": source,
+           "basis": f"{plural(remaining, 'unit')} left × {hours} per unit ({why}); {billed}"}
+    if billed_req and rate is not None and billed_req["rate"] > rate:
+        b = billed_req
+        out["su_all_billed"] = round(remaining * low_h * b["rate"])
+        out["all_billed"] = {"partition": b["partition"], "cpus": b["cpus"], "mem_gb": b["mem_gb"], "rate": b["rate"]}
+        out["basis"] += (f". All on {b['partition']} with {b['cpus']:g} core and {b['mem_gb']:g} GB (manifest), "
+                         f"{b['rate']:g} SU per hour at {low_h:.1f} h per unit: {out['su_all_billed']:,} SU")
+    return out
+
+
+def all_billed_request(sector, rt_name, req, rcc):
+    """The manifest request run on a billed partition, with its rate, when
+    some of the run's tasks ran on a partition RCC does not bill; else None."""
+    billed = rcc.get("billed_partitions") or []
+    mix = (req or {}).get("mix") or []
+    if not billed or not any(r["partition"] in billed for r in mix) or all(r["partition"] in billed for r in mix):
+        return None
+    ref = run_request(sector, rt_name, [])
+    if not ref or not ref.get("mem_gb"):
+        return None
+    part = ref["partition"] if ref["partition"] in billed else billed[0]
+    b = {"partition": part, "cpus": ref["cpus"] or 1, "mem_gb": ref["mem_gb"]}
+    return {**b, "rate": rcc_rate(b, rcc)}
 
 
 # ---------- time per unit ----------
@@ -1012,8 +1038,9 @@ def finish_estimates(manifest, sectors_out, all_tasks, rows=None):
             out["stopped"] = timing["stopped"]
             out["unit_time_source"] = ut["source"] if ut else None
             req = run_request(sector, rt, matched[rt])
-            out["su_estimate"] = estimate_sus(timing["left"], ut, sector, rt, req,
-                                              rcc_rate(req, manifest["account"].get("rcc_billing") or {}))
+            rcc = manifest["account"].get("rcc_billing") or {}
+            out["su_estimate"] = estimate_sus(timing["left"], ut, sector, rt, req, rcc_rate(req, rcc),
+                                              all_billed_request(sector, rt, req, rcc))
             log(f"{name}/{rt}: time per unit {ut['basis'] + ', ' + format(ut['su_low'], '.1f') + ' SU' if ut else 'not known'}")
 
 

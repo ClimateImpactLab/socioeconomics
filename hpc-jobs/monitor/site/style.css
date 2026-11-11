@@ -645,6 +645,13 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
 .ck-na { color: var(--tx3); opacity: 0.6; }
 .ck-table .ck-su { font-family: var(--mono); color: var(--tx); text-align: left; }
 .ck-table th.ck-su { font-family: inherit; color: var(--tx3); }
+/* The "i" next to the SUs total opens upward, inside the table's scroll box. */
+.ck-tot-info { margin-left: 4px; vertical-align: middle; font-family: var(--font); }
+.ck-tot-info .su-pop { top: auto; bottom: calc(100% + 6px); left: auto; right: 0; }
+/* On phones the box spans the total line, so it stays on screen. */
+.ck-total-phone { position: relative; }
+.ck-total-phone .ck-tot-info .info-wrap { position: static; }
+.ck-total-phone .ck-tot-info .su-pop { top: 1.6em; bottom: auto; left: 0; right: 0; width: auto; max-width: none; }
 .ck-table tfoot td { border-top: 0.5px solid var(--bd2); padding-top: 3px; color: var(--tx2); font-weight: 500; }
 .ck-foot { font-size: 9px; color: var(--tx3); margin-top: 3px; }
 /* The mark: still and dim when idle, softly pulsing in the sector color

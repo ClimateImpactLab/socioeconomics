@@ -31,11 +31,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     is being computed (projection files written in the last day or a unit
     being written now; still for people who ask for reduced motion); the
     tooltip gives the percents;
-  - SUs to finish: the low to high range, summed over the sector's run
-    types from the same estimate as the cards (when one of
-    them has no estimate it reads "no data").
+  - SUs to finish: the low to high range of the sector's montecarlo run,
+    from the same estimate as its card (with no estimate it reads "no
+    data"); singles and median runs are not included.
   Below the rows, a thin line and a total row: the sum of the SUs to finish
-  over all sectors with an estimate, with "of X available" (X being RCC's
+  over all sectors with an estimate (montecarlo only, as its "i" says), with "of X available" (X being RCC's
   remaining balance) on its own line below. A short grey note says that
   percents refer to each sector's main run (montecarlo; median for energy).
   Coastal reads "not tracked (yet)" across its row. On phones the counts go
@@ -65,7 +65,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   with its own grid, fuels and aggregation scenarios, while clicking median
   still shows the median's grid. Such a run is never the main run: it
   never counts toward the camel, its activity, or the sector percent. Its
-  SUs to finish are added to the sector's, like any run left to do.
+  SUs to finish show on its own card; the sector table counts montecarlo only.
   The current path shows at the top of the grid ("Energy / median /
   electricity / price014"). On phones, held upright or sideways (narrow up
   to 600px, or short up to 500px), the tree folds into a menu at the top
@@ -494,6 +494,11 @@ python3 -m http.server 8000          # http://localhost:8000, or ?source=mock
     amd, 1 core, 28G; labor amd, 1 core, 60G; energy single amd, 1 core,
     15G; energy median caslake, 1 core, 15G; mortality caslake, 1 core, 45G.
     The amd ones count 0 SUs while amd is not billed.
+  - When some of the run's tasks ran on a partition RCC does not bill
+    (mortality montecarlo: about a quarter on amd), a second number:
+    every unit left on caslake with the sector's `request` in the manifest
+    (45G, 12 SU per hour), at the median time per unit. The range then goes
+    from the current mix to all on caslake (`su_low` to `su_all_billed`).
   The card shows the SUs, with the compute hours under it, and a small "i"
   with the formula. Aggregation is not included; it is much shorter than
   the projection. The time to finish is not affected.

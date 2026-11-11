@@ -851,12 +851,16 @@ const UNIT_SOURCE = {
 // SUs to finish with RCC's billing formula, and the compute hours under it.
 function suCard(e) {
   const info = infoPop("About the SUs", "SUs = hours × max(cores requested, RAM requested ÷ RAM per core), " +
-    "on the partitions RCC bills (now caslake, 3.75 GB per core); other partitions are 0 SUs.");
+    "on the partitions RCC bills (now caslake, 3.75 GB per core); other partitions are 0 SUs." +
+    (e && e.su_all_billed != null ? ` The range goes from the current mix of partitions (${+e.rate.toFixed(2)} SU per hour, ` +
+      `weighted by the tasks already run) to all units left on ${e.all_billed.partition} with the current request ` +
+      `(${e.all_billed.mem_gb} GB, ${+e.all_billed.rate.toFixed(2)} SU per hour).` : ""));
   const label = `SUs to finish${info}`;
   if (!e) return card(label, "n/a", "");
   const tip = [e.basis, UNIT_SOURCE[e.source]].filter(Boolean).join(". ");
   const compute = e.compute_low == null ? "compute hours not known yet" : `${hRange(e.compute_low, e.compute_high)} compute`;
-  const val = e.su_low == null ? (e.compute_low == null ? "not known yet" : "request not known") : suRange(e.su_low, e.su_high);
+  const val = e.su_low == null ? (e.compute_low == null ? "not known yet" : "request not known")
+    : suRange(e.su_low, e.su_all_billed ?? e.su_high);
   return card(label, val, esc(compute), "", tip);
 }
 function hRange(low, high) {
@@ -1678,12 +1682,13 @@ function renderCamel() {
       `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
   }).join("");
   const a = DATA.account;
+  const totInfo = `<span class="ck-tot-info">${infoPop("About the total", "Montecarlo only. Singles and median runs are not included.")}</span>`;
   const avail = a.allocation_status === "ok" && a.balance_su != null ? ` <span class="ck-n">of ${fmtN(a.balance_su)} available</span>` : "";
   $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th></th><th>Projection</th>
       <th>Aggregation${mainMark()}</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th><th class="ck-sym">Single</th><th class="ck-sym">Median</th><th class="ck-sym">Montecarlo</th>
       <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="3"></td><td class="ck-su">${suShort(totals.low, totals.high)}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
-    </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${avail}
+    <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="3"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
+    </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${totInfo}${avail}
     <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
     <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median for energy).</div>`;
 }
@@ -1714,18 +1719,15 @@ function sectorSize(sec) {
   return rts.reduce((t, rt) => [t[0] + rt.sizes.total[0], t[1] + rt.sizes.total[1]], [0, 0]);
 }
 
-// SUs to finish a sector, summed over its run types; null when one of them
-// with units left has no estimate yet.
+// SUs to finish a sector's montecarlo run (singles and median runs are not
+// included); null when it has units left and no estimate yet. The high end
+// is all units left on a billed partition, when the run has that number.
 function sectorSUs(sec) {
-  let low = 0, high = 0;
-  for (const rt of Object.values(sec.run_types)) {
-    const e = rt.su_estimate;
-    if (!e || !e.remaining) continue;
-    if (e.su_low == null) return null;
-    low += e.su_low;
-    high += e.su_high;
-  }
-  return { low, high };
+  const rt = sec.run_types.montecarlo;
+  const e = rt && rt.su_estimate;
+  if (!e || !e.remaining) return { low: 0, high: 0 };
+  if (e.su_low == null) return null;
+  return { low: e.su_low, high: e.su_all_billed ?? e.su_high };
 }
 function suShort(low, high) {
   if (!high) return "0";
