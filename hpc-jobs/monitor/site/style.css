@@ -141,6 +141,9 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .cards { grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(0, 1.3fr) minmax(0, 1.3fr); }
 /* Warnings, in the page's warning orange (as for time left under 2 hours). */
 .eta-warn { color: var(--st-pend); white-space: nowrap; }
+/* Their values a little smaller than the other cards', so the longest
+   ("No jobs running") keeps some space from the edge, also on phones. */
+.card-val-fit { font-size: 12.5px; }
 .card-label { font-size: 9px; color: var(--tx2); }
 .card-val { font-size: 14px; font-weight: 500; margin-top: 1px; font-variant-numeric: tabular-nums; }
 .card-sub { font-size: 9px; color: var(--tx3); margin-top: 2px; line-height: 1.2;

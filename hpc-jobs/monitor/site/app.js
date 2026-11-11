@@ -810,7 +810,7 @@ function etaCard(rt, total) {
   const sub = rt.eta_hours === 0 ? "nothing left"
     : noJobs ? (left != null ? `${fmtN(left)} units left` : "waiting for jobs")
     : c ? `${fmtN(c.covered)} of ${fmtN(c.units_left)} units running` : "jobs not known";
-  return card(`Time to finish${info}`, val, esc(sub), "", tip);
+  return card(`Time to finish${info}`, `<span class="card-val-fit">${val}</span>`, esc(sub), "", tip);
 }
 
 function renderCards() {
@@ -849,7 +849,7 @@ function suCard(e) {
   const compute = e.compute_low == null ? "compute hours not known yet" : `${hRange(e.compute_low, e.compute_high)} compute`;
   const val = e.su_low == null ? (e.compute_low == null ? "not known yet" : "request not known")
     : suRange(e.su_low, e.su_all_billed ?? e.su_high);
-  return card(label, val, esc(compute), "", tip);
+  return card(label, `<span class="card-val-fit">${val}</span>`, esc(compute), "", tip);
 }
 function hRange(low, high) {
   const f = (n) => fmtSU(n).replace(/ SU$/, "");
