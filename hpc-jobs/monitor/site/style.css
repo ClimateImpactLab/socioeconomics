@@ -4,6 +4,8 @@
 :root {
   color-scheme: light;
   --bg: #ffffff; --bg2: #f5f5f0; --bg3: #eeeee8;
+  --tip-bg: #ffffff;   /* the grid hover box */
+  --tip-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
   --tx: #1a1a1a; --tx2: #666660; --tx3: #99998f;
   --bd: #ddddd4; --bd2: #ccccbf;
   --green: #2d9e8f; --green-bg: #e0f5f0; --green-tx: #1a7568;
@@ -40,6 +42,8 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
+    --tip-bg: #20201c;
+    --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
     --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
     --bd: #3a3a34; --bd2: #4a4a44;
     --green: #48c8b0; --green-bg: #1a332e; --green-tx: #80d8c0;
@@ -61,6 +65,8 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
+  --tip-bg: #20201c;
+  --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
   --bd: #3a3a34; --bd2: #4a4a44;
   --green: #48c8b0; --green-bg: #1a332e; --green-tx: #80d8c0;
@@ -418,10 +424,18 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
   .batch.bst-active, .camel svg .cell { animation: none !important; }
 }
 
-#global-tip { display: none; position: fixed; z-index: 200; background: var(--bg); border: 0.5px solid var(--bd2);
-  border-radius: 6px; padding: 6px 8px; font-size: 11px; white-space: nowrap; pointer-events: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
-#global-tip .muted { color: var(--tx3); }
+/* The grid hover box: one compact line in the tree's style, half
+   see-through, with a thin border and a soft shadow. The state goes to a
+   second line (gt-two) when one line would be too wide. */
+#global-tip { display: none; position: fixed; z-index: 200; pointer-events: none; white-space: nowrap;
+  background: color-mix(in srgb, var(--tip-bg) 50%, transparent);
+  border: 0.5px solid var(--bd2); border-radius: 5px; box-shadow: var(--tip-shadow);
+  padding: 4px 6px; font-size: 10px; line-height: 1.35; color: var(--tx); }
+#global-tip .gt-cell { font-weight: 600; }
+#global-tip .gt-pa { display: inline-flex; gap: 8px; margin-left: 10px; font-family: var(--mono); color: var(--tx3); }
+#global-tip .gt-pa b { font-weight: 700; color: var(--tx2); }
+#global-tip .gt-note { margin-left: 8px; color: var(--tx3); }
+#global-tip.gt-two .gt-note { display: block; margin-left: 0; }
 
 .footer { font-size: 10px; color: var(--tx3); margin-top: 6px; }
 .error { color: var(--red); padding: 20px; }
@@ -572,8 +586,13 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 /* The SSP badges and their P and A note. */
 .ssp-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .ssp-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* Aggregation scenarios of the run, above the grid (energy). */
+.agg-scen { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--tx3); }
+.agg-scen[hidden] { display: none; }
+.agg-scen .agg-scen-opts { display: inline-flex; }
+.agg-scen .run-opt { padding: 2px 8px; font-size: 10px; }
 /* ---------- tree navigation ---------- */
-.tree-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tree-layout { display: grid; grid-template-columns: 352px minmax(0, 1fr); gap: 16px; align-items: start; }
 .tree-menu > summary { display: none; }
 .tree-side { position: sticky; top: 8px; }
 .tree { display: flex; flex-direction: column; gap: 3px; }
@@ -606,8 +625,20 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 /* An unavailable sector keeps its camel color, only dimmed. */
 .tnode.tsector.off { opacity: 0.5; }
 .tkids { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px 10px; padding-left: 8px; border-left: 1px solid var(--bd); }
-.tgroup { font-size: 9px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--tx3); margin: 5px 0 1px 8px; }
+/* P and A: two fixed columns on every row, so they line up at every level. */
+.tnode .tfig { display: flex; gap: 5px; }
+.tcol { display: inline-block; width: 18ch; }
+.tcol.tzero, .tcol.tzero b { color: var(--tx3); }
+/* Not started: gray. A crop or fuel still opens its run types. */
+.tnode.tidle, .tnode.off:not(.tsector) { opacity: 0.6; }
 .tree-path { font-size: 12px; font-weight: 600; color: var(--tx); margin: 0 0 8px; min-height: 16px; }
+/* The view title and its Copy link button. */
+.tree-path-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; min-height: 16px; }
+.tree-path-row .tree-path { margin: 0; }
+.copy-link { font: inherit; font-size: 10px; padding: 2px 8px; border: 0.5px solid var(--bd2); border-radius: 999px;
+  background: var(--bg); color: var(--tx2); cursor: pointer; white-space: nowrap; }
+.copy-link:hover { color: var(--tx); border-color: var(--tx3); }
+.copy-link.done { color: var(--st-done); border-color: var(--st-done); }
 @media (max-width: 1100px) { .tree-layout { grid-template-columns: 300px minmax(0, 1fr); } }
 /* Phones, held upright or sideways: the tree folds into a menu at the top. */
 @media (max-width: 600px), (max-height: 500px) {
@@ -628,6 +659,13 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
 .ck-table th { font-weight: 500; font-size: 9px; color: var(--tx3); text-align: left; padding: 0 12px 2px 0; white-space: nowrap; }
 .ck-table td { padding: 1px 12px 1px 0; white-space: nowrap; line-height: 1.4; vertical-align: middle; }
 .ck-table td.ck-name { color: var(--tx); font-weight: 500; }
+/* The ">" that opens a sector's runs (energy), like the other collapse
+   arrows; an empty one of the same width keeps the other names in line. */
+.ck-tg { display: inline-block; width: 8px; margin-right: 3px; padding: 0; border: 0; background: none;
+  font: inherit; font-size: 9px; color: var(--tx3); cursor: pointer; text-align: left; }
+.ck-tg:hover { color: var(--tx2); }
+span.ck-tg { cursor: default; }
+.ck-table tr.ck-sub td.ck-name { padding-left: 24px; font-weight: 400; color: var(--tx2); }
 .ck-table .ck-pct { font-family: var(--mono); color: var(--tx); }
 .ck-table .ck-n { font-family: var(--mono); color: var(--tx3); font-size: 9px; }
 .ck-table td.ck-none { color: var(--tx3); }
@@ -669,7 +707,6 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
 }
 .tree-key { font-size: 10px; color: var(--tx3); margin: 8px 0 0; line-height: 1.5; }
 .tree-key b { color: var(--tx2); font-family: var(--mono); font-weight: 600; }
-.tnode.tfold { margin-top: 3px; }
 /* Where the grid would be, until a run type (and sub-model) is picked. */
 .main-note { display: none; font-size: 12px; color: var(--tx3); padding: 26px 0; text-align: center;
   border: 1px dashed var(--bd2); border-radius: 8px; margin-bottom: 8px; }
@@ -691,6 +728,8 @@ body.no-sector .main-note { display: none; }
 /* In the Filter section: rows of equal badges that wrap inside the box,
    label on the left and count on the right. */
 .hl-tabs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px; font-size: 10px; color: var(--tx2); }
+/* Beside the tree on a desktop: one column, as before the tree got wider. */
+@media (min-width: 601px) and (min-height: 501px) { .tree-side .hl-tabs { grid-template-columns: minmax(0, 1fr); } }
 .hl-opt { font: inherit; font-size: 10px; cursor: pointer; padding: 3px 8px; border-radius: 999px; min-width: 0;
   display: flex; align-items: baseline; justify-content: space-between; gap: 6px; text-align: left;
   background: none; border: 1px solid var(--bd2); color: var(--tx2); }

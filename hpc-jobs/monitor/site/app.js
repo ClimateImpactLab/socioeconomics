@@ -46,7 +46,7 @@ const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeco
 let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
 
 let DATA = null;
-const view = { sector: null, runType: null, model: null, modelOff: false, ssps: [], picks: null,
+const view = { sector: null, runType: null, model: null, modelOff: false, branch: null, runSub: null, ssps: [], picks: null,
   selected: null, aggScen: null, hl: "all", compact: true };
 const detailCache = new Map();
 let cellIndex = new Map();
@@ -65,6 +65,17 @@ function fmtPct2(p) {
   if (p == null || isNaN(p)) return "n/a";
   if (p >= 100) return "100%";
   if (p <= 0) return "0%";
+  if (p >= 99.995) return "99.99%";
+  return `${p.toFixed(2)}%`;
+}
+// In the summary table: no decimals when whole (100%, 0%), else two
+// (98.31%), never rounding to 0% or 100%.
+function fmtPctTable(p) {
+  if (p == null || isNaN(p)) return "n/a";
+  if (p >= 100) return "100%";
+  if (p <= 0) return "0%";
+  if (Math.abs(p - Math.round(p)) < 1e-9) return `${Math.round(p)}%`;
+  if (p < 0.005) return "<0.01%";
   if (p >= 99.995) return "99.99%";
   return `${p.toFixed(2)}%`;
 }
@@ -311,6 +322,7 @@ function renderAll() {
   if (needModel) return;
   renderSspTabs();
   renderLegend();
+  renderAggScen();
   scheduleGrid();
 }
 
@@ -541,7 +553,8 @@ function buildTreeLayout() {
   layout.className = "tree-layout";
   layout.innerHTML = `<div class="tree-side" id="tree-side"><details class="tree-menu" id="tree-menu" open>
     <summary id="tree-summary">Menu</summary><nav class="tree" id="tree" aria-label="Sectors and runs"></nav></details></div>
-    <div class="tree-main" id="tree-main"><div class="tree-path" id="tree-path"></div></div>`;
+    <div class="tree-main" id="tree-main"><div class="tree-path-row"><div class="tree-path" id="tree-path"></div>` +
+    `<button class="copy-link" id="copy-link" type="button" title="Copy a link to this view">Copy link</button></div></div>`;
   const cards = $("cards");
   cards.parentNode.insertBefore(layout, cards);
   const main = $("tree-main");
@@ -565,7 +578,6 @@ function buildTreeLayout() {
   box.innerHTML = `<div class="sbx-title">Scenario</div>`;
   box.appendChild($("scen-graph"));
   // Compact view, on unless turned off before (remembered in this browser).
-  try { view.compact = localStorage.getItem("amel-compact") !== "0"; } catch (e) { view.compact = true; }
   box.insertAdjacentHTML("beforeend", `<div class="sbx-title sbx-filter"><span class="sbx-name">` +
     `<svg class="sbx-ico" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.8 2.5h8.4L7 6.3v3.2L5 10.5V6.3z"/></svg>Filter</span>` +
     `<label class="sw" title="Show only the columns with matching cells"><input type="checkbox" id="compact-view"${view.compact ? " checked" : ""}>` +
@@ -576,7 +588,7 @@ function buildTreeLayout() {
   const note = document.createElement("div");
   note.className = "main-note";
   note.id = "main-note";
-  $("tree-path").after(note);
+  $("tree-path").parentElement.after(note);
   $("tree-menu").open = !PHONE.matches;
   PHONE.addEventListener("change", () => { $("tree-menu").open = !PHONE.matches; });
   $("tree").addEventListener("click", (e) => {
@@ -599,6 +611,8 @@ function treePick(act, key) {
   closeDetail();
   if (act === "sector") {
     view.modelOff = false;
+    view.branch = null;
+    view.runSub = null;
     if (key === view.sector) {
       view.sector = view.runType = view.model = null;
       view.ssps = [];
@@ -609,25 +623,109 @@ function treePick(act, key) {
       view.model = null;
       view.ssps = [];
     }
+  } else if (act === "branch") {
+    // A crop or fuel opens or closes its run types.
+    view.branch = view.branch === key ? null : key;
+    renderTree();
+    syncUrl("push");
+    return;
   } else if (act === "run") {
+    // "electricity|median": the run, for that fuel (its grid shows only
+    // that fuel when the grid has one per sub-model).
+    const [m, k] = key.includes("|") ? key.split("|") : [null, key];
     view.aggScen = null;
-    view.model = null;
     view.modelOff = false;
-    if (key === view.runType) {
+    if (k === view.runType && (!m || m === view.runSub)) {
       view.runType = null;
+      view.model = null;
+      view.runSub = null;
       view.ssps = [];
     } else {
-      view.runType = key;
-      view.picks = null;
-      view.hl = "all";
+      const same = k === view.runType;
+      view.runType = k;
+      view.branch = m || view.branch;
+      view.model = m;
+      view.runSub = m;
+      if (!same) { view.picks = null; view.hl = "all"; }
     }
-  } else if (act === "model") {
-    view.modelOff = key === view.model;
-    view.model = view.modelOff ? null : key;
-  } else if (act === "scen") {
-    view.aggScen = key || null;
   }
   renderAll();
+  syncUrl("push");
+}
+
+// The view in the page URL, so a reload or a copied link opens the same
+// place: ?sector=energy&sub=other_energy&run=median&agg=MERGEETL60
+// &ssp=SSP2,SSP3&rcp=rcp45&iam=low&filter=complete&compact=0, plus
+// source=mock when on. Filters are written only when not at their default
+// (all on, All, compact on); "none" means a row with every badge off.
+function runDims(rt) {
+  const uniq = (f) => [...new Set(rt.dims.cells.map((c) => c[f]))];
+  return { ssp: uniq("ssp"), rcp: uniq("rcp"), iam: uniq("iam") };
+}
+function viewQuery() {
+  const q = new URLSearchParams();
+  if (params.get("source") === "mock") q.set("source", "mock");
+  if (view.sector && DATA.sectors[view.sector]) {
+    q.set("sector", view.sector);
+    const sub = view.runType ? view.runSub : view.branch;
+    if (sub && treeModels(sector()).length > 1) q.set("sub", sub);
+    if (view.runType) {
+      q.set("run", view.runType);
+      const sc = curScen();
+      if (sc) q.set("agg", scenLabel(sc));
+      if (view.picks) {
+        const all = runDims(runType());
+        for (const f of ["ssp", "rcp", "iam"]) {
+          if (view.picks[f].length !== all[f].length) q.set(f, view.picks[f].join(",") || "none");
+        }
+      }
+      if (view.hl !== "all") q.set("filter", view.hl);
+    }
+  }
+  if (!view.compact) q.set("compact", "0");
+  return q.toString().replace(/%2C/gi, ",");
+}
+// A new history entry for a new place (sector, crop or fuel, run type); the
+// same entry for a filter change.
+function syncUrl(mode) {
+  const qs = viewQuery();
+  const url = location.pathname + (qs ? `?${qs}` : "") + location.hash;
+  if (url === location.pathname + location.search + location.hash) return;
+  history[mode === "push" ? "pushState" : "replaceState"](null, "", url);
+}
+// The view from a URL. A value that is missing or not in the data falls
+// back to that part's default and the rest is kept: no run type, the first
+// crop or fuel with files for the run, every badge on, All.
+function applyQuery(q) {
+  Object.assign(view, { sector: null, branch: null, runType: null, runSub: null, model: null, modelOff: false,
+    aggScen: null, picks: null, ssps: [], hl: "all", selected: null });
+  if (q.has("compact")) view.compact = q.get("compact") !== "0";
+  else { try { view.compact = localStorage.getItem("amel-compact") !== "0"; } catch (e) { view.compact = true; } }
+  const sec = DATA.sectors[q.get("sector")];
+  if (!sec) return;
+  view.sector = q.get("sector");
+  const models = treeModels(sec), multi = models.length > 1;
+  let sub = multi && models.includes(q.get("sub")) ? q.get("sub") : null;
+  const k = q.get("run"), rt = Object.hasOwn(sec.run_types, k || "") ? sec.run_types[k] : null;
+  const has = (m) => rt.units.some((u) => u.model === m);
+  if (rt && rt.units.length) {
+    if (multi && !(sub && rt.dims.models.includes(sub) && has(sub))) sub = rt.dims.models.find(has) || null;
+    if (!multi || sub) { view.runType = k; view.runSub = sub; view.model = sub; }
+  }
+  view.branch = sub;
+  if (!view.runType) return;
+  const sc = rt.agg_scenarios, a = q.get("agg");
+  if (a && sc) view.aggScen = sc.others.find((o) => o === a || scenLabel(o) === a) || null;
+  const all = runDims(rt);
+  view.picks = {};
+  for (const f of ["ssp", "rcp", "iam"]) {
+    const v = q.get(f);
+    const want = v && v !== "none" ? v.split(",") : null;
+    const ok = want ? all[f].filter((x) => want.includes(x)) : [];
+    view.picks[f] = v === "none" ? [] : ok.length ? ok : all[f].slice();
+  }
+  view.ssps = view.picks.ssp.slice();
+  if (HIGHLIGHTS.some(([x]) => x === q.get("filter"))) view.hl = q.get("filter");
 }
 
 function tnode(act, key, label, figure, { on = false, off = false, cls = "", style = "", leaf = false, title = "" } = {}) {
@@ -636,55 +734,57 @@ function tnode(act, key, label, figure, { on = false, off = false, cls = "", sty
     <span class="tlabel">${label}</span>${figure ? `<span class="tfig">${figure}</span>` : ""}</button>`;
 }
 
-// One run type in the tree: its node, and when open its sub-models, its
-// aggregation scenarios and the run types nested in it.
-function runBranch(sec, k) {
+// The tree: sector, then crop or fuel (sectors with several sub-models),
+// then run type. Every row has the same two columns on the right, P and A,
+// each a percent and a size; a parent row adds up the rows under it. Run
+// types that do not apply are left out; one not started yet shows in gray
+// at 0%. A counts the main aggregation scenario (price014 for energy).
+const TREE_RUNS = ["single", "median", "deltamethod", "montecarlo"];
+function treeRuns(sec) {
+  return [...TREE_RUNS.filter((k) => k in sec.run_types), ...Object.keys(sec.run_types).filter((k) => !TREE_RUNS.includes(k))];
+}
+function treeModels(sec) {
+  const all = [];
+  for (const k of treeRuns(sec)) for (const m of sec.run_types[k].dims.models) if (!all.includes(m)) all.push(m);
+  return all;
+}
+// Files present and expected, and their sizes, for one run, or one of its
+// sub-models; null sizes when the scan has none.
+function treeFiles(sec, k, m) {
   const rt = sec.run_types[k];
-  const usable = rt && rt.units.length > 0;
-  const why = !rt ? ((sec.disabled_run_types || []).includes(k) ? "not part of this sector" : "not run for this sector")
-    : !usable ? "no files yet" : "";
-  const here = view.runType === k;
-  const nested = Object.keys(sec.run_types).filter((c) => sec.run_types[c].parent === k);
-  const inside = nested.includes(view.runType);
-  const hasModels = usable && gridKind(rt) === "gcms" && rt.dims.models.length > 1;
-  const rf = usable ? filesOf(sec, rt) : null, rz = usable ? runSize(rt) : null;
-  let html = tnode("run", k, esc((rt && rt.label) || k), rt ? (usable ? paShort(rf, rz) : "no files yet") : "n/a",
-    { on: here, off: !usable, leaf: usable && !hasModels && !nested.length, title: why || (rf ? paLong(rf, rz) : "") });
-  // A run type with nothing yet still shows what is nested in it.
-  if (!here && !inside && !(nested.length && !usable)) return html;
-  html += `<div class="tkids">`;
-  if (here && usable) {
-    if (hasModels) {
-      const perModel = rt.counts.total / rt.dims.models.length;
-      for (const m of rt.dims.models) {
-        const units = rt.units.filter((u) => u.model === m);
-        const n = paFiles(sec, rt, units, perModel, [m], curScen());
-        const mf = { proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }, mz = runSize(rt, m, curScen());
-        html += tnode("model", m, esc(m), units.length ? paShort(mf, mz) : "no files yet",
-          { on: view.model === m, off: !units.length, leaf: true, title: units.length ? paLong(mf, mz) : "no files yet" });
-      }
-    }
-    // Aggregation scenarios, as the selector shows them.
-    const sc = rt.agg_scenarios || { main: null, others: [] };
-    const anyAgg = rt.units.some((u) => u.bits.slice(specOf(sec, u.model, rt).projection.length).includes("1")
-      || Object.values(u.alt_bits || {}).some((b) => b.includes("1")));
-    if (!anyAgg) {
-      // Nothing to pick yet: the branch stays folded.
-      html += tnode("scen", "", "Aggregation", sc.main ? "none yet" : "-", { off: true, cls: "tfold", title: "no aggregation files yet" });
-    } else {
-      const cur = curScen();
-      const aggPct = (scen) => {
-        const f = filesOf(sec, rt, scen), z = runSize(rt, null, scen);
-        return f.aggExp ? paFig("A", fmtPctShort(pctOf(f.agg, f.aggExp)), z ? fmtBytes(z[1]) : null) : "";
-      };
-      html += `<div class="tgroup">Aggregation</div><div class="tkids">`;
-      html += tnode("scen", "", sc.main ? `${esc(sc.main)} <span class="muted">(main)</span>` : "main", aggPct(null), { on: !cur, leaf: true });
-      for (const o of sc.others) html += tnode("scen", o, esc(scenLabel(o)), aggPct(o), { on: cur === o, leaf: true });
-      html += `</div>`;
-    }
+  if (m && !rt.dims.models.includes(m)) return null;
+  const units = m ? rt.units.filter((u) => u.model === m) : rt.units;
+  const n = paFiles(sec, rt, units, rt.counts.total / rt.dims.models.length, m ? [m] : rt.dims.models, null);
+  const z = runSize(rt, m || null, null);
+  return { ...n, pB: z ? z[0] : null, aB: z ? z[1] : null, started: units.length > 0 };
+}
+function addUp(list) {
+  const out = { p: 0, pExp: 0, a: 0, aExp: 0, pB: null, aB: null, started: false };
+  for (const t of list.filter(Boolean)) {
+    for (const key of ["p", "pExp", "a", "aExp"]) out[key] += t[key];
+    if (t.pB != null) out.pB = (out.pB || 0) + t.pB;
+    if (t.aB != null) out.aB = (out.aB || 0) + t.aB;
+    out.started = out.started || t.started;
   }
-  for (const c of nested) html += runBranch(sec, c);
-  return html + `</div>`;
+  return out;
+}
+// The two columns: "P 98% (4.5 TB)" and "A 0% (0 MB)"; a column with no
+// files yet is gray.
+function treeFig(t) {
+  const col = (name, n, exp, b) => `<span class="tcol${n ? "" : " tzero"}">` +
+    paFig(name, exp ? fmtPctShort(pctOf(n, exp)) : "\u2013", b == null ? null : fmtBytes(b)) + `</span>`;
+  return col("P", t.p, t.pExp, t.pB) + col("A", t.a, t.aExp, t.aB);
+}
+function treeTitle(t) {
+  const part = (name, n, exp, b) => `${name} ${fmtPctShort(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)}${b != null ? `, ${fmtBytes(b)}` : ""})`;
+  return part("P", t.p, t.pExp, t.pB) + " | " + part("A", t.a, t.aExp, t.aB) + (t.started ? "" : ", not started");
+}
+// A run row: picking it shows its grid, for its crop or fuel when it has one.
+function runNode(sec, k, m) {
+  const rt = sec.run_types[k], t = treeFiles(sec, k, m);
+  const on = view.runType === k && (!m || view.runSub === m);
+  return tnode("run", m ? `${m}|${k}` : k, esc(runLabel(sec, k)), treeFig(t),
+    { on, off: !t.started, leaf: true, title: treeTitle(t) + (t.started ? "" : "; no files yet") });
 }
 
 function renderTree() {
@@ -697,17 +797,23 @@ function renderTree() {
       continue;
     }
     const open = view.sector === cs.key;
-    const main = sec.run_types[defaultRunType(sec)], sf = sectorFiles(sec), sz = main ? runSize(main) : null;
-    html += tnode("sector", cs.key, esc(sec.label), paShort(sf, sz), { on: open, cls: "tsector", style: color,
-      title: `${sec.label}, main run: ${paLong(sf, sz)}` });
+    const runs = treeRuns(sec), models = treeModels(sec);
+    const multi = models.length > 1;
+    const st = addUp(runs.map((k) => treeFiles(sec, k)));
+    html += tnode("sector", cs.key, esc(sec.label), treeFig(st), { on: open, cls: "tsector", style: color,
+      title: `${sec.label}, all run types: ${treeTitle(st)}` });
     if (!open) continue;
     html += `<div class="tkids">`;
-    // Run types; one with a parent (the delta method under median) sits
-    // inside its parent's branch instead.
-    const names = [...new Set([...RUN_TYPE_ORDER, ...Object.keys(sec.run_types), ...(sec.disabled_run_types || [])])]
-      .filter((k) => k in sec.run_types || (sec.disabled_run_types || []).includes(k) || RUN_TYPE_ORDER.includes(k))
-      .filter((k) => !(sec.run_types[k] && sec.run_types[k].parent));
-    for (const k of names) html += runBranch(sec, k);
+    if (multi) {
+      for (const m of models) {
+        const t = addUp(runs.map((k) => treeFiles(sec, k, m)));
+        const mo = view.branch === m;
+        html += tnode("branch", m, esc(m), treeFig(t), { on: mo, cls: t.started ? "" : "tidle", title: `${m}, all run types: ${treeTitle(t)}` });
+        if (mo) html += `<div class="tkids">${runs.filter((k) => sec.run_types[k].dims.models.includes(m)).map((k) => runNode(sec, k, m)).join("")}</div>`;
+      }
+    } else {
+      for (const k of runs) html += runNode(sec, k, null);
+    }
     html += `</div>`;
   }
   $("tree").innerHTML = html;
@@ -718,10 +824,9 @@ function renderTree() {
     const rt = runType(), sec = sector();
     parts.push(sec.label);
     if (view.runType) {
-      if (rt && rt.parent) parts.push(rt.parent);
+      if (view.runSub && treeModels(sec).length > 1) parts.push(view.runSub);
       parts.push((rt && rt.label) || view.runType);
     }
-    if (rt && gridKind(rt) === "gcms" && rt.dims.models.length > 1 && view.model) parts.push(view.model);
     const sc = rt && rt.agg_scenarios;
     const cur = curScen();
     if (cur) parts.push(scenLabel(cur));
@@ -961,6 +1066,23 @@ const AGG_STYLE = { costs: { v: "cost", label: "Costs" }, levels: { v: "lvl", la
   aggregated: { v: "agg", label: "Aggregated" } };
 function aggTypes(sec, rt) {
   return AGG_GROUPS.filter((g) => Object.values((rt && rt.files_spec) || sec.files_spec).some((spec) => spec[g].length));
+}
+
+// The aggregation scenarios of the run (energy: price014 and the others),
+// above the grid; A in the tree and the cards counts the main one.
+function renderAggScen() {
+  const rt = runType(), sc = rt && rt.agg_scenarios, el = $("agg-scen");
+  if (!el) return;
+  el.hidden = !(sc && sc.main && sc.others.length);
+  if (el.hidden) { el.innerHTML = ""; return; }
+  const cur = curScen();
+  el.innerHTML = `<span class="agg-scen-name">Aggregation</span><span class="agg-scen-opts"></span>`;
+  selector(el.querySelector(".agg-scen-opts"), [{ key: "", label: `${sc.main} (main)`, active: !cur },
+    ...sc.others.map((o) => ({ key: o, label: scenLabel(o), active: cur === o }))], null, (key) => {
+    view.aggScen = key || null;
+    renderAll();
+    syncUrl("replace");
+  });
 }
 
 function renderLegend() {
@@ -1212,13 +1334,15 @@ function cellPath(info) {
   return parts.join("/");
 }
 
-function cellTitle(info) {
+// "GFDL-CM3 / batch14 / SSP2 / rcp85 / high"; short, for the hover box:
+// "GFDL-CM3 · b14 · SSP2 · rcp85 · high".
+function cellTitle(info, short) {
   const bits = [];
   if (info.model !== "main") bits.push(info.model);
   bits.push(info.gcm);
-  if (info.batch != null) bits.push(`batch${info.batch}`);
+  if (info.batch != null) bits.push(`${short ? "b" : "batch"}${info.batch}`);
   bits.push(info.ssp, info.rcp, info.iam);
-  return bits.join(" / ");
+  return bits.join(short ? " \u00b7 " : " / ");
 }
 
 async function loadDetails(model, batch) {
@@ -1582,6 +1706,20 @@ const CAMEL_SECTIONS = [
   { key: "energy", label: "Energy", part: "head and neck" },
   { key: "labor", label: "Labor", part: "belly" },
 ];
+// Run type columns in the summary table. The Single column is hidden for
+// now; set CK_SHOW_SINGLE to true to bring it back.
+const CK_SHOW_SINGLE = false;
+const ckRunCols = () => RUN_TYPE_ORDER.filter((k) => k !== "single" || CK_SHOW_SINGLE);
+// Sectors whose summary row is expanded to show its runs (energy: median
+// and delta method). Collapsed by default.
+const ckOpen = new Set();
+// The runs a sector's summary row adds up: its main run and the runs nested
+// in it (energy: median and the delta method), when there are any.
+function ckRuns(sec) {
+  const main = defaultRunType(sec);
+  const nested = Object.keys(sec.run_types).filter((k) => sec.run_types[k].parent === main);
+  return nested.length ? [main, ...nested] : [];
+}
 let camelSvg = null;
 // The walking animation is paused for now; set to true to turn it back on.
 const CAMEL_WALK = false;
@@ -1641,45 +1779,66 @@ function renderCamel() {
   // and dim when idle); its main run's projection and aggregation; a symbol
   // per run type; the run types being written now; and the SUs to finish.
   const cell = (n, exp) => exp
-    ? `<span class="ck-pct">${fmtPctShort(pctOf(n, exp))}</span> <span class="ck-n">(${fmtN(n)}/${fmtN(exp)})</span>` : "";
+    ? `<span class="ck-pct">${fmtPctTable(pctOf(n, exp))}</span> <span class="ck-n">(${fmtN(n)}/${fmtN(exp)})</span>` : "";
+  const cols = ckRunCols();
+  const toggle = (key, runs) => !runs.length ? `<span class="ck-tg"></span>`
+    : `<button class="ck-tg" data-sec="${key}" aria-expanded="${ckOpen.has(key)}" title="${ckOpen.has(key) ? "Hide" : "Show"} ${esc(runs.map((k) => runLabel(DATA.sectors[key], k)).join(" and "))}">${ckOpen.has(key) ? "v" : "&gt;"}</button>`;
   const totals = { low: 0, high: 0, bytes: 0 };
   const rows = prog.map((s) => {
     const sec = DATA.sectors[s.key];
     const on = s.tracked && sectorActive(sec);
-    const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">` +
+    const sub = s.tracked ? ckRuns(sec) : [];
+    const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">${toggle(s.key, sub)}` +
       `<span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
-    if (!s.tracked) return `<tr>${mark}<td colspan="7" class="ck-none">not tracked (yet)</td></tr>`;
-    const runs = RUN_TYPE_ORDER.map((k) => {
+    if (!s.tracked) return `<tr>${mark}<td colspan="${4 + cols.length}" class="ck-none">not tracked (yet)</td></tr>`;
+    const runs = cols.map((k) => {
       const rt = sec.run_types[k];
       if (!rt) return `<td class="ck-sym" title="${esc(k)}: does not apply">${ICON.na}</td>`;
       const f = filesOf(sec, rt);
       const done = f.projExp > 0 && f.proj >= f.projExp;
       const live = runActive(rt);
-      const tip = `${k}: projection ${fmtPctShort(pctOf(f.proj, f.projExp))}` +
-        (f.aggExp ? `, aggregation ${fmtPctShort(pctOf(f.agg, f.aggExp))}` : "") + (live ? ", being computed now" : "");
+      const tip = `${k}: projection ${fmtPctTable(pctOf(f.proj, f.projExp))}` +
+        (f.aggExp ? `, aggregation ${fmtPctTable(pctOf(f.agg, f.aggExp))}` : "") + (live ? ", being computed now" : "");
       const icon = live ? ICON.busy.replace("{c}", `var(--sec-${s.key})`) : done ? ICON.yes : ICON.no;
       return `<td class="ck-sym" title="${esc(tip)}">${icon}</td>`;
     }).join("");
     const su = sectorSUs(sec);
     if (su) { totals.low += su.low; totals.high += su.high; }
-    const z = sectorSize(sec);
+    // Size: all run types, or for a sector with sub-rows (energy) only those
+    // runs, so it matches them.
+    const subZ = sub.map((k) => sec.run_types[k].sizes).filter(Boolean);
+    const z = sub.length ? (subZ.length ? subZ.reduce((t, x) => [t[0] + x.total[0], t[1] + x.total[1]], [0, 0]) : null) : sectorSize(sec);
     if (z) totals.bytes += z[0] + z[1];
-    const size = z ? `<td class="ck-size" title="${esc(`projection ${fmtBytes(z[0])}, aggregation ${fmtBytes(z[1])}, all run types`)}">${fmtBytes(z[0] + z[1])}</td>`
+    const size = z ? `<td class="ck-size" title="${esc(`projection ${fmtBytes(z[0])}, aggregation ${fmtBytes(z[1])}, ${sub.length ? sub.map((k) => runLabel(sec, k)).join(" and ") : "all run types"}`)}">${fmtBytes(z[0] + z[1])}</td>`
       : `<td class="ck-size"><span class="ck-n">no data</span></td>`;
-    return `<tr>${mark}<td>${cell(s.files.proj, s.files.projExp)}</td><td>${cell(s.files.agg, s.files.aggExp)}</td>${size}${runs}` +
+    // A sector with nested runs adds them up when collapsed; expanded, one
+    // indented sub-row per run below it, with its own numbers.
+    const fs = sub.length ? sub.map((k) => filesOf(sec, sec.run_types[k])) : [s.files];
+    const sum = (key) => fs.reduce((t, f) => t + f[key], 0);
+    let html = `<tr>${mark}<td>${cell(sum("proj"), sum("projExp"))}</td><td>${cell(sum("agg"), sum("aggExp"))}</td>${size}${runs}` +
       `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
+    if (ckOpen.has(s.key)) sub.forEach((k, i) => {
+      const z = sec.run_types[k].sizes;
+      html += `<tr class="ck-sub"><td class="ck-name">${esc(runLabel(sec, k))}</td><td>${cell(fs[i].proj, fs[i].projExp)}</td>` +
+        `<td>${cell(fs[i].agg, fs[i].aggExp)}</td><td class="ck-size">${z ? fmtBytes(z.total[0] + z.total[1]) : ""}</td>` +
+        `<td colspan="${cols.length + 1}"></td></tr>`;
+    });
+    return html;
   }).join("");
   const a = DATA.account;
   const totInfo = `<span class="ck-tot-info">${infoPop("About the total", "Montecarlo only. Singles and median runs are not included.")}</span>`;
   const avail = a.allocation_status === "ok" && a.balance_su != null ? ` <span class="ck-n">of ${fmtN(a.balance_su)} available</span>` : "";
   $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th></th><th>Projection</th>
-      <th>Aggregation${mainMark()}</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th><th class="ck-sym">Single</th><th class="ck-sym">Median</th><th class="ck-sym">Montecarlo</th>
+      <th>Aggregation${mainMark()}</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th>${cols.map((k) => `<th class="ck-sym">${k.charAt(0).toUpperCase() + k.slice(1)}</th>`).join("")}
       <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="3"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
+    <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="${cols.length}"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
     </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${totInfo}${avail}
     <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
-    <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median for energy).</div>`;
+    <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median and delta method for energy).</div>`;
 }
+
+// A run type's name as the page shows it ("delta method").
+function runLabel(sec, k) { return (sec.run_types[k] && sec.run_types[k].label) || k; }
 
 // Line symbols for the run type columns: complete, not complete, does not
 // apply, and a slowly spinning circle in the sector color while being computed.
@@ -1725,6 +1884,12 @@ function suShort(low, high) {
 /* ---------- interactions and boot ---------- */
 
 function setup() {
+  $("camel-key").addEventListener("click", (e) => {
+    const b = e.target.closest(".ck-tg[data-sec]");
+    if (!b) return;
+    if (ckOpen.has(b.dataset.sec)) ckOpen.delete(b.dataset.sec); else ckOpen.add(b.dataset.sec);
+    renderCamel();
+  });
   document.querySelectorAll(".panel-header").forEach((h) => {
     h.onclick = () => $(h.dataset.panel).classList.toggle("open");
   });
@@ -1738,6 +1903,7 @@ function setup() {
     b.classList.toggle("on");
     b.setAttribute("aria-pressed", String(b.classList.contains("on")));
     applyColumns();
+    syncUrl("replace");
   });
   $("hl-tabs").addEventListener("click", (e) => {
     const b = e.target.closest(".hl-opt");
@@ -1746,11 +1912,38 @@ function setup() {
     $("grid").dataset.hl = view.hl;
     if (view.compact) applyColumns();
     else for (const o of document.querySelectorAll(".hl-opt")) o.classList.toggle("active", o.dataset.hl === view.hl);
+    syncUrl("replace");
   });
   $("compact-view").addEventListener("change", (e) => {
     view.compact = e.target.checked;
     try { localStorage.setItem("amel-compact", view.compact ? "1" : "0"); } catch (err) { /* storage may be blocked */ }
     if (view.sector && view.runType && !document.body.classList.contains("no-model")) applyColumns();
+    syncUrl("replace");
+  });
+  // Back and forward: the view of that entry.
+  addEventListener("popstate", () => {
+    closeDetail();
+    applyQuery(new URLSearchParams(location.search));
+    $("compact-view").checked = view.compact;
+    renderAll();
+  });
+  // Copy link: the current URL, with a short confirmation.
+  $("copy-link").addEventListener("click", async () => {
+    const b = $("copy-link"), url = location.href;
+    let ok = false;
+    try { await navigator.clipboard.writeText(url); ok = true; } catch (e) {
+      const t = document.createElement("textarea");
+      t.value = url;
+      t.style.cssText = "position:fixed;opacity:0";
+      document.body.appendChild(t);
+      t.select();
+      try { ok = document.execCommand("copy"); } catch (e2) { /* nothing to copy with */ }
+      t.remove();
+    }
+    b.textContent = ok ? "Copied" : "Copy failed";
+    b.classList.toggle("done", ok);
+    clearTimeout(b.dataset.t);
+    b.dataset.t = setTimeout(() => { b.textContent = "Copy link"; b.classList.remove("done"); }, 1500);
   });
   $("pa-info-btn").addEventListener("click", () => {
     const open = $("pa-info").classList.toggle("hidden") === false;
@@ -1830,14 +2023,36 @@ function setup() {
     const info = cellIndex.get(b.dataset.key);
     const spec = specOf(sector(), info.model, runType()), cnt = unitCounts(info.unit, spec), sc = curScen();
     const alt = sc ? unitCounts(info.unit, spec, sc) : null;
-    tip.innerHTML = `${esc(cellTitle(info))}<br>${cnt.proj}/${cnt.projTotal} projection` +
-      (cnt.aggTotal ? `<br>${cnt.agg}/${cnt.aggTotal} aggregation` : "") +
-      (alt ? `<br><span class="muted">${esc(scenLabel(sc, runType()))}: ${alt.agg}/${alt.aggTotal}, not counted</span>` : "") +
-      `<br><span class="muted">${esc(STATE_NAMES[cellState(info.unit, cnt)])}</span>`;
+    // One line: the cell, P and A as in the tree's columns, then the state
+    // in gray, which moves to a short second line when the line would be
+    // wider than about 360 px.
+    tip.classList.remove("gt-two");
+    tip.innerHTML = `<span class="gt-cell">${esc(cellTitle(info, true))}</span>` +
+      `<span class="gt-pa"><span>P <b>${cnt.proj}/${cnt.projTotal}</b></span>` +
+      (cnt.aggTotal ? `<span>A <b>${cnt.agg}/${cnt.aggTotal}</b></span>` : "") + `</span>` +
+      `<span class="gt-note">${esc(STATE_NAMES[cellState(info.unit, cnt)])}` +
+      (alt ? `, ${esc(scenLabel(sc, runType()))}: A ${alt.agg}/${alt.aggTotal}, not counted` : "") + `</span>`;
     tip.style.display = "block";
+    if (tip.getBoundingClientRect().width > 360) tip.classList.add("gt-two");
     return tip.getBoundingClientRect();
   };
-  const placeTip = (x, y) => { tip.style.left = `${Math.max(8, x)}px`; tip.style.top = `${Math.max(8, y)}px`; };
+  // Next to the cell, never over it: to its right, or to its left when there
+  // is no room, level with its top; below or above it when neither side
+  // fits (narrow screens). Always kept 8 px inside the window.
+  const placeTip = (c, r) => {
+    const gap = 8, m = 8;
+    let x, y;
+    if (c.right + gap + r.width <= innerWidth - m) { x = c.right + gap; y = c.top; }
+    else if (c.left - gap - r.width >= m) { x = c.left - gap - r.width; y = c.top; }
+    else {
+      x = c.left + c.width / 2 - r.width / 2;
+      y = c.bottom + gap + r.height <= innerHeight - m ? c.bottom + gap : c.top - gap - r.height;
+    }
+    x = Math.min(Math.max(m, x), innerWidth - m - r.width);
+    y = Math.min(Math.max(m, y), innerHeight - m - r.height);
+    tip.style.left = `${Math.round(x)}px`;
+    tip.style.top = `${Math.round(y)}px`;
+  };
   let quietUntil = 0;
   grid.addEventListener("click", async (e) => {
     const b = e.target.closest(".batch");
@@ -1848,11 +2063,8 @@ function setup() {
     // The file list opens above the grid; keep the tapped cell under the finger.
     const shift = b.getBoundingClientRect().top - before;
     if (Math.abs(shift) > 1) { quietUntil = Date.now() + 400; scrollBy(0, shift); }
-    const c = b.getBoundingClientRect(), r = fillTip(b);
-    let x = c.left + c.width / 2 - r.width / 2, y = c.bottom + 6;
-    if (x + r.width > innerWidth - 8) x = innerWidth - 8 - r.width;
-    if (y + r.height > innerHeight - 8) y = c.top - r.height - 6;
-    placeTip(x, y);
+    const r = fillTip(b);
+    placeTip(b.getBoundingClientRect(), r);
   });
   grid.addEventListener("mousemove", (e) => {
     if (touch) return;
@@ -1860,10 +2072,7 @@ function setup() {
     if (!b) { tip.style.display = "none"; crossHighlight(selectedBatch()); return; }
     if (!crossCells.includes(b.closest("td"))) crossHighlight(b);
     const r = fillTip(b);
-    let x = e.clientX + 12, y = e.clientY + 12;
-    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 12;
-    if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 12;
-    placeTip(x, y);
+    placeTip(b.getBoundingClientRect(), r);
   });
   grid.addEventListener("mouseleave", () => {
     if (!touch) tip.style.display = "none";
@@ -1956,9 +2165,7 @@ async function boot() {
     $("stale-banner").classList.remove("hidden");
   }
 
-  view.sector = null;
-  view.runType = null;
-  view.ssps = [];
+  applyQuery(params);
   buildTreeLayout();
   setup();
   renderCamel();
@@ -1966,6 +2173,7 @@ async function boot() {
   renderResources();
   renderJobs();
   renderAll();
+  syncUrl("replace");
 }
 
 boot();

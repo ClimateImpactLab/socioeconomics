@@ -23,8 +23,13 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   color while the sector is active (jobs running or projection files
   written in the last day) and is still and dim otherwise. Columns:
   - Projection and Aggregation: percent and file counts for the sector's
-    main run ("100% (64/64)");
-  - Single, Median and Montecarlo: a line symbol per run type, a check when
+    main run ("100% (64/64)"), with two decimals when the percent is not
+    whole ("98.31%"). Energy adds up median and the delta method; a small
+    ">" on its left (collapsed by default) opens one indented row for each,
+    with its own percents, counts and size. Its Size is those two runs too,
+    so it matches its rows;
+  - Median and Montecarlo: a line symbol per run type (the Single column is
+    hidden for now; `CK_SHOW_SINGLE` in app.js brings it back), a check when
     its projection is complete, an x when it is not (started or not), a
     dash when the run type does not apply (montecarlo for energy), and a
     small circle in the sector color that turns slowly while the run type
@@ -37,7 +42,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   Below the rows, a thin line and a total row: the sum of the SUs to finish
   over all sectors with an estimate (montecarlo only, as its "i" says), with "of X available" (X being RCC's
   remaining balance) on its own line below. A short grey note says that
-  percents refer to each sector's main run (montecarlo; median for energy).
+  percents refer to each sector's main run (montecarlo; median and delta
+  method for energy).
   Coastal reads "not tracked (yet)" across its row. On phones the counts go
   under each percent, the table scrolls sideways in its own box, and the
   total is a line under it.
@@ -46,32 +52,48 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   the kit's color favicon in the same five colors (site/camel/).
 - Navigation: a tree on the left lists the sectors as badges in their
   camel colors, in camel order (Coastal, Agriculture, Mortality, Energy,
-  Labor). A sector opens into its run types (single, median, montecarlo),
-  with none picked: the grid shows only once a run type is picked, and a
-  sub-model when its grid has several (fuels, crops); until then a short
-  note sits where the grid would be ("Select a run type to see progress",
-  "Select a sub-model to see progress"). A run type also opens an Aggregation
-  branch with its scenarios. Options that do not apply or have no files
-  yet are shown dimmed and cannot be picked (montecarlo under energy is
-  "n/a"); an unavailable sector (Coastal) keeps its camel color, only
-  dimmed. While a run has no aggregation files, its Aggregation branch
-  stays folded into one dimmed line ("none yet", or "-" for sectors whose
-  file names carry no scenario). Clicking a picked sector, run type or
-  sub-model again clears it and hides the grid. Each branch shows its P
-  and A figures, and a short key under the list says what P and A mean.
-  The tree is built from the data, so each sector gets its own branches.
-  A run type with a `parent` in the manifest sits inside its parent's
-  branch, under its `label`: energy's "delta method" opens under median,
-  with its own grid, fuels and aggregation scenarios, while clicking median
-  still shows the median's grid. Such a run is never the main run: it
-  never counts toward the camel, its activity, or the sector percent. Its
-  SUs to finish show on its own card; the sector table counts montecarlo only.
-  The current path shows at the top of the grid ("Energy / median /
-  electricity / price014"). On phones, held upright or sideways (narrow up
+  Labor), with one structure for every sector: sector, then crop or fuel
+  (only agriculture and energy, one row per sub-model in the manifest),
+  then run type (single, median, delta method, montecarlo; only those that
+  apply, so energy has no montecarlo). Every row has the same two columns
+  on the right, P and A, each a percent and the size of those files, and
+  a parent row adds up the rows under it: energy is both fuels, a fuel is
+  its single, median and delta method, mortality is its single, median and
+  montecarlo. A counts the main aggregation scenario (price014 for energy).
+  A run type that has not started is gray at 0% and cannot be picked; a
+  crop or fuel with nothing started is gray too but still opens. A column
+  with no files yet is gray (the A column of labor and mortality until
+  their aggregation files appear). An unavailable sector (Coastal) keeps
+  its camel color, only dimmed. Picking a run type under a crop or fuel
+  shows its grid for that sub-model (a singles grid has one row per
+  sub-model, so it shows them all); until a run type is picked a short note
+  sits where the grid would be ("Select a run type to see progress").
+  Clicking a picked run type again clears it and hides the grid. A short
+  key under the list says what P and A mean. The delta method keeps its
+  `parent` (median) in the manifest for the summary table, which adds it to
+  energy's row; in the tree it is a run type like the others, under each
+  fuel. Its SUs to finish show on its own card; the sector table counts
+  montecarlo only.
+  The current path shows at the top of the grid ("Energy / electricity /
+  median / price014"). On phones, held upright or sideways (narrow up
   to 600px, or short up to 500px), the tree folds into a menu at the top
   that shows the same path: tap it to open or close. It stays open after
-  a pick, so the badges and the filter stay at hand while filtering. Sector progress counts the main run only
-  (montecarlo, or median for energy).
+  a pick, so the badges and the filter stay at hand while filtering.
+- Shareable links: the view lives in the page URL, so a reload comes
+  back to the same place and a copied link opens the same view. Keys:
+  `sector`, `sub` (crop or fuel), `run`, `agg` (only when not the main
+  scenario, by its short name, such as MERGEETL60), `ssp`, `rcp` and
+  `iam` (only when not all are on; `none` when a row is all off),
+  `filter` (only when not All), `compact=0` (when off; without it the
+  setting remembered in the browser applies) and `source=mock`. Example:
+  `?sector=energy&sub=other_energy&run=median&ssp=SSP2,SSP3`. Picking a
+  sector, crop or fuel, or run type adds a history entry (back and forward
+  go through them); filter changes replace the current one. A value that
+  is missing or not in the data falls back to that part's default (no run
+  type, the first crop or fuel with files for the run, every badge on,
+  All, the main scenario) and the rest is kept. A "Copy link" button next
+  to the view title copies the URL and says "Copied" for a moment. The page
+  loads the data once; a reload brings the latest scan in the same view.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
@@ -102,17 +124,16 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   folders and MERGEETL60_rcp85 in rcp85 ones, kept as one scenario and
   shown by its name only, MERGEETL60; the cell details keep the full file
   names):
-  - the scenarios are picked in the tree's Aggregation branch, which
-    starts on the main one: "price014 (main)" and "MERGEETL60", each with
-    its A figure;
+  - the scenarios are picked above the grid, next to the "i" ("Aggregation:
+    price014 (main) | MERGEETL60"), which starts on the main one and shows
+    only for runs that have other scenarios;
   - What follows the picked scenario: the grid cells, the column header
     counts, the SSP badge counts, the sub-model counts in the tree, the hover
     summary and the cell details (which list the picked scenario's
     aggregation files only, all 8 for energy, with sizes and dates, and
     name it, marked "not counted").
   - What always counts the main scenario: the overall progress, that is
-    the summary cards, the sector and run type figures in the tree and the
-    camel table.
+    the summary cards, every figure in the tree and the camel table.
     While another scenario is picked, their aggregation figure reads
     "Aggregation (main)".
   It works for any sector whose aggregation file names carry a scenario:
@@ -131,9 +152,10 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Disk space: the tree shows, after each P and A figure, the space those
   files take in brackets ("P 18% (745.9 GB) | A 13% (390.1 GB)"; MB, GB or
   TB with one decimal, 1 GB = 1,000 MB), the percent in bold and a thin
-  bar between P and A; its tooltip adds the counts. The tree is 320 px
-  wide (300 px under 1,100 px), so the figures fit on one line next to
-  each name; a figure that does not fit moves under the name. The column
+  bar between P and A, in two fixed columns that line up at every level;
+  its tooltip adds the counts. The tree is 352 px wide (300 px under
+  1,100 px), so the figures fit on one line next to each name; a figure
+  that does not fit moves under the name. The column
   headers show the same, with the counts: "P 91% (6,970/7,680, 313.5 GB)";
   in narrow headers the counts and sizes are in the tooltip. The table
   next to the camel has a Size column: each sector's disk space,
@@ -269,6 +291,12 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   column headers (scenarios, IAMs, batches) and the row labels (climate
   models) stay in view. Hovering or clicking a cell softly marks its whole
   row and column, with its climate model and its scenario headers.
+  Hovering a cell (or tapping it on a phone) shows a small box next to
+  it, never over it, kept inside the window, on one line: the cell
+  ("GFDL-CM3 · b14 · SSP2 · rcp85 · high"), then "P 4/4  A 2/41" in the
+  tree's monospace style, then its state in gray, which moves to a short
+  second line when one line would be wider than 360 px. The box is half
+  see-through (50%, no blur), with a thin border and a soft shadow.
 
 The grid comes only from the output folders. Slurm and rcchelp are used
 only for Resources and SLURM jobs.
@@ -290,11 +318,11 @@ in the `files:` section of `manifest.yml`.
 
 | Sector | Production folder used | Projection | Aggregation |
 |---|---|---|---|
-| Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 36: 4 costs (`<age>-costs`), 16 levels, 16 aggregated |
+| Mortality | `mortality/impacts-darwin/montecarlo` (and the old monitor's `run_monitor.sh` counts, checked on `mortality_new-socioeconomics/impacts-darwin`) | 16: four age groups (combined, older, oldest, young) times four variants (full adaptation, histclim, incadapt, noadapt) | 44: 12 costs (`<age>-costs`, `<age>-costs-levels` and `<age>-costs-aggregated`, as in a finished unit of `mortality_new-socioeconomics/impacts-darwin-newlevels/montecarlo`), 16 levels, 16 aggregated |
 | Agriculture | `agriculture/impacts-mealy/montecarlo/<crop>-2025` and `<crop>-2025_1pct_winsorization` | 4: `<crop>-<id>` in the four variants | 12: 4 costs (`adaptation_costs`, its aggregated file, and the winsorized `fulladaptcosts` pair), 8 aggregated (four variants in the crop folder and four in the winsorized folder). Spring and winter wheat are not aggregated themselves: 2 costs (`adaptation_costs` and the winsorized `fulladaptcosts`), no aggregated. They are combined into `wheat_combined`, tracked as its own sub-model with the full 12. |
 | Energy | `energy_pixel_interaction/impacts-blueghost/median` | 6: the four variants per fuel, plus global and global-histclim (the source of the four global aggregation files) | 8: levels and aggregated at the price014 price scenario, for the main variant, histclim, global and global-histclim |
 | Energy, delta method | the median's names, from the delta method run (`do_farmers: false`) | 2: the main file and its histclim version per fuel | 4: price014 levels and aggregated for those two |
-| Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 4: full adaptation, histclim, incadapt, noadapt | 31: 15 levels and 16 aggregated (each variant weighted by gdp, pop and wage, plus the histclim-noadapt file, which a separate step after the projection builds with `make_noadapt_histclim.py`) |
+| Labor | `labor/impacts-woodwork/montecarlo/uninteracted_main_model_agnonag_27_28_41` | 4: full adaptation, histclim, incadapt, noadapt | 41: 20 levels and 21 aggregated (each variant, and histclim-noadapt, weighted by gdp, gdppc, pop and wage, as in the montecarlo aggregation configs, plus the histclim-noadapt file, which a separate step after the projection builds with `make_noadapt_histclim.py`) |
 
 Aggregation types per sector: mortality has costs, levels and aggregated;
 agriculture costs and aggregated (no levels); energy levels and aggregated
