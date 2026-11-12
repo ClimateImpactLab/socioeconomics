@@ -56,10 +56,14 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   (only agriculture and energy, one row per sub-model in the manifest),
   then run type (single, median, delta method, montecarlo; only those that
   apply, so energy has no montecarlo). Every row has the same two columns
-  on the right, P and A, each a percent and the size of those files, and
-  a parent row adds up the rows under it: energy is both fuels, a fuel is
-  its single, median and delta method, mortality is its single, median and
-  montecarlo. A counts the main aggregation scenario (price014 for energy).
+  on the right, P and A, each a percent and the size of those files. A
+  sector or crop row counts its montecarlo run only, as the summary table
+  and the SUs total do: mortality and labor show their montecarlo,
+  agriculture the montecarlo of all its crops, and each crop its own.
+  Energy has no montecarlo, so the energy row and each fuel row count
+  median and the delta method. The note under the tree and the hover text
+  of those rows say so. Run type rows keep their own numbers. A counts the
+  main aggregation scenario (price014 for energy).
   A run type that has not started is gray at 0% and cannot be picked; a
   crop or fuel with nothing started is gray too but still opens. A column
   with no files yet is gray (the A column of labor and mortality until

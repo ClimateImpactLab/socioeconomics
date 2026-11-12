@@ -570,7 +570,8 @@ function buildTreeLayout() {
   $("tree-side").appendChild($("pick-note"));
   const key = document.createElement("div");
   key.className = "tree-key";
-  key.innerHTML = "<b>P</b> projection files present | <b>A</b> aggregation files present, out of expected.";
+  key.innerHTML = "<b>P</b> projection files present | <b>A</b> aggregation files present, out of expected.<br>" +
+    "Sector and crop rows: montecarlo only (energy: median and delta method).";
   $("tree-menu").appendChild(key);
   const box = document.createElement("div");
   box.className = "scen-box";
@@ -787,6 +788,18 @@ function runNode(sec, k, m) {
     { on, off: !t.started, leaf: true, title: treeTitle(t) + (t.started ? "" : "; no files yet") });
 }
 
+// The runs a sector or crop or fuel row adds up: montecarlo, or where there
+// is none the main run and the runs nested in it (energy: median and the
+// delta method), or the main run alone.
+function parentRuns(sec) {
+  if (sec.run_types.montecarlo) return ["montecarlo"];
+  const nested = ckRuns(sec);
+  return nested.length ? nested : [defaultRunType(sec)];
+}
+function parentLabel(sec, runs) {
+  return runs.map((k) => runLabel(sec, k)).join(" and ");
+}
+
 function renderTree() {
   let html = "";
   for (const cs of CAMEL_SECTIONS) {
@@ -799,16 +812,20 @@ function renderTree() {
     const open = view.sector === cs.key;
     const runs = treeRuns(sec), models = treeModels(sec);
     const multi = models.length > 1;
-    const st = addUp(runs.map((k) => treeFiles(sec, k)));
+    // Sector and crop or fuel rows add up the montecarlo run only (energy:
+    // median and the delta method), as the summary table does; whether
+    // anything started still looks at every run.
+    const main = parentRuns(sec), what = parentLabel(sec, main);
+    const st = { ...addUp(main.map((k) => treeFiles(sec, k))), started: runs.some((k) => sec.run_types[k].units.length > 0) };
     html += tnode("sector", cs.key, esc(sec.label), treeFig(st), { on: open, cls: "tsector", style: color,
-      title: `${sec.label}, all run types: ${treeTitle(st)}` });
+      title: `${sec.label}, ${what} only: ${treeTitle(st)}` });
     if (!open) continue;
     html += `<div class="tkids">`;
     if (multi) {
       for (const m of models) {
-        const t = addUp(runs.map((k) => treeFiles(sec, k, m)));
+        const t = { ...addUp(main.map((k) => treeFiles(sec, k, m))), started: addUp(runs.map((k) => treeFiles(sec, k, m))).started };
         const mo = view.branch === m;
-        html += tnode("branch", m, esc(m), treeFig(t), { on: mo, cls: t.started ? "" : "tidle", title: `${m}, all run types: ${treeTitle(t)}` });
+        html += tnode("branch", m, esc(m), treeFig(t), { on: mo, cls: t.started ? "" : "tidle", title: `${m}, ${what} only: ${treeTitle(t)}` });
         if (mo) html += `<div class="tkids">${runs.filter((k) => sec.run_types[k].dims.models.includes(m)).map((k) => runNode(sec, k, m)).join("")}</div>`;
       }
     } else {
