@@ -108,7 +108,7 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .icon-btn { background: none; border: 0.5px solid var(--bd2); border-radius: 4px; color: var(--tx2);
   cursor: pointer; font-size: 12px; padding: 2px 7px; }
 .icon-btn:hover { background: var(--bg2); }
-.camel { width: 132px; flex: none; }
+.camel { width: 132px; flex: none; cursor: pointer; }   /* a click goes home */
 .camel svg { display: block; width: 100%; height: auto;
   --empty: var(--bg); --outline: var(--tx); --grid: var(--bd); --filled-grid: rgba(255, 255, 255, 0.55);
   --mortality: var(--sec-mortality); --coastal: var(--sec-coastal); --agriculture: var(--sec-agriculture);
@@ -592,7 +592,7 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .agg-scen .agg-scen-opts { display: inline-flex; }
 .agg-scen .run-opt { padding: 2px 8px; font-size: 10px; }
 /* ---------- tree navigation ---------- */
-.tree-layout { display: grid; grid-template-columns: 352px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tree-layout { display: grid; grid-template-columns: 364px minmax(0, 1fr); gap: 16px; align-items: start; }
 .tree-menu > summary { display: none; }
 .tree-side { position: sticky; top: 8px; }
 .tree { display: flex; flex-direction: column; gap: 3px; }
@@ -627,7 +627,7 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tkids { display: flex; flex-direction: column; gap: 2px; margin: 2px 0 4px 10px; padding-left: 8px; border-left: 1px solid var(--bd); }
 /* P and A: two fixed columns on every row, so they line up at every level. */
 .tnode .tfig { display: flex; gap: 5px; }
-.tcol { display: inline-block; width: 18ch; }
+.tcol { display: inline-block; width: 19ch; }
 .tcol.tzero, .tcol.tzero b { color: var(--tx3); }
 /* Not started: gray. A crop or fuel still opens its run types. */
 .tnode.tidle, .tnode.off:not(.tsector) { opacity: 0.6; }
@@ -850,3 +850,14 @@ body.no-model #grid-loader, body.no-sector #grid-loader { display: none !importa
 @media (prefers-reduced-motion: reduce) {
   .ld-bar i, .grid-wrap { transition: none; }
 }
+
+/* Theme switch. The camel's cells change with the rest of the page (their
+   fill fade is off while switching). With View Transitions the new mode is
+   revealed by a horizontal wipe with a soft edge, animated from app.js; without
+   them, a short crossfade of the main colors, never on the grid's cells. */
+html.theme-switching .camel svg .cell { transition: none !important; }
+:root.theme-vt::view-transition-old(root), :root.theme-vt::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html.theme-fade body, html.theme-fade .panel, html.theme-fade .card, html.theme-fade .tnode, html.theme-fade .tree-menu,
+html.theme-fade .icon-btn, html.theme-fade .hl-opt, html.theme-fade .sb, html.theme-fade .stale, html.theme-fade .info-bar {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease; }
+html.theme-fade .camel svg .cell, html.theme-fade .camel svg .ink, html.theme-fade .camel svg .paper { transition: fill 0.25s ease; }

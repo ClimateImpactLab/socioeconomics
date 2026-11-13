@@ -68,7 +68,8 @@ function fmtPct2(p) {
   if (p >= 99.995) return "99.99%";
   return `${p.toFixed(2)}%`;
 }
-// In the summary table: no decimals when whole (100%, 0%), else two
+// In the summary table, the tree and the Projection and Aggregation cards:
+// no decimals when whole (100%, 0%), else two
 // (98.31%), never rounding to 0% or 100%.
 function fmtPctTable(p) {
   if (p == null || isNaN(p)) return "n/a";
@@ -772,11 +773,11 @@ function addUp(list) {
 // files yet is gray.
 function treeFig(t) {
   const col = (name, n, exp, b) => `<span class="tcol${n ? "" : " tzero"}">` +
-    paFig(name, exp ? fmtPctShort(pctOf(n, exp)) : "\u2013", b == null ? null : fmtBytes(b)) + `</span>`;
+    paFig(name, exp ? fmtPctTable(pctOf(n, exp)) : "\u2013", b == null ? null : fmtBytes(b)) + `</span>`;
   return col("P", t.p, t.pExp, t.pB) + col("A", t.a, t.aExp, t.aB);
 }
 function treeTitle(t) {
-  const part = (name, n, exp, b) => `${name} ${fmtPctShort(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)}${b != null ? `, ${fmtBytes(b)}` : ""})`;
+  const part = (name, n, exp, b) => `${name} ${fmtPctTable(pctOf(n, exp))} (${fmtN(n)}/${fmtN(exp)}${b != null ? `, ${fmtBytes(b)}` : ""})`;
   return part("P", t.p, t.pExp, t.pB) + " | " + part("A", t.a, t.aExp, t.aB) + (t.started ? "" : ", not started");
 }
 // A run row: picking it shows its grid, for its crop or fuel when it has one.
@@ -944,8 +945,8 @@ function renderCards() {
     card(`Complete${mainMark()}`, `<span style="color:var(--st-done)">${fmtN(f.complete)}</span>`, "all files present") +
     card(`Partial${mainMark()}`, `<span style="color:var(--progress)">${fmtN(f.partial)}</span>`, "some files present") +
     card(`Not started${mainMark()}`, `<span style="color:var(--st-none)">${fmtN(total - f.started)}</span>`, "no files yet") +
-    card("Projection", fmtPct2(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
-    card(`Aggregation${mainMark()}`, fmtPct2(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
+    card("Projection", fmtPctTable(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
+    card(`Aggregation${mainMark()}`, fmtPctTable(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(f.running)}</span>`, f.failed ? `${fmtN(f.failed)} stopped` : "units being written") +
     etaCard(rt, total) +
     suCard(rt.su_estimate);
@@ -1927,7 +1928,22 @@ function suShort(low, high) {
 
 /* ---------- interactions and boot ---------- */
 
+// The camel goes back to the home view, as the page opens with no
+// parameters: nothing picked, default filters, every summary row closed.
+// It keeps source=mock and the theme, and adds a history entry.
+function goHome() {
+  closeDetail();
+  const q = new URLSearchParams();
+  if (params.get("source") === "mock") q.set("source", "mock");
+  applyQuery(q);
+  ckOpen.clear();
+  $("compact-view").checked = view.compact;
+  renderAll();
+  syncUrl("push");
+}
+
 function setup() {
+  $("camel").addEventListener("click", goHome);
   $("camel-key").addEventListener("click", (e) => {
     const all = e.target.closest(".ck-all");
     if (all) {
@@ -2124,8 +2140,13 @@ function setup() {
 
 // Light and dark. The mode showing is the saved choice, or else the
 // system's. The button is wired before the data loads, so no click is
-// lost; each click switches to the other mode, saves it, and the page
-// repaints at once; the grid's square pictures follow on the next frame.
+// lost; each click switches to the other mode and saves it. The new mode
+// is revealed by a horizontal wipe with a soft edge, following the button's
+// half-filled circle (light on the left, dark on the right): to dark it
+// sweeps in from left to right, to light from right to left (View
+// Transitions, about 350 ms), or a short crossfade where the browser has
+// none, or at once with reduced motion. The grid's square pictures are repainted inside the
+// switch, so the new mode shows complete.
 const THEME_KEY = "amel-theme";
 const systemDark = matchMedia("(prefers-color-scheme: dark)");
 function themeNow() {
@@ -2148,10 +2169,11 @@ function setupTheme() {
   const repaint = () => requestAnimationFrame(() => requestAnimationFrame(recolorSquares));
   $("theme-toggle").addEventListener("click", () => {
     const next = themeNow() === "dark" ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* storage may be blocked */ }
-    showThemeButton();
-    repaint();
+    switchTheme(() => {
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* storage may be blocked */ }
+      showThemeButton();
+    }, recolorSquares, next);
   });
   // With no saved choice the page follows the system as it changes.
   systemDark.addEventListener("change", () => {
@@ -2159,6 +2181,45 @@ function setupTheme() {
     showThemeButton();
     repaint();
   });
+}
+
+// Switches to the new mode (setMode, to the mode next) and repaints the
+// grid's pictures (repaint), with the reveal. While switching, the camel's
+// cells drop their fill fade so they change with the rest of the page.
+const THEME_MS = 350, THEME_FADE_MS = 250;
+function switchTheme(setMode, repaint, next) {
+  const root = document.documentElement;
+  const apply = () => { setMode(); repaint(); };
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { apply(); return; }
+  if (!document.startViewTransition) {
+    // No View Transitions: a short crossfade of the main colors (not the
+    // grid); the grid's pictures are repainted once it ends, so the heavy
+    // repaint does not stall the fade.
+    root.classList.add("theme-fade");
+    getComputedStyle(document.body).backgroundColor;   // the fade is in place before the colors change
+    setMode();
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      setTimeout(() => { repaint(); root.classList.remove("theme-fade"); }, THEME_FADE_MS + 50)));
+    return;
+  }
+  // The wipe: a mask on the new view, solid on one side of a soft edge
+  // (about 6% of the width) and clear on the other, moved across the page.
+  const w = innerWidth, soft = Math.max(40, Math.round(w * 0.06));
+  const toRight = next === "dark";
+  const size = 2 * w + 2 * soft;
+  const at = (edge) => `${Math.round(edge - (w + soft))}px 0px`;   // mask position that puts the soft edge's middle at x = edge
+  const mask = `linear-gradient(${toRight ? "to right" : "to left"}, #000 calc(50% - ${soft / 2}px), transparent calc(50% + ${soft / 2}px))`;
+  const [from, to] = toRight ? [-soft / 2, w + soft / 2] : [w + soft / 2, -soft / 2];
+  root.classList.add("theme-switching", "theme-vt");
+  const t = document.startViewTransition(apply);
+  t.ready.then(() => {
+    try {
+      const k = { maskImage: mask, maskSize: `${size}px 100%`, maskRepeat: "no-repeat" };
+      root.animate([{ ...k, maskPosition: at(from) }, { ...k, maskPosition: at(to) }],
+        { duration: THEME_MS, easing: "ease-out", pseudoElement: "::view-transition-new(root)" });
+    } catch (e) { root.classList.remove("theme-vt"); /* the browser's own short crossfade */ }
+  }).catch(() => {});
+  t.finished.finally(() => root.classList.remove("theme-switching", "theme-vt"));
 }
 
 async function boot() {

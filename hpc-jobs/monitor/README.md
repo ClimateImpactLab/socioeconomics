@@ -105,7 +105,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   type, the first crop or fuel with files for the run, every badge on,
   All, the main scenario) and the rest is kept. To share a view, copy the
   link from the browser. The page loads the data once; a reload brings the
-  latest scan in the same view.
+  latest scan in the same view. Clicking the camel (hover text "Home")
+  goes back to the home view, as the page opens with no parameters:
+  nothing picked in the tree, default filters, every summary row closed;
+  it keeps source=mock and the theme, and adds a history entry, so back
+  returns to the previous view.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
@@ -163,9 +167,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
 - Resources and SLURM jobs start collapsed.
 - Disk space: the tree shows, after each P and A figure, the space those
   files take in brackets ("P 18% (745.9 GB) | A 13% (390.1 GB)"; MB, GB or
-  TB with one decimal, 1 GB = 1,000 MB), the percent in bold and a thin
+  TB with one decimal, 1 GB = 1,000 MB), the percent in bold (as in the
+  summary table and the Projection and Aggregation cards: two decimals
+  when it is not whole, never rounded to 0% or 100%) and a thin
   bar between P and A, in two fixed columns that line up at every level;
-  its tooltip adds the counts. The tree is 352 px wide (300 px under
+  its tooltip adds the counts. The tree is 364 px wide (300 px under
   1,100 px), so the figures fit on one line next to each name; a figure
   that does not fit moves under the name. The column
   headers show the same, with the counts: "P 91% (6,970/7,680, 313.5 GB)";
@@ -187,7 +193,17 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   the system while nothing is saved. The button works from the first
   moment, before the data has loaded; each click switches to the other
   mode and saves it. The grid is not rebuilt: its small square pictures
-  are repainted in the new colors on the next frame.
+  are repainted in the new colors as part of the switch. The new mode is
+  revealed by a horizontal wipe with a soft edge that follows the button's
+  half-filled circle (light on the left, dark on the right): to dark it
+  sweeps in from left to right, to light from right to left (View
+  Transitions, 350 ms, ease-out), with the camel changing at the same moment as the rest (its
+  cells' fill fade is off while switching). Browsers without View
+  Transitions get a 250 ms crossfade of the main colors, with the grid's
+  pictures repainted right after it; with reduced motion the switch is
+  instant. Nothing animates on page load or when the page follows the
+  system setting. With a montecarlo grid loaded (5,850 cells) the switch
+  takes about 1.1 to 1.4 s in Chrome from click to the end of the circle.
 - Loading: while a grid is built (after picking a sector, run type,
   sub-model or aggregation scenario; never on the first page load), a
   small see-through cube, 28 to 36 px following the screen width, with
