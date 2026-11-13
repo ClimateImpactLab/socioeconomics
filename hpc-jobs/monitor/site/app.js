@@ -508,6 +508,8 @@ function buildTreeLayout() {
     `<label class="sw" title="Show only the columns with matching cells"><input type="checkbox" id="compact-view"${view.compact ? " checked" : ""}>` +
     `<span class="sw-track" aria-hidden="true"></span>Compact view</label></div>`);
   box.appendChild($("hl-tabs"));
+  box.insertAdjacentHTML("beforeend", `<div class="hl-note" id="hl-note">Counts are units (folders). ` +
+    `A unit is complete only when all its files are present.</div>`);
   $("tree-menu").appendChild(box);
   // The note where the grid would be, until a run type (and sub-model) is picked.
   const note = document.createElement("div");
@@ -2114,7 +2116,8 @@ function renderCamel() {
     <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="${cols.length}"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
     </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${totInfo}${avail}
     <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
-    <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median and delta method for energy).</div>`;
+    <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median and delta method for energy).
+    Summary percents count files; the filter, the grid and the unit counts in the cards below are units (folders with all their files).</div>`;
 }
 
 // The sub-rows of a sector in the summary table: energy's median and delta
