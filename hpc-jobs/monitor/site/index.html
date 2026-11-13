@@ -5,13 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>CIL | Projections - New Socioeconomics</title>
-<link rel="icon" type="image/svg+xml" href="camel/favicon.svg">
-<link rel="stylesheet" href="style.css?v=202611131600">
+<link rel="icon" id="favicon" type="image/svg+xml" href="camel/favicon.svg">
+<link rel="stylesheet" href="style.css?v=202611140010">
+<!-- The camel figure and three.js, pinned to exact versions. three.js loads
+     only when the 3D camel is picked. -->
+<script type="importmap">
+{
+  "imports": {
+    "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/index.js",
+    "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/3d.js",
+    "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
 
 <header class="head">
-  <div id="camel" class="camel" role="img" aria-label="Progress by sector" title="Home"></div>
+  <div class="camel-box">
+    <div class="camel-opts">
+      <div id="camel-view" class="camel-view" role="group" aria-label="Camel view">
+        <button type="button" data-camel="2d" aria-pressed="true" title="2D view" aria-label="2D view"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
+        <button type="button" data-camel="3d" aria-pressed="false" title="3D view: drag to turn, right-click for a move" aria-label="3D view"><svg viewBox="0 0 12 12" aria-hidden="true"><defs><radialGradient id="cv-sphere" cx="0.36" cy="0.32" r="0.78"><stop offset="0" stop-color="currentColor" stop-opacity="0.1"/><stop offset="1" stop-color="currentColor" stop-opacity="0.9"/></radialGradient></defs><circle cx="6" cy="6" r="4.6" fill="url(#cv-sphere)"/></svg></button>
+      </div>
+    </div>
+    <div id="camel" class="camel" role="img" aria-label="Progress by sector"></div>
+    <span id="camel-demo" class="camel-demo hidden" title="The camel shows the mock data, not real runs">demonstration data</span>
+    <div id="camel-legend" class="camel-legend" aria-label="What the camel's looks mean"></div>
+  </div>
   <div class="head-text">
     <h1>CIL | Projections - New Socioeconomics</h1>
     <div class="subtitle" id="subtitle">Loading...</div>
@@ -80,14 +102,13 @@
 <div class="scen-graph" id="scen-graph" aria-label="SSP, RCP and IAM"></div>
 <div class="grid-empty hidden" id="grid-empty">Turn on an SSP with at least one RCP and IAM under it to see columns.</div>
 <div class="loader hidden" id="grid-loader" role="status" aria-label="Loading the grid">
-  <div class="ld-view" aria-hidden="true"><div class="ld-spin"><div class="ld-cube"><span class="ld-side ld-front"></span><span class="ld-side ld-back"></span><span class="ld-side ld-right"></span><span class="ld-side ld-left"></span><span class="ld-side ld-top"></span><span class="ld-side ld-bottom"></span></div></div></div>
-  <div class="ld-bar" aria-hidden="true"><i></i></div>
+  <div class="ld-camel" aria-hidden="true"></div>
 </div>
 <div class="grid-wrap"><table class="grid-table" id="grid"></table></div>
 
 <div id="global-tip"></div>
 
 
-<script src="app.js?v=202611131600"></script>
+<script src="app.js?v=202611140010"></script>
 </body>
 </html>

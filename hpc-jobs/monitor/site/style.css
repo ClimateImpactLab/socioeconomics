@@ -4,6 +4,7 @@
 :root {
   color-scheme: light;
   --bg: #ffffff; --bg2: #f5f5f0; --bg3: #eeeee8;
+  --camel-blank: #ecebe5;   /* the camel's unfilled parts */
   --tip-bg: #ffffff;   /* the grid hover box */
   --tip-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
   --tx: #1a1a1a; --tx2: #666660; --tx3: #99998f;
@@ -42,6 +43,7 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
+    --camel-blank: #2c2c27;
     --tip-bg: #20201c;
     --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
     --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
@@ -65,6 +67,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
+  --camel-blank: #2c2c27;
   --tip-bg: #20201c;
   --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
@@ -108,33 +111,45 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .icon-btn { background: none; border: 0.5px solid var(--bd2); border-radius: 4px; color: var(--tx2);
   cursor: pointer; font-size: 12px; padding: 2px 7px; }
 .icon-btn:hover { background: var(--bg2); }
-.camel { width: 132px; flex: none; cursor: pointer; }   /* a click goes home */
-.camel svg { display: block; width: 100%; height: auto;
-  --empty: var(--bg); --outline: var(--tx); --grid: var(--bd); --filled-grid: rgba(255, 255, 255, 0.55);
-  --mortality: var(--sec-mortality); --coastal: var(--sec-coastal); --agriculture: var(--sec-agriculture);
-  --energy: var(--sec-energy); --labor: var(--sec-labor); }
-.camel svg .tex-line { stroke: #ffffff; stroke-opacity: 0.5; stroke-width: 2; }
-.camel svg .tex-mortality { fill: var(--sec-mortality); }
-.camel svg .tex-coastal { fill: var(--sec-coastal); }
-.camel svg .tex-agriculture { fill: var(--sec-agriculture); }
-.camel svg .tex-energy { fill: var(--sec-energy); }
-.camel svg .tex-labor { fill: var(--sec-labor); }
-.camel svg.pulse-mortality .cell[data-sector="mortality"][data-filled="true"] { animation: camelpulse 2.4s ease-in-out infinite; }
-.camel svg.solid-mortality .cell[data-sector="mortality"][data-filled="true"] { stroke: var(--sector-color); }
-.camel svg.tex-mortality .cell[data-sector="mortality"][data-filled="true"] { fill: url(#camel-tex-mortality); stroke: var(--sector-color); }
-.camel svg.pulse-coastal .cell[data-sector="coastal"][data-filled="true"] { animation: camelpulse 2.4s ease-in-out infinite; }
-.camel svg.solid-coastal .cell[data-sector="coastal"][data-filled="true"] { stroke: var(--sector-color); }
-.camel svg.tex-coastal .cell[data-sector="coastal"][data-filled="true"] { fill: url(#camel-tex-coastal); stroke: var(--sector-color); }
-.camel svg.pulse-agriculture .cell[data-sector="agriculture"][data-filled="true"] { animation: camelpulse 2.4s ease-in-out infinite; }
-.camel svg.solid-agriculture .cell[data-sector="agriculture"][data-filled="true"] { stroke: var(--sector-color); }
-.camel svg.tex-agriculture .cell[data-sector="agriculture"][data-filled="true"] { fill: url(#camel-tex-agriculture); stroke: var(--sector-color); }
-.camel svg.pulse-energy .cell[data-sector="energy"][data-filled="true"] { animation: camelpulse 2.4s ease-in-out infinite; }
-.camel svg.solid-energy .cell[data-sector="energy"][data-filled="true"] { stroke: var(--sector-color); }
-.camel svg.tex-energy .cell[data-sector="energy"][data-filled="true"] { fill: url(#camel-tex-energy); stroke: var(--sector-color); }
-.camel svg.pulse-labor .cell[data-sector="labor"][data-filled="true"] { animation: camelpulse 2.4s ease-in-out infinite; }
-.camel svg.solid-labor .cell[data-sector="labor"][data-filled="true"] { stroke: var(--sector-color); }
-.camel svg.tex-labor .cell[data-sector="labor"][data-filled="true"] { fill: url(#camel-tex-labor); stroke: var(--sector-color); }
-@keyframes camelpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+/* The camel and its 2D / 3D choice. Its unfilled parts and outline take
+   the theme's colors through the package's own options (app.js). The 3D
+   figure draws on a clear background. */
+.camel-box { width: 132px; flex: none; display: flex; flex-direction: column; gap: 3px; }
+.camel { position: relative; width: 100%; aspect-ratio: 685 / 465; cursor: pointer; }   /* a click goes home */
+.camel > div { position: absolute; inset: 0; }
+.camel > div[hidden] { display: none; }
+.camel-2d svg { display: block; }
+.camel-3d.pending { visibility: hidden; }
+.camel-3d canvas { display: block; }
+.camel-3d.outline canvas { --edge: color-mix(in srgb, var(--tx) 35%, transparent);
+  filter: drop-shadow(0.5px 0 0 var(--edge)) drop-shadow(-0.5px 0 0 var(--edge)) drop-shadow(0 0.5px 0 var(--edge)) drop-shadow(0 -0.5px 0 var(--edge)); }
+.camel-opts { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+/* The 2D / 3D switch (a circle, a shaded sphere): small muted icons above
+   the camel, the picked one softly marked. */
+.camel-view { display: inline-flex; gap: 1px; }
+.camel-view button { display: inline-flex; align-items: center; padding: 2px; border: 0; border-radius: 3px;
+  background: none; color: var(--tx3); opacity: 0.75; cursor: pointer; }
+.camel-view button svg { width: 8px; height: 8px; display: block; }
+.camel-view button:hover { opacity: 1; }
+.camel-view button[aria-pressed="true"] { background: var(--bg2); color: var(--tx2); opacity: 1; }
+.camel-view.loading button[data-camel="3d"] { animation: camelload 1s ease-in-out infinite; }
+@keyframes camelload { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.camel-demo { font-size: 9px; line-height: 1; color: var(--amber-tx); }
+/* The legend: a 2 x 2 block of tiny swatches (one column when narrow). */
+.camel-legend { display: flex; flex-wrap: wrap; gap: 2px 8px;
+  font-size: 9px; line-height: 1.2; color: var(--tx3); }
+.camel-legend:empty { display: none; }
+.cl-item { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.cl-sw { width: 10px; height: 10px; flex: none; display: block; opacity: 0.6; }
+/* In dark mode the package's dark pattern would vanish on the page; the
+   aggregation cube takes the muted text color there, and the green one is
+   brightened. */
+:root[data-theme="dark"] .cl-aggregation path { stroke: var(--tx2); }
+:root[data-theme="dark"] .cl-extraction { filter: brightness(2.2); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cl-aggregation path { stroke: var(--tx2); }
+  :root:not([data-theme="light"]) .cl-extraction { filter: brightness(2.2); }
+}
 .camel-key { margin-top: 5px; font-size: 10px; color: var(--tx2); }
 
 .stale { background: var(--amber-bg); color: var(--amber-tx); border-radius: 6px; padding: 4px 10px;
@@ -421,7 +436,7 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
   background: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(200, 50, 50, 0.15) 2px, rgba(200, 50, 50, 0.15) 3px); }
 @keyframes pulse-writing { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .batch.bst-active, .camel svg .cell { animation: none !important; }
+  .batch.bst-active, .camel-view.loading button { animation: none !important; }
 }
 
 /* The grid hover box: one compact line in the tree's style, half
@@ -482,7 +497,7 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
   .head { gap: 6px 10px; align-items: flex-start; flex-wrap: wrap; }
   .head-text { order: 3; flex-basis: 100%; }
   .head-right { margin-left: auto; }
-  .camel { width: 92px; }
+  .camel-box { width: 92px; }
   h1 { font-size: 14px; }
   .cil-logo { height: 20px; }
   .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -808,56 +823,31 @@ body.no-sector #scen-box, body.no-model #scen-box { display: none; }
 body.no-model #grid-empty { display: none; }
 .sq-img { display: inline-block; flex-shrink: 0; background-repeat: no-repeat; background-size: 100% 100%; }
 
-/* Grid loading: a small see-through cube, its edges thin dashed lines.
-   Nine soft rounded squares, in shades of the loading sector's color and
-   in the style of the grid cells, travel around its edges onto one face
-   (see scheduleGrid), while the cube sways gently; it then turns that
-   face to the front. The
-   moves are browser animations, so they flow and keep going while the
-   page builds the grid. Its size follows the screen. */
-:root { --ld-size: clamp(28px, 2.4vw, 36px); }
+/* Grid loading: the package's 2D camel, filling and emptying in steps
+   (see scheduleGrid): the blank figure, one layer per step on top, and
+   the outline last. */
 .loader { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
   min-height: 140px; color: var(--tx3); font-size: 10px; }
-.ld-view { width: var(--ld-size); height: var(--ld-size); perspective: calc(var(--ld-size) * 9); margin: 6px 0 2px; }
-.ld-spin, .ld-cube { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; }
-.ld-spin { transform: rotateX(-20deg) rotateY(-10deg); }
-.ld-side { position: absolute; inset: 0; box-sizing: border-box; border-radius: 3px;
-  border: 1px dashed color-mix(in srgb, var(--tx3) 45%, transparent); }
-.ld-front { transform: translateZ(calc(var(--ld-size) / 2)); border-style: solid;
-  border-color: color-mix(in srgb, var(--tx3) 30%, transparent); }
-.ld-back { transform: rotateY(180deg) translateZ(calc(var(--ld-size) / 2)); }
-.ld-right { transform: rotateY(90deg) translateZ(calc(var(--ld-size) / 2)); }
-.ld-left { transform: rotateY(-90deg) translateZ(calc(var(--ld-size) / 2)); }
-.ld-top { transform: rotateX(90deg) translateZ(calc(var(--ld-size) / 2)); }
-.ld-bottom { transform: rotateX(-90deg) translateZ(calc(var(--ld-size) / 2)); }
-.ld-tile { position: absolute; border-radius: 2px; box-sizing: border-box;
-  border: 1px solid color-mix(in srgb, var(--c) calc(var(--k) * 0.8%), transparent);
-  background: color-mix(in srgb, var(--c) calc(var(--k) * 0.6%), transparent);
-  transition: background-color 0.3s ease, border-color 0.3s ease; }
-.ld-bar { width: 64px; height: 1.5px; border-radius: 2px; background: color-mix(in srgb, var(--bd) 70%, transparent); overflow: hidden; }
-.ld-bar i { display: block; height: 100%; width: 100%; border-radius: 2px; background: var(--tx3); opacity: 0.7;
-  transform-origin: left; transform: scaleX(0); transition: transform 0.35s ease-out; }
+.ld-camel { position: relative; width: 120px; aspect-ratio: 685 / 465; }
+.ld-camel svg { display: block; position: absolute; inset: 0; width: 100%; height: 100%; }
+.ld-camel .ld-layer { will-change: opacity; }
 /* The grid is built under the loader, laid out but not shown, so it fits
    the width when it appears. */
 .grid-wrap { transition: opacity 0.25s ease; }
 body.grid-loading .grid-wrap { opacity: 0; pointer-events: none; }
 body.grid-loading #grid-empty { display: none; }
 body.no-model #grid-loader, body.no-sector #grid-loader { display: none !important; }
-/* Reduced motion: the cube stands still, facing front, and the squares,
-   already in place, fade into the sector color. */
-.ld-calm .ld-spin { transform: rotateX(-12deg) rotateY(-14deg) !important; }
-.ld-calm .ld-tile { transition: background-color 1s ease, border-color 1s ease; }
 @media (prefers-reduced-motion: reduce) {
-  .ld-bar i, .grid-wrap { transition: none; }
+  .grid-wrap { transition: none; }
 }
 
 /* Theme switch. The camel's cells change with the rest of the page (their
    fill fade is off while switching). With View Transitions the new mode is
    revealed by a horizontal wipe with a soft edge, animated from app.js; without
    them, a short crossfade of the main colors, never on the grid's cells. */
-html.theme-switching .camel svg .cell { transition: none !important; }
+html.theme-switching .camel-2d svg path { transition: none !important; }
 :root.theme-vt::view-transition-old(root), :root.theme-vt::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
 html.theme-fade body, html.theme-fade .panel, html.theme-fade .card, html.theme-fade .tnode, html.theme-fade .tree-menu,
 html.theme-fade .icon-btn, html.theme-fade .hl-opt, html.theme-fade .sb, html.theme-fade .stale, html.theme-fade .info-bar {
   transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease; }
-html.theme-fade .camel svg .cell, html.theme-fade .camel svg .ink, html.theme-fade .camel svg .paper { transition: fill 0.25s ease; }
+html.theme-fade .camel-2d svg path { transition: fill 0.25s ease, stroke 0.25s ease; }

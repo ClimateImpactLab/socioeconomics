@@ -5,19 +5,9 @@ AMEL sectors (agriculture, mortality, energy, labor). It shows run status
 only, never projection results. The page follows the design of the old
 mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monitor):
 
-- The camel at the top (from camel-progress-kit): a two-humped camel made
-  of 100 pieces per sector: head and neck energy (yellow), shoulder and
-  front legs mortality (red), back and humps coastal (blue), belly labor
-  (grey), hindquarters, back legs and tail agriculture (green). Pieces fill
-  from the bottom up with the sector's share of projection files in its
-  main run only (montecarlo for agriculture, mortality and labor, median
-  for energy; singles and other run types do not count) and pulse
-  softly while projections run; the sector turns solid when all projection
-  files are there, and gets fine light stripes when aggregation is complete
-  too. Coastal is not tracked yet. The kit's walking animation is paused
-  for now (`CAMEL_WALK` in app.js); when on, the camel walks only while
-  projection files are being written in the output folders, the same
-  signal as the grid's "writing" state.
+- The camel at the top left: the CAMEL figure of the cil-designs package,
+  in 2D or 3D, with each part filled by the progress of its sector, crop
+  or fuel. See [The camel](#the-camel).
 - Next to the camel, under the title, a compact table: one row per sector
   in camel order with its color mark, which pulses softly in the sector
   color while the sector is active (jobs running or projection files
@@ -57,7 +47,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   total is a line under it.
 - The CIL logo at the top right (site/cil-logo.svg), inverted and
   desaturated in dark mode, following the same light and dark switch. The tab icon is
-  the kit's color favicon in the same five colors (site/camel/).
+  the 2D camel (site/camel/favicon.svg), or the package's 3D camel icon
+  while the camel is shown in 3D.
 - Navigation: a tree on the left lists the sectors as badges in their
   camel colors, in camel order (Coastal, Agriculture, Mortality, Energy,
   Labor), with one structure for every sector: sector, then crop or fuel
@@ -97,7 +88,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   scenario, by its short name, such as MERGEETL60), `ssp`, `rcp` and
   `iam` (only when not all are on; `none` when a row is all off),
   `filter` (only when not All), `compact=0` (when off; without it the
-  setting remembered in the browser applies) and `source=mock`. Example:
+  setting remembered in the browser applies), `camel=3d` (the 3D camel)
+  and `source=mock`. Example:
   `?sector=energy&sub=other_energy&run=median&ssp=SSP2,SSP3`. Picking a
   sector, crop or fuel, or run type adds a history entry (back and forward
   go through them); filter changes replace the current one. A value that
@@ -105,11 +97,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   type, the first crop or fuel with files for the run, every badge on,
   All, the main scenario) and the rest is kept. To share a view, copy the
   link from the browser. The page loads the data once; a reload brings the
-  latest scan in the same view. Clicking the camel (hover text "Home")
-  goes back to the home view, as the page opens with no parameters:
-  nothing picked in the tree, default filters, every summary row closed;
-  it keeps source=mock and the theme, and adds a history entry, so back
-  returns to the previous view.
+  latest scan in the same view. Clicking the camel goes back to the home
+  view, as the page opens with no parameters: nothing picked in the tree,
+  default filters, every summary row closed; it keeps source=mock, the 2D
+  or 3D camel and the theme, and adds a history entry, so back returns to
+  the previous view.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date
@@ -205,24 +197,16 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   system setting. With a montecarlo grid loaded (5,850 cells) the switch
   takes about 1.1 to 1.4 s in Chrome from click to the end of the circle.
 - Loading: while a grid is built (after picking a sector, run type,
-  sub-model or aggregation scenario; never on the first page load), a
-  small see-through cube, 28 to 36 px following the screen width, with
-  thin dashed edges, sways gently from side to side. Nine soft rounded
-  squares in shades of the loading sector's color, in the style of the
-  grid cells, start partly on the front and partly on the other sides,
-  and travel around the edges onto the front, each by a quarter turn as
-  a layer turn would carry it. Once the face is complete they settle into
-  the full color, the cube eases from its sway into facing the front, a
-  soft pulse, and the loader and the grid cross-fade. Every move is an
-  eased browser animation on the page's animation clock, so the steps
-  flow into one another, keep their proportions when the animation speed
-  is slowed, and keep going while the page builds the grid. For a fast
-  grid the whole sequence takes about 1 second; while the grid takes
-  longer, a square may travel back out so the face is not complete too
-  early. A thin bar sits below it, with no text; screen readers hear
-  "Loading the grid (5,850 units)". For
-  people who ask for reduced motion, the cube stands still, facing front,
-  and the squares fade into the color.
+  sub-model or aggregation scenario; never on the first page load), the
+  package's 2D camel fills and empties in a loop: the fill sweeps
+  diagonally from the bottom left to the top right in 18 small steps,
+  cell by cell, each part in its own color, holds, and empties the same
+  way. Each step is its own layer shown by a browser animation, so the
+  loop keeps going while the page builds the grid. It shows at least
+  0.7 s (about 1.1 to 1.4 s for a montecarlo grid), then the loader and
+  the grid cross-fade. Screen readers hear "Loading the grid (5,850
+  units)". For people who ask for reduced motion the camel shows filled
+  and still.
 - Run types can be left out with `enabled: false` under `run_types` in the
   manifest. quick_test is off this way: not in the tree, and not in any count,
   percent, card or SU estimate. Set it back to true to show it again.
@@ -338,6 +322,84 @@ avoids the state hues. The tree and the camel table follow the camel
 order: Coastal, Agriculture, Mortality, Energy, Labor. Coastal shows "not
 tracked (yet)".
 
+## The camel
+
+The camel is the CAMEL figure of
+[@c1587s/cil-designs](https://www.npmjs.com/package/@c1587s/cil-designs).
+The import map in site/index.html pins the package and three.js to exact
+versions on jsDelivr; the figure's geometry, 3D model, textures and icons
+load from the package, and nothing is copied into the site. To update,
+change the version in the import map's two package lines. three.js loads
+only when the 3D camel is picked.
+
+```html
+<script type="importmap">
+{ "imports": {
+  "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/index.js",
+  "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/3d.js",
+  "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/" } }
+</script>
+```
+
+```js
+const mod = await import("@c1587s/cil-designs/camel");
+const store = mod.createCamelStore();
+const fig2d = await mod.loadCamel2D(box, { store, colors: { blank: "#ecebe5", outline: "#1a1a1a" } });
+store.setLeaf("mortality", { projection: 99, aggregation: 0, extraction: 0 });
+const { loadCamel3D } = await import("@c1587s/cil-designs/camel/3d");   // when 3D is picked
+const fig3d = await loadCamel3D(box3d, { store, blankSurface: "skin", interaction: { zoom: false }, fit: { padding: 0 } });
+// On unmount: fig3d.destroy();
+```
+
+What each part shows (`CAMEL_LEAVES` in app.js), from the same numbers
+as the tree: montecarlo for mortality, labor and each crop; median and the
+delta method for each energy fuel.
+
+| Package leaf | Part |
+| --- | --- |
+| `crop-1` to `crop-5` | cassava, corn, rice, sorghum, soy |
+| `wheat-spring`, `wheat-winter` | wheat spring, wheat winter (wheat_combined has no part) |
+| `energy-a`, `energy-b` | electricity, other energy |
+| `mortality`, `labor` | mortality, labor |
+| `coastal` | not tracked, stays empty |
+
+- Stages: projection and aggregation are the percent of files there.
+  Extraction is not tracked yet and stays at 0. Each part has 100 cells:
+  0 only when there are no files and 100 only when all are there, so
+  99.8% shows 99 cells. An aggregation above its projection is drawn at
+  the projection, with a note in the browser console.
+- 2D or 3D: two small icons above the camel, a circle and a sphere, pick
+  the view (2D by default; `camel=3d` in the URL). If 3D cannot load, the
+  page shows 2D. Under the camel, a legend shows the Aggregation and
+  Extraction patterns; with the mock data, "demonstration data" says the
+  camel shows the mock.
+- Colors: the 2D unfilled parts take the page's soft neutral
+  (`--camel-blank`) and the outline the text color. The 3D unfilled
+  surface and its color per mode are `CAMEL_3D` in app.js (lit, so they
+  show close to the color given). A theme switch recolors both figures
+  in place.
+- Mouse: a click goes home; in 3D a drag turns the figure (not a click),
+  the wheel scrolls the page, and a right-click plays a move (in 2D the
+  browser's menu opens). The camel has no hover text.
+- 3D motion: the first time the camel is shown in 3D after the page
+  loads, it starts seated, stands up and turns its head toward the
+  viewer. Then it moves on its own: a short rest, then a random move,
+  never the same twice in a row. Walking, looking, lowering the head and
+  chewing come most often; running and sitting (a few seconds, then up
+  again) less. While it walks or runs the view turns slowly around it;
+  the turn may pass the front or the tail but always stops at a side or
+  three-quarter view, so a walk lasts until the next one (about 12 s, or
+  23 s when it passes the front or tail). Motion never changes progress.
+  It pauses in a hidden tab; with reduced motion the camel stands still.
+- Tab icon: the 2D camel, or the package's 3D icon while in 3D.
+
+Limits of the package (0.3.0): the turn while walking goes one way at a
+fixed speed (about 90 s a full turn), and its angle is read from the
+figure's camera, which the package returns but does not declare. Look is
+a fixed clip, not aimed at the camera; it turns first toward the side
+the camera starts on, which the first-time sequence relies on.
+
 ## Expected files per unit
 
 Taken from the official production outputs under /project/cil/gcp/outputs,
@@ -386,7 +448,7 @@ monitor/
     index.html
     style.css
     app.js
-    camel/              camel.svg (100 pieces per sector) and favicon.svg
+    camel/              favicon.svg, the 2D tab icon (camel.svg, the earlier figure, is no longer used)
     data/status.json    local copy of the data (fallback; the page reads monitor-data first)
     data/details/...    file sizes and dates per cell, loaded on click
     mock/               the same files for the mock

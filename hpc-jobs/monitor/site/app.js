@@ -47,7 +47,7 @@ let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
 
 let DATA = null;
 const view = { sector: null, runType: null, model: null, modelOff: false, branch: null, runSub: null, ssps: [], picks: null,
-  selected: null, aggScen: null, hl: "all", compact: true };
+  selected: null, aggScen: null, hl: "all", compact: true, camel3d: false };
 const detailCache = new Map();
 let cellIndex = new Map();
 
@@ -327,25 +327,16 @@ function renderAll() {
   scheduleGrid();
 }
 
-// Grid loading: a small see-through cube. Nine squares in shades of the
-// loading sector's color start partly on the front and partly on the other
-// sides, and travel around the edges onto the front, each by a quarter
-// turn about the cube's center, as a layer turn would carry it. While the
-// grid is still being built, a square may travel back out, so the face is
-// never complete too early. Once the grid is built and the minimum time
-// has passed (fast grids show after about 1 s), the last squares come in, they settle into the full color,
-// and the cube turns smoothly from its spin to face the front, with a soft
-// pulse at the end; then the loader and the grid cross-fade. The cube
-// sways from side to side meanwhile, so the front is never far away. Every move is
-// a browser animation with easing, timed on the page's animation clock,
-// so the moves flow into one another and keep going while the page builds
-// the grid. With reduced motion the cube stands still, facing front, and
-// the squares fade into the color.
-// Fast grids show after about 1 s; larger ones wait for the grid.
-const LD = { beat: 60, travel: 240, minTime: 220, buildAt: 90, turn: 360, fade: 140, ease: "cubic-bezier(0.45, 0, 0.55, 1)",
-  // The sway: the cube turns from side to side around the front.
-  swayMs: 3600, swayDeg: 42, swayMid: -10, tiltDeg: -20 };
-let ldRun = null;
+// Grid loading: the package's 2D camel fills and empties in a loop while
+// the grid is built. The fill sweeps diagonally from the bottom left to
+// the top right in small steps, cell by cell (the package's own cells),
+// each part in its own color, then empties the same way. Each step is its
+// own layer, shown and hidden by a browser animation, so the loop keeps
+// going while the page is busy building the grid. With reduced motion the
+// camel shows filled and still. Once the grid is built and the minimum
+// time has passed, the loader and the grid cross-fade.
+const LD = { buildAt: 90, minTime: 700, fade: 140, steps: 18, stepMs: 55, hold: 260 };
+let ldRun = null, ldCamel = null;
 function stopGridLoader() {
   if (!ldRun) return;
   ldRun.cancel();
@@ -353,150 +344,83 @@ function stopGridLoader() {
   $("grid-loader").classList.add("hidden");
   document.body.classList.remove("grid-loading");
 }
+// The loader's camel, built once: the package's 2D figure with nothing
+// filled, one layer per diagonal step with that step's cells in their
+// part's color, and the outline on top.
+function loaderCamel() {
+  if (ldCamel || !camelFig.mod) return ldCamel;
+  const box = $("grid-loader").querySelector(".ld-camel"), { cells, leaves } = camelFig.manifest;
+  const fig = camelFig.mod.createCamel2D(box, { manifest: camelFig.manifest, store: camelFig.mod.createCamelStore(), colors: camelColors() });
+  noHoverText(fig.element);
+  const NS = "http://www.w3.org/2000/svg", viewBox = fig.element.getAttribute("viewBox");
+  const layer = () => {
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", viewBox);
+    svg.setAttribute("class", "ld-layer");
+    box.append(svg);
+    return svg;
+  };
+  const steps = Array.from({ length: LD.steps }, layer);
+  const xs = cells.map((c) => c.center[0]), ys = cells.map((c) => c.center[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const color = Object.fromEntries(leaves.map((l) => [l.id, l.color]));
+  for (const c of cells) {
+    const d = ((c.center[0] - x0) / (x1 - x0) + (y1 - c.center[1]) / (y1 - y0)) / 2;   // 0 bottom left, 1 top right
+    const p = document.createElementNS(NS, "path");
+    for (const [k, v] of [["d", c.path], ["fill", color[c.leaf]], ["stroke", color[c.leaf]], ["stroke-width", 0.9]]) p.setAttribute(k, v);
+    steps[Math.min(LD.steps - 1, Math.floor(d * LD.steps))].append(p);
+  }
+  const [lines, ink] = ["subdivisions", "original-ink"].map((n) => fig.element.querySelector(`[data-layer="${n}"]`).cloneNode(true));
+  layer().append(lines, ink);
+  ldCamel = { steps, fig, ink };
+  return ldCamel;
+}
 function scheduleGrid() {
   stopGridLoader();
   const run = { off: false, anims: [], cancel() { this.off = true; this.anims.forEach((a) => a.cancel()); } };
   ldRun = run;
-  const ld = $("grid-loader"), view_ = ld.querySelector(".ld-view"), spin = ld.querySelector(".ld-spin");
-  const cube = ld.querySelector(".ld-cube"), bar = ld.querySelector(".ld-bar i");
-  const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const keep = (a) => { run.anims.push(a); return a; };
-  // A pause on the animation clock, so the rhythm follows the animation speed.
-  const wait = (ms) => keep(cube.animate([], { duration: ms })).finished.catch(() => {});
-  // The sway, as one browser animation sampled from a sine, so its angle
-  // and speed at any moment are known for the final turn.
-  const swayAt = (u) => LD.swayMid + LD.swayDeg * Math.sin(2 * Math.PI * u);
-  spin.style.transform = `rotateX(${LD.tiltDeg}deg) rotateY(${LD.swayMid}deg)`;
-  const sway = calm ? null : keep(spin.animate(Array.from({ length: 33 }, (_, k) =>
-    ({ transform: `rotateX(${LD.tiltDeg}deg) rotateY(${swayAt(k / 32)}deg)` })),
-    { duration: LD.swayMs, iterations: Infinity, easing: "linear" }));
-  cube.querySelectorAll(".ld-tile").forEach((e) => e.remove());
-  ld.classList.toggle("ld-calm", calm);
-  // No text under the cube; screen readers get the same words.
+  const ld = $("grid-loader"), calm = reduceMotion.matches;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   ld.setAttribute("aria-label", `Loading the grid (${fmtN(runType().counts.total)} units)`);
-  bar.style.transition = "none";
-  bar.style.transform = "scaleX(0)";
   ld.classList.remove("hidden");
   document.body.classList.add("grid-loading");
-  requestAnimationFrame(() => { bar.style.transition = ""; bar.style.transform = "scaleX(0.6)"; });
-
-  // Nine squares, each with its place on the front face. Where a square
-  // is: the turn about x (a) and about y (b) that carries the front place
-  // there; a = 90 is the top, -90 the bottom, b = 90 the right, -90 the left.
-  const size = view_.getBoundingClientRect().width || 32, gap = 1.5, pad = 2;
-  const cell = (size - 2 * pad - 2 * gap) / 3, half = size / 2 + 0.3;
-  const sides = [[90, 0], [-90, 0], [0, 90], [0, -90]];
-  const tf = (t, a, b) => `rotateY(${b}deg) rotateX(${a}deg) translate3d(${(t.col - 1) * (cell + gap)}px, ${(t.row - 1) * (cell + gap)}px, ${half}px)`;
-  const order = [0, 1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - 0.5);
-  const tiles = order.map((slot, m) => {
-    const el = document.createElement("span");
-    el.className = "ld-tile";
-    Object.assign(el.style, { width: `${cell}px`, height: `${cell}px`, left: `${(size - cell) / 2}px`, top: `${(size - cell) / 2}px` });
-    el.style.setProperty("--c", `var(--sec-${view.sector})`);
-    cube.appendChild(el);
-    const [a, b] = calm || m < 4 ? [0, 0] : sides[m % 4];
-    const t = { el, row: Math.floor(slot / 3), col: slot % 3, a, b, moving: false };
-    el.style.setProperty("--k", a || b ? 40 : 70);
-    el.style.transform = tf(t, a, b);
-    return t;
-  });
   const t0 = performance.now();
-  let built = false;
-  const finish = () => {
-    ld.classList.add("hidden");
-    // Clear the finished animations (the fade holds the loader at 0).
-    run.anims.forEach((a) => a.cancel());
-    document.body.classList.remove("grid-loading");
-    if (ldRun === run) ldRun = null;
-  };
+
+  // The camel: step k lights up after k + 1 beats and goes out the same
+  // way after the fill and a short hold; then a hold, and again.
+  camelReady.then(() => {
+    const lc = loaderCamel();
+    if (run.off || !lc) return;
+    const n = LD.steps, T = 2 * n * LD.stepMs + 2 * LD.hold;
+    lc.steps.forEach((svg, k) => {
+      svg.style.opacity = calm ? 1 : 0;
+      if (calm) return;
+      const on = ((k + 1) * LD.stepMs) / T, off = (n * LD.stepMs + LD.hold + (k + 1) * LD.stepMs) / T;
+      run.anims.push(svg.animate([{ offset: 0, opacity: 0 }, { offset: on, opacity: 0 }, { offset: on, opacity: 1 },
+        { offset: off, opacity: 1 }, { offset: off, opacity: 0 }, { offset: 1, opacity: 0 }], { duration: T, iterations: Infinity }));
+    });
+  });
+
   const build = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
-    if (run.off) return;
-    try { renderGrid(); } finally { built = true; resolve(); }
+    if (run.off) { resolve(); return; }
+    try { renderGrid(); } finally { resolve(); }
   })));
-
-  if (calm) {
-    // Still cube: the squares fade into the color.
-    setTimeout(() => build().then(() => {
-      tiles.forEach((t) => t.el.style.setProperty("--k", 100));
-      bar.style.transform = "scaleX(1)";
-      setTimeout(() => { if (!run.off) finish(); }, Math.max(700, 1000 - (performance.now() - t0)));
-    }), LD.buildAt);
-    return;
-  }
-
-  // A square travels to (a, b): one eased quarter (or half) turn.
-  const travel = (t, a, b) => {
-    t.moving = true;
-    const anim = keep(t.el.animate([{ transform: tf(t, t.a, t.b) }, { transform: tf(t, a, b) }],
-      { duration: LD.travel * (Math.abs(a - t.a) + Math.abs(b - t.b) > 90 ? 1.5 : 1), easing: LD.ease, fill: "forwards" }));
-    t.a = a; t.b = b;
-    anim.finished.then(() => {
-      t.moving = false;
-      t.el.style.transform = tf(t, a, b);
-      anim.cancel();
-      if (!a && !b) t.el.style.setProperty("--k", 85);
-    }).catch(() => {});
-    if (a || b) t.el.style.setProperty("--k", 40);
-    return anim.finished.catch(() => {});
-  };
-  const outside = () => tiles.filter((t) => (t.a || t.b) && !t.moving);
-  const inside = () => tiles.filter((t) => !t.a && !t.b && !t.moving);
-
-  // The final turn: from the sway's angle and speed now, one smooth curve
-  // (speed carried over, easing to a stop) to the front, with a soft pulse
-  // at its end.
-  const turnToFront = () => {
-    const u = ((sway.currentTime || 0) % LD.swayMs) / LD.swayMs;
-    const y0 = swayAt(u), v0 = LD.swayDeg * Math.cos(2 * Math.PI * u) * (2 * Math.PI / LD.swayMs);   // degrees per ms
-    const y1 = -14, dur = LD.turn, m0 = v0 * dur;
-    const frames = [];
-    for (let k = 0; k <= 24; k++) {
-      const s_ = k / 24, h00 = 2 * s_ ** 3 - 3 * s_ ** 2 + 1, h10 = s_ ** 3 - 2 * s_ ** 2 + s_, h01 = -2 * s_ ** 3 + 3 * s_ ** 2;
-      const y = h00 * y0 + h10 * m0 + h01 * y1, x = LD.tiltDeg + (-12 - LD.tiltDeg) * h01;
-      frames.push({ transform: `rotateX(${x}deg) rotateY(${y}deg)` });
-    }
-    spin.style.transform = frames[frames.length - 1].transform;
-    sway.cancel();
-    const turn = keep(spin.animate(frames, { duration: dur, easing: "linear" }));
-    const pulse = keep(cube.animate([{ transform: "scale(1)" }, { transform: "scale(1.07)" }, { transform: "scale(1)" }],
-      { duration: 300, delay: Math.max(0, dur - 220), easing: "ease-in-out" }));
-    // The grid fades in only once the cube is still, so its first paint
-    // never holds up a moving frame.
-    return Promise.all([turn.finished, pulse.finished]).catch(() => {});
-  };
-
   (async () => {
-    wait(LD.buildAt).then(() => { if (!run.off) build(); });
-    const minDone = wait(LD.minTime);
-    let minPassed = false;
-    minDone.then(() => { minPassed = true; });
-    for (;;) {
-      await wait(LD.beat);
-      if (run.off) return;
-      const ready = built && minPassed;
-      const out = outside();
-      // Every square on or coming to the front: the cube starts its turn
-      // while the last ones land.
-      if (ready && tiles.every((t) => !t.a && !t.b)) break;
-      if (out.length && (ready || out.length > 2)) {
-        // A square comes in.
-        travel(out[0], 0, 0);
-      } else if (!ready && inside().length) {
-        // Still building: a square goes back out to a side.
-        const t = inside()[Math.floor(Math.random() * inside().length)];
-        const [a, b] = sides[Math.floor(Math.random() * 4)];
-        travel(t, a, b);
-      }
-    }
+    await sleep(LD.buildAt);
     if (run.off) return;
-    bar.style.transform = "scaleX(1)";
-    tiles.forEach((t) => t.el.style.setProperty("--k", 100));
-    await turnToFront();
+    await build();
+    const left = LD.minTime - (performance.now() - t0);
+    if (left > 0) await sleep(left);
     if (run.off) return;
     // Cross-fade: the loader fades out while the grid fades in.
     document.body.classList.remove("grid-loading");
-    await keep(ld.animate([{ opacity: 1 }, { opacity: 0 }], { duration: LD.fade, easing: "ease-out", fill: "forwards" })).finished.catch(() => {});
-    if (!run.off) finish();
+    const fade = ld.animate([{ opacity: 1 }, { opacity: 0 }], { duration: calm ? 0 : LD.fade, easing: "ease-out", fill: "forwards" });
+    await fade.finished.catch(() => {});
+    fade.cancel();
+    if (run.off) return;
+    run.cancel();
+    ld.classList.add("hidden");
+    if (ldRun === run) ldRun = null;
   })();
 }
 
@@ -684,6 +608,7 @@ function viewQuery() {
     }
   }
   if (!view.compact) q.set("compact", "0");
+  if (view.camel3d) q.set("camel", "3d");
   return q.toString().replace(/%2C/gi, ",");
 }
 // A new history entry for a new place (sector, crop or fuel, run type); the
@@ -702,6 +627,7 @@ function applyQuery(q) {
     aggScen: null, picks: null, ssps: [], hl: "all", selected: null });
   if (q.has("compact")) view.compact = q.get("compact") !== "0";
   else { try { view.compact = localStorage.getItem("amel-compact") !== "0"; } catch (e) { view.compact = true; } }
+  view.camel3d = q.get("camel") === "3d";
   const sec = DATA.sectors[q.get("sector")];
   if (!sec) return;
   view.sector = q.get("sector");
@@ -1711,11 +1637,8 @@ function renderJobs() {
 
 /* ---------- camel ---------- */
 
-// The camel has 100 pieces per sector (camel/camel.svg), filled from the
-// bottom up. A sector fills with its share of projection files, pulses
-// while projections run, turns solid when they are all there, and gets a
-// fine texture when aggregation is complete too.
-// In CAMEL order: Coastal, Agriculture, Mortality, Energy, Labor.
+// The summary table's rows, in CAMEL order: Coastal, Agriculture,
+// Mortality, Energy, Labor.
 const CAMEL_SECTIONS = [
   { key: "coastal", label: "Coastal", part: "back and humps" },
   { key: "agriculture", label: "Agriculture", part: "hindquarters, back legs and tail" },
@@ -1737,31 +1660,329 @@ function ckRuns(sec) {
   const nested = Object.keys(sec.run_types).filter((k) => sec.run_types[k].parent === main);
   return nested.length ? [main, ...nested] : [];
 }
-let camelSvg = null;
-// The walking animation is paused for now; set to true to turn it back on.
-const CAMEL_WALK = false;
-
+// The camel is the CAMEL figure of @c1587s/cil-designs (pinned in the import
+// map in index.html; its geometry, model and textures load from the
+// package). It has twelve leaves of 100 cells and three stages per leaf,
+// with 0 <= extraction <= aggregation <= projection <= 100.
+//
+// Each leaf, by the package's leaf ID, and where its numbers come from: the
+// same row as in the tree (montecarlo for Mortality, Labor and each crop;
+// median and delta method for each energy fuel). The crop and fuel IDs
+// follow the package's own example mapping. wheat_combined has no leaf.
+// Coastal is not tracked and extraction is not tracked yet: both stay at 0.
+const CAMEL_LEAVES = [
+  { id: "coastal", sector: "coastal", label: "Coastal" },
+  { id: "crop-1", sector: "agriculture", model: "cassava", label: "Cassava" },
+  { id: "crop-2", sector: "agriculture", model: "corn", label: "Corn" },
+  { id: "crop-3", sector: "agriculture", model: "rice", label: "Rice" },
+  { id: "crop-4", sector: "agriculture", model: "sorghum", label: "Sorghum" },
+  { id: "crop-5", sector: "agriculture", model: "soy", label: "Soy" },
+  { id: "wheat-spring", sector: "agriculture", model: "wheat_spring", label: "Wheat spring" },
+  { id: "wheat-winter", sector: "agriculture", model: "wheat_winter", label: "Wheat winter" },
+  { id: "mortality", sector: "mortality", label: "Mortality" },
+  { id: "energy-a", sector: "energy", model: "electricity", label: "Electricity" },
+  { id: "energy-b", sector: "energy", model: "other_energy", label: "Other energy" },
+  { id: "labor", sector: "labor", label: "Labor" },
+];
+const CAMEL_UNTRACKED = new Set(["coastal"]);
+const camelWarned = new Set();
+// Each leaf's projection, aggregation and extraction, in percent.
+function camelValues() {
+  const out = {};
+  for (const leaf of CAMEL_LEAVES) {
+    const sec = DATA.sectors[leaf.sector];
+    if (!sec || CAMEL_UNTRACKED.has(leaf.id)) { out[leaf.id] = { projection: 0, aggregation: 0, extraction: 0 }; continue; }
+    const t = addUp(parentRuns(sec).map((k) => treeFiles(sec, k, leaf.model || null)));
+    const pct = (n, exp) => Math.min(100, Math.max(0, pctOf(n, exp)));
+    const projection = pct(t.p, t.pExp);
+    let aggregation = pct(t.a, t.aExp);
+    if (aggregation > projection) {
+      const key = `${DATA.generated_at}|${leaf.id}`;
+      if (!camelWarned.has(key)) {
+        camelWarned.add(key);
+        console.warn(`Camel, ${leaf.label}: aggregation ${fmtPctTable(aggregation)} is above projection ${fmtPctTable(projection)}; drawn at ${fmtPctTable(projection)}.`);
+      }
+      aggregation = projection;
+    }
+    out[leaf.id] = { projection, aggregation, extraction: 0 };
+  }
+  return out;
+}
+// The figure: 2D always, 3D (with three.js) loaded only when picked, both
+// on the same progress store. A 3D load still on its way when 2D is picked
+// again is dropped (token). camelReady settles once the package is loaded
+// (the grid loader waits for it).
+const camelFig = { mod: null, mod3d: null, manifest: null, store: null, fig2d: null, fig3d: null, token: 0, sig: "", legend: "",
+  motion: 0, frame: 0, turnFrame: 0, turning: false, playNow: null, introDone: false };
+let camelReadyDone;
+const camelReady = new Promise((resolve) => { camelReadyDone = resolve; });
+// In 3D the camel moves on its own, with every move the package has: a
+// short idle, then a move picked at random (never the same twice in a
+// row), each held for a random time in seconds; the package blends from
+// one to the next. Walking, looking, lowering the head and chewing come
+// most often, running and sitting less. Sitting is short: it sits down,
+// rests a few seconds and stands up again.
+//
+// While it walks or runs, the view turns slowly around it (the package's
+// auto rotate: about 90 s a full turn at 60 frames a second, eased in and
+// out by its damping), so it seems to walk in a circle. The turn may pass
+// the front or the tail, but never stops there: the walk or run goes on
+// until the view reaches the next side or three-quarter view, and stops
+// on it. The turn only goes one way, so that is the next view ahead. A
+// right-click that cuts a walk short lets the turn finish the same way.
+// Dragging the figure by hand leaves it where it is put. Motion never
+// changes progress. With reduced motion, or in a hidden tab, the figure
+// is paused and does not turn.
+const CAMEL_MOVES = [   // [move, weight, shortest, longest]
+  ["Walk", 3, 3, 6], ["Look", 3, 3, 7], ["LowerHead", 2, 3, 5], ["Chew", 2, 3, 6],
+  ["Run", 0.8, 2, 4], ["Sit", 0.8, 2, 4]];   // Sit: SitDown, SeatedIdle this long, StandUp
+const CAMEL_TURNING = new Set(["Walk", "Run"]);
+const CAMEL_REST = [2, 6];
+// Where the turn may stop, in degrees from the front, both sides: three
+// quarter, side, three quarter from behind. The auto rotate lowers the
+// angle, and its damping carries it about 0.86 degrees on once switched
+// off, so it is switched off that much early.
+const CAMEL_VIEWS = [45, 90, 135, 225, 270, 315];
+// The first time in 3D after the page loads, it starts seated, stands up
+// and turns its head toward the viewer, then the random sequence starts.
+// Look turns first toward the side the camera starts on and faces it about
+// 1.5 to 3 s into the clip, so it is cut there. In seconds.
+const CAMEL_INTRO = { seated: 1.2, look: 3.2 };
+const CAMEL_TURN = { dir: -1, coast: 0.86 };
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+// The view's angle from the camel's front, from the direction the camera
+// looks. The package returns the camera with the figure, though its
+// declarations do not list it, and has no other way to read the angle.
+function camelAngle(fig) {
+  const e = fig.camera.matrixWorld.elements;   // its third column points from the figure to the camera
+  return ((Math.atan2(e[10], -e[8]) * 180) / Math.PI + 360) % 360;
+}
+// How far the turn still has to go to the next view ahead.
+function camelToView(fig) {
+  const a = camelAngle(fig);
+  return Math.min(...CAMEL_VIEWS.map((v) => (((CAMEL_TURN.dir * (v - a)) % 360) + 360) % 360));
+}
+// A right-click plays a move at once (playNow), then the sequence goes on.
+function camelMotion(fig, intro) {
+  let last = null;
+  const alive = () => camelFig.fig3d === fig;
+  const ms = ([a, b]) => (a + (b - a) * Math.random()) * 1000;
+  const later = (step, time) => {
+    camelFig.motion = setTimeout(() => {
+      if (!alive()) return;
+      if (fig.getPaused()) later(step, 1000);   // waits, then goes on
+      else step();
+    }, time);
+  };
+  // Checks each frame until test() holds, then step().
+  const until = (test, step) => {
+    const check = () => {
+      if (!alive()) return;
+      if (!fig.getPaused() && test()) step();
+      else camelFig.frame = requestAnimationFrame(check);
+    };
+    check();
+  };
+  const atView = () => camelToView(fig) <= CAMEL_TURN.coast;
+  // The turn: on, or off once the next view is reached.
+  const turn = (on) => {
+    cancelAnimationFrame(camelFig.turnFrame);
+    if (on) {
+      camelFig.turning = true;
+      fig.setAutoRotate(!reduceMotion.matches);
+      return;
+    }
+    const check = () => {
+      if (!alive() || !camelFig.turning) return;
+      if (atView()) { camelFig.turning = false; fig.setAutoRotate(false); }
+      else camelFig.turnFrame = requestAnimationFrame(check);
+    };
+    check();
+  };
+  const move = () => {
+    const options = CAMEL_MOVES.filter(([a]) => a !== last);
+    let r = Math.random() * options.reduce((t, o) => t + o[1], 0);
+    const [name, , lo, hi] = options.find((o) => (r -= o[1]) < 0) || options[0];
+    last = name;
+    if (name === "Sit") { sit(ms([lo, hi])); return; }
+    const turning = CAMEL_TURNING.has(name);
+    turn(turning);
+    fig.setAnimation(name);
+    later(turning ? () => until(atView, rest) : rest, ms([lo, hi]));
+  };
+  const sit = (time) => {
+    turn(false);
+    fig.setAnimation("SitDown");   // ends in SeatedIdle
+    until(() => fig.getPosture() === "seated", () => later(() => {
+      fig.setAnimation("StandUp");   // ends in Idle
+      until(() => fig.getPosture() === "standing", rest);
+    }, time));
+  };
+  const rest = () => {
+    turn(false);
+    fig.setAnimation("Idle");
+    later(move, ms(CAMEL_REST));
+  };
+  camelFig.playNow = () => {
+    if (!alive() || fig.getPaused()) return;
+    clearTimeout(camelFig.motion);
+    cancelAnimationFrame(camelFig.frame);
+    move();
+  };
+  if (!intro) { later(move, ms(CAMEL_REST)); return; }
+  fig.seek("SeatedIdle", 0);   // seated at once; seek pauses the figure
+  fig.setPaused(document.hidden);
+  last = "Look";
+  later(() => {
+    fig.setAnimation("StandUp");   // ends in Idle
+    until(() => fig.getPosture() === "standing", () => {
+      fig.setAnimation("Look");
+      later(rest, CAMEL_INTRO.look * 1000);
+    });
+  }, CAMEL_INTRO.seated * 1000);
+}
 async function loadCamel() {
   try {
-    const r = await fetch("camel/camel.svg");
-    if (!r.ok) return;
-    const doc = new DOMParser().parseFromString(await r.text(), "image/svg+xml");
-    const svg = doc.documentElement;
-    if (svg.localName !== "svg" || doc.querySelector("parsererror")) return;
-    camelSvg = document.importNode(svg, true);
-    camelSvg.removeAttribute("width");
-    camelSvg.removeAttribute("height");
-    camelSvg.dataset.grid = "visible";
-    // One texture per sector: the sector color with fine light stripes.
-    const ns = "http://www.w3.org/2000/svg";
-    const defs = document.createElementNS(ns, "defs");
-    defs.innerHTML = CAMEL_SECTIONS.map((s) =>
-      `<pattern id="camel-tex-${s.key}" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
-      `<rect width="7" height="7" class="tex-bg tex-${s.key}"/><line x1="0" y1="0" x2="0" y2="7" class="tex-line"/></pattern>`).join("");
-    camelSvg.insertBefore(defs, camelSvg.firstChild);
-    $("camel").replaceChildren(camelSvg);
+    const mod = await import("@c1587s/cil-designs/camel");
+    const manifest = await mod.loadCamelManifest();
+    const store = mod.createCamelStore({ activeLeafIds: CAMEL_LEAVES.filter((l) => !CAMEL_UNTRACKED.has(l.id)).map((l) => l.id) });
+    const box2d = document.createElement("div"), box3d = document.createElement("div");
+    box2d.className = "camel-2d";
+    box3d.className = "camel-3d pending";
+    $("camel").replaceChildren(box2d, box3d);
+    const labels = Object.fromEntries(CAMEL_LEAVES.map((l) => [l.id, l.label]));
+    const fig2d = await mod.loadCamel2D(box2d, { store, manifest, labels, colors: camelColors() });
+    noHoverText(fig2d.element);
+    Object.assign(camelFig, { mod, manifest, store, fig2d });
     renderCamel();
-  } catch (e) { /* the page works without the camel */ }
+  } catch (e) { console.warn("The camel could not load.", e); /* the page works without it */ }
+  camelReadyDone();
+}
+// The camel's colors that are not progress. 2D: the unfilled parts take
+// the page's soft neutral and the outline the text color. 3D: the unfilled
+// surface and its color for each theme; the figure is lit, so it shows
+// close to that color, not equal to it.
+const CAMEL_3D = { surface: "skin", blank: { light: "#f0ece1", dark: "#45494a" } };
+function camelColors() {
+  const s = getComputedStyle(document.documentElement);
+  return { blank: s.getPropertyValue("--camel-blank").trim(), outline: s.getPropertyValue("--tx").trim() };
+}
+// After a theme switch: the same figures in the new colors, in place.
+function recolorCamel() {
+  const c = camelColors();
+  if (camelFig.fig2d) camelFig.fig2d.setColors(c);
+  if (ldCamel) { ldCamel.fig.setColors(c); ldCamel.ink.setAttribute("fill", c.outline); }
+  if (camelFig.fig3d) camelFig.fig3d.setColors({ blank: CAMEL_3D.blank[themeNow()] });
+}
+// The package's SVG has a <title>, which browsers show on hover; the camel
+// has no hover text, so it goes, and the figure keeps its description.
+function noHoverText(svg) {
+  const t = svg.querySelector(":scope > title");
+  if (!t) return;
+  svg.setAttribute("aria-label", t.textContent);
+  svg.setAttribute("aria-labelledby", svg.getAttribute("aria-labelledby").replace(t.id, "").trim());
+  t.remove();
+}
+// Puts the values in the store, and shows 2D or 3D as the view asks.
+function syncCamel() {
+  const values = camelValues();
+  for (const b of document.querySelectorAll("#camel-view [data-camel]")) b.setAttribute("aria-pressed", String((b.dataset.camel === "3d") === view.camel3d));
+  camelFavicon();
+  if (!camelFig.store) return;
+  // The figure takes whole percents (cells). 0 only when there are no files
+  // and 100 only when all are there: 99.67% shows 99 cells, 0.2% one.
+  const cells = (p) => (p <= 0 ? 0 : p >= 100 ? 100 : Math.min(99, Math.max(1, Math.round(p))));
+  const drawn = Object.fromEntries(Object.entries(values).map(([id, v]) =>
+    [id, { projection: cells(v.projection), aggregation: cells(v.aggregation), extraction: cells(v.extraction) }]));
+  const sig = JSON.stringify(drawn);
+  if (sig !== camelFig.sig) { camelFig.store.setState(drawn); camelFig.sig = sig; }
+  if (view.camel3d && !camelFig.fig3d && !camelFig.loading) mountCamel3D();
+  else if (!view.camel3d && (camelFig.fig3d || camelFig.loading)) unmountCamel3D();
+  renderCamelLegend();
+}
+// The tab icon follows the view: the page's 2D camel, or the package's 3D
+// camel icon (found next to its other files) once the package has loaded.
+function camelFavicon() {
+  const three = view.camel3d && camelFig.mod;
+  const href = three ? new URL("../../favicon/favicon-3d-64.png", camelFig.mod.camelManifestURL).href : "camel/favicon.svg";
+  const old = $("favicon");
+  if (old.getAttribute("href") === href) return;
+  const link = old.cloneNode();   // a new element, which every browser picks up
+  link.type = three ? "image/png" : "image/svg+xml";
+  link.setAttribute("href", href);
+  old.replaceWith(link);
+}
+// The legend: Aggregation and Extraction, each one cube of the figure's own
+// pattern (read from the 2D figure, so it always matches), dark for
+// aggregation and green for extraction, light and see-through, with no
+// square behind. The same in 2D and 3D, which draw the stages alike.
+// A very thin outline around the 3D silhouette; off for now.
+const CAMEL_3D_OUTLINE = false;
+function renderCamelLegend() {
+  const svg = camelFig.fig2d && camelFig.fig2d.element;
+  const mode = svg ? "lattice" : "";
+  if (mode === camelFig.legend) return;
+  camelFig.legend = mode;
+  if (!svg) { $("camel-legend").replaceChildren(); return; }
+  const cube = (stage) => {
+    const p = svg.querySelector(`pattern[id$="-${stage}"]`), path = p.querySelector("path");
+    return `<defs><pattern id="cl-${stage}" width="${p.getAttribute("width")}" height="${p.getAttribute("height")}" patternUnits="userSpaceOnUse">` +
+      `<path d="${path.getAttribute("d")}" fill="none" stroke="${path.getAttribute("stroke")}" stroke-width="${path.getAttribute("stroke-width") * 2}" stroke-linejoin="round"/></pattern></defs>` +
+      `<rect x="-3" y="-1" width="30" height="30" fill="url(#cl-${stage})"/>`;
+  };
+  const items = [
+    ["aggregation", "Aggregation", "Aggregation: a dark pattern over the part"],
+    ["extraction", "Extraction", "Extraction: the pattern turns green (not tracked yet)"],
+  ];
+  $("camel-legend").innerHTML = items.map(([stage, label, title]) =>
+    `<span class="cl-item" title="${title}"><svg class="cl-sw cl-${stage}" viewBox="-3 -1 30 30" aria-hidden="true">${cube(stage)}</svg>${label}</span>`).join("");
+}
+async function mountCamel3D() {
+  const token = ++camelFig.token, box = $("camel").querySelector(".camel-3d");
+  camelFig.loading = true;
+  $("camel-view").classList.add("loading");
+  try {
+    camelFig.mod3d ??= await import("@c1587s/cil-designs/camel/3d");
+    if (token !== camelFig.token) return;
+    // The wheel scrolls the page (dragging still turns the figure), and the
+    // figure is fitted to its small box.
+    const fig = await camelFig.mod3d.loadCamel3D(box, { store: camelFig.store, manifest: camelFig.manifest,
+      colors: { blank: CAMEL_3D.blank[themeNow()] }, blankSurface: CAMEL_3D.surface,
+      interaction: { zoom: false }, fit: { padding: 0 } });
+    fig.setPaused(document.hidden || reduceMotion.matches);
+    if (token !== camelFig.token) { fig.destroy(); return; }
+    box.classList.toggle("outline", CAMEL_3D_OUTLINE);
+    camelFig.fig3d = fig;
+    // The intro plays once per page load; with reduced motion the camel
+    // stands still instead.
+    const intro = !camelFig.introDone && !reduceMotion.matches;
+    camelFig.introDone = true;
+    camelMotion(fig, intro);
+    box.classList.remove("pending");
+    $("camel").querySelector(".camel-2d").hidden = true;
+  } catch (e) {
+    if (token !== camelFig.token) return;
+    console.warn("The 3D camel could not load; showing 2D.", e);
+    view.camel3d = false;
+    syncUrl("replace");
+  } finally {
+    if (token === camelFig.token) { camelFig.loading = false; $("camel-view").classList.remove("loading"); syncCamel(); }
+  }
+}
+function unmountCamel3D() {
+  camelFig.token++;
+  camelFig.loading = false;
+  $("camel-view").classList.remove("loading");
+  clearTimeout(camelFig.motion);
+  cancelAnimationFrame(camelFig.frame);
+  cancelAnimationFrame(camelFig.turnFrame);
+  camelFig.turning = false;
+  camelFig.playNow = null;   // lets the old figure go
+  if (camelFig.fig3d) { camelFig.fig3d.destroy(); camelFig.fig3d = null; }
+  const box = $("camel").querySelector(".camel-3d");
+  if (box) box.classList.add("pending");
+  const box2d = $("camel").querySelector(".camel-2d");
+  if (box2d) box2d.hidden = false;
 }
 
 function renderCamel() {
@@ -1773,23 +1994,7 @@ function renderCamel() {
     return { ...s, tracked: true, proj, agg, files: f, projDone: proj >= 100, allDone: proj >= 100 && agg >= 100,
       running: sectorRunning(sec) };
   });
-
-  if (camelSvg) {
-    for (const s of prog) {
-      const n = !s.tracked ? 0 : s.projDone ? 100 : Math.max(s.proj > 0 ? 1 : 0, Math.min(99, Math.round(s.proj)));
-      camelSvg.querySelectorAll(`.cell[data-sector="${s.key}"]`).forEach((c) => {
-        c.dataset.filled = String(Number(c.dataset.index) <= n);
-      });
-      camelSvg.classList.toggle(`pulse-${s.key}`, s.tracked && s.running && !s.projDone);
-      camelSvg.classList.toggle(`solid-${s.key}`, s.tracked && s.projDone);
-      camelSvg.classList.toggle(`tex-${s.key}`, s.tracked && s.allDone);
-    }
-    // Walk only while projection files are being written (the grid's "writing" signal).
-    camelSvg.dataset.motion = CAMEL_WALK && Object.values(DATA.sectors).some(sectorRunning) ? "walk" : "none";
-    const desc = camelSvg.querySelector("desc");
-    if (desc) desc.textContent = "Two-humped camel. " + prog.map((s) => s.tracked ?
-      `${s.label}: ${fmtPctShort(s.proj)} of projection files` : `${s.label}: not tracked (yet)`).join("; ") + ".";
-  }
+  syncCamel();
 
   // A compact table: one row per sector in camel order, its mark on the left
   // (softly pulsing in its color while the sector is being computed, still
@@ -1930,11 +2135,13 @@ function suShort(low, high) {
 
 // The camel goes back to the home view, as the page opens with no
 // parameters: nothing picked, default filters, every summary row closed.
-// It keeps source=mock and the theme, and adds a history entry.
+// It keeps source=mock, the 2D or 3D camel and the theme, and adds a
+// history entry.
 function goHome() {
   closeDetail();
   const q = new URLSearchParams();
   if (params.get("source") === "mock") q.set("source", "mock");
+  if (view.camel3d) q.set("camel", "3d");
   applyQuery(q);
   ckOpen.clear();
   $("compact-view").checked = view.compact;
@@ -1943,7 +2150,39 @@ function goHome() {
 }
 
 function setup() {
-  $("camel").addEventListener("click", goHome);
+  // A click on the camel goes home; a drag that turns the 3D figure does not.
+  let downAt = null;
+  $("camel").addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
+  $("camel").addEventListener("click", (e) => {
+    if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
+    goHome();
+  });
+  // A right-click on the 3D camel plays a move at once, not the browser menu.
+  $("camel").addEventListener("contextmenu", (e) => {
+    if (!camelFig.fig3d) return;
+    e.preventDefault();
+    if (camelFig.playNow) camelFig.playNow();
+  });
+  $("camel-view").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-camel]");
+    if (!b || (b.dataset.camel === "3d") === view.camel3d) return;
+    view.camel3d = b.dataset.camel === "3d";
+    syncCamel();
+    syncUrl("replace");
+  });
+  // Leaving the page frees the 3D figure; coming back to it (back and
+  // forward cache) builds it again.
+  addEventListener("pagehide", () => { if (camelFig.fig3d || camelFig.loading) unmountCamel3D(); });
+  // A hidden tab stops the 3D motion; it goes on when the tab is back.
+  document.addEventListener("visibilitychange", () => {
+    if (camelFig.fig3d) camelFig.fig3d.setPaused(document.hidden || reduceMotion.matches);
+  });
+  // Reduced motion turned on: the view stops turning too, and goes on
+  // turning (to the next view) when it is turned off again.
+  reduceMotion.addEventListener("change", () => {
+    if (camelFig.fig3d) camelFig.fig3d.setAutoRotate(camelFig.turning && !reduceMotion.matches);
+  });
+  addEventListener("pageshow", (e) => { if (e.persisted) syncCamel(); });
   $("camel-key").addEventListener("click", (e) => {
     const all = e.target.closest(".ck-all");
     if (all) {
@@ -2173,12 +2412,14 @@ function setupTheme() {
       document.documentElement.dataset.theme = next;
       try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* storage may be blocked */ }
       showThemeButton();
+      recolorCamel();
     }, recolorSquares, next);
   });
   // With no saved choice the page follows the system as it changes.
   systemDark.addEventListener("change", () => {
     if (document.documentElement.dataset.theme) return;
     showThemeButton();
+    recolorCamel();
     repaint();
   });
 }
@@ -2254,7 +2495,7 @@ async function boot() {
   const every = DATA.scan_interval_hours === 1 ? "every hour" : `every ${DATA.scan_interval_hours} h`;
   $("subtitle").textContent = `Last scan: ${fmtWhen(DATA.generated_at, true)}, ${every}` +
     (localCopy ? " (local copy)" : "");
-  if (DATA.source === "mock") $("mock-badge").classList.remove("hidden");
+  if (DATA.source === "mock") { $("mock-badge").classList.remove("hidden"); $("camel-demo").classList.remove("hidden"); }
   if (ageH > 2 * DATA.scan_interval_hours) {
     $("stale-banner").textContent = `The last scan is ${ageH.toFixed(1)} hours old. The scheduled job may have stopped.`;
     $("stale-banner").classList.remove("hidden");
