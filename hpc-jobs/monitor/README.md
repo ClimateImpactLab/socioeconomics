@@ -31,7 +31,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     indented row per crop in the manifest, each with its montecarlo
     percents, counts and size (gray while nothing has started); collapsed,
     it shows the montecarlo of all crops, as the tree does, and its Size is
-    that montecarlo too. The open or closed state is not kept in the URL;
+    that montecarlo too. The open or closed state is not kept in the URL.
+    Two small chevrons in the header, above the arrows, expand or collapse
+    all such rows at once; they show the next action ("Expand all" while
+    any row is closed, else "Collapse all"), and each row's ">" still
+    works on its own;
   - Median and Montecarlo: a line symbol per run type (the Single column is
     hidden for now; `CK_SHOW_SINGLE` in app.js brings it back), a check when
     its projection is complete, an x when it is not (started or not), a
@@ -99,9 +103,9 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   go through them); filter changes replace the current one. A value that
   is missing or not in the data falls back to that part's default (no run
   type, the first crop or fuel with files for the run, every badge on,
-  All, the main scenario) and the rest is kept. A "Copy link" button next
-  to the view title copies the URL and says "Copied" for a moment. The page
-  loads the data once; a reload brings the latest scan in the same view.
+  All, the main scenario) and the rest is kept. To share a view, copy the
+  link from the browser. The page loads the data once; a reload brings the
+  latest scan in the same view.
 - An info bar with the path of the clicked cell, and a detail panel that
   lists the cell's files grouped into Projections, Aggregation (levels and
   aggregated) and Costs, each with a small dot, the file size and the date

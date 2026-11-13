@@ -632,13 +632,6 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 /* Not started: gray. A crop or fuel still opens its run types. */
 .tnode.tidle, .tnode.off:not(.tsector) { opacity: 0.6; }
 .tree-path { font-size: 12px; font-weight: 600; color: var(--tx); margin: 0 0 8px; min-height: 16px; }
-/* The view title and its Copy link button. */
-.tree-path-row { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; min-height: 16px; }
-.tree-path-row .tree-path { margin: 0; }
-.copy-link { font: inherit; font-size: 10px; padding: 2px 8px; border: 0.5px solid var(--bd2); border-radius: 999px;
-  background: var(--bg); color: var(--tx2); cursor: pointer; white-space: nowrap; }
-.copy-link:hover { color: var(--tx); border-color: var(--tx3); }
-.copy-link.done { color: var(--st-done); border-color: var(--st-done); }
 @media (max-width: 1100px) { .tree-layout { grid-template-columns: 300px minmax(0, 1fr); } }
 /* Phones, held upright or sideways: the tree folds into a menu at the top. */
 @media (max-width: 600px), (max-height: 500px) {
@@ -665,6 +658,10 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
   font: inherit; font-size: 9px; color: var(--tx3); cursor: pointer; text-align: left; }
 .ck-tg:hover { color: var(--tx2); }
 span.ck-tg { cursor: default; }
+/* Expand or collapse all: two small chevrons in the same muted gray. */
+.ck-all { display: inline-flex; padding: 0; border: 0; background: none; color: var(--tx3); cursor: pointer; vertical-align: middle; }
+.ck-all:hover { color: var(--tx2); }
+.ck-all svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .ck-table tr.ck-sub td.ck-name { padding-left: 24px; font-weight: 400; color: var(--tx2); }
 /* A sub-row with nothing started yet: gray. */
 .ck-table tr.ck-idle td, .ck-table tr.ck-idle .ck-pct, .ck-table tr.ck-idle td.ck-name { color: var(--tx3); }

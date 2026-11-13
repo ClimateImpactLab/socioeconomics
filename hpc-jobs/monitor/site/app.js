@@ -553,8 +553,7 @@ function buildTreeLayout() {
   layout.className = "tree-layout";
   layout.innerHTML = `<div class="tree-side" id="tree-side"><details class="tree-menu" id="tree-menu" open>
     <summary id="tree-summary">Menu</summary><nav class="tree" id="tree" aria-label="Sectors and runs"></nav></details></div>
-    <div class="tree-main" id="tree-main"><div class="tree-path-row"><div class="tree-path" id="tree-path"></div>` +
-    `<button class="copy-link" id="copy-link" type="button" title="Copy a link to this view">Copy link</button></div></div>`;
+    <div class="tree-main" id="tree-main"><div class="tree-path" id="tree-path"></div></div>`;
   const cards = $("cards");
   cards.parentNode.insertBefore(layout, cards);
   const main = $("tree-main");
@@ -589,7 +588,7 @@ function buildTreeLayout() {
   const note = document.createElement("div");
   note.className = "main-note";
   note.id = "main-note";
-  $("tree-path").parentElement.after(note);
+  $("tree-path").after(note);
   $("tree-menu").open = !PHONE.matches;
   PHONE.addEventListener("change", () => { $("tree-menu").open = !PHONE.matches; });
   $("tree").addEventListener("click", (e) => {
@@ -1845,7 +1844,14 @@ function renderCamel() {
   const a = DATA.account;
   const totInfo = `<span class="ck-tot-info">${infoPop("About the total", "Montecarlo only. Singles and median runs are not included.")}</span>`;
   const avail = a.allocation_status === "ok" && a.balance_su != null ? ` <span class="ck-n">of ${fmtN(a.balance_su)} available</span>` : "";
-  $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th></th><th>Projection</th>
+  // Expand or collapse all, in the header above the ">" arrows: it shows the
+  // next action, expand while any of those rows is closed.
+  const openable = prog.filter((s) => s.tracked && ckSubs(DATA.sectors[s.key]).subs.length).map((s) => s.key);
+  const next = openable.some((k) => !ckOpen.has(k)) ? "expand" : "collapse";
+  const allBtn = !openable.length ? "" : `<button class="ck-all" type="button" data-next="${next}" data-keys="${openable.join(",")}" ` +
+    `title="${next === "expand" ? "Expand all" : "Collapse all"}" aria-label="${next === "expand" ? "Expand all" : "Collapse all"}">` +
+    `<svg viewBox="0 0 10 10" aria-hidden="true"><path d="${next === "expand" ? "M2.5 2l2.5 2.5L7.5 2M2.5 5.5L5 8l2.5-2.5" : "M2.5 4.5L5 2l2.5 2.5M2.5 8L5 5.5 7.5 8"}"/></svg></button>`;
+  $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th>${allBtn}</th><th>Projection</th>
       <th>Aggregation${mainMark()}</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th>${cols.map((k) => `<th class="ck-sym">${k.charAt(0).toUpperCase() + k.slice(1)}</th>`).join("")}
       <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
     <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="${cols.length}"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
@@ -1923,6 +1929,14 @@ function suShort(low, high) {
 
 function setup() {
   $("camel-key").addEventListener("click", (e) => {
+    const all = e.target.closest(".ck-all");
+    if (all) {
+      // Expand every row with a ">", or collapse them all.
+      const keys = all.dataset.keys.split(",");
+      if (all.dataset.next === "expand") keys.forEach((k) => ckOpen.add(k)); else ckOpen.clear();
+      renderCamel();
+      return;
+    }
     const b = e.target.closest(".ck-tg[data-sec]");
     if (!b) return;
     if (ckOpen.has(b.dataset.sec)) ckOpen.delete(b.dataset.sec); else ckOpen.add(b.dataset.sec);
@@ -1964,24 +1978,6 @@ function setup() {
     applyQuery(new URLSearchParams(location.search));
     $("compact-view").checked = view.compact;
     renderAll();
-  });
-  // Copy link: the current URL, with a short confirmation.
-  $("copy-link").addEventListener("click", async () => {
-    const b = $("copy-link"), url = location.href;
-    let ok = false;
-    try { await navigator.clipboard.writeText(url); ok = true; } catch (e) {
-      const t = document.createElement("textarea");
-      t.value = url;
-      t.style.cssText = "position:fixed;opacity:0";
-      document.body.appendChild(t);
-      t.select();
-      try { ok = document.execCommand("copy"); } catch (e2) { /* nothing to copy with */ }
-      t.remove();
-    }
-    b.textContent = ok ? "Copied" : "Copy failed";
-    b.classList.toggle("done", ok);
-    clearTimeout(b.dataset.t);
-    b.dataset.t = setTimeout(() => { b.textContent = "Copy link"; b.classList.remove("done"); }, 1500);
   });
   $("pa-info-btn").addEventListener("click", () => {
     const open = $("pa-info").classList.toggle("hidden") === false;
