@@ -1798,14 +1798,14 @@ function renderCamel() {
   const cell = (n, exp) => exp
     ? `<span class="ck-pct">${fmtPctTable(pctOf(n, exp))}</span> <span class="ck-n">(${fmtN(n)}/${fmtN(exp)})</span>` : "";
   const cols = ckRunCols();
-  const toggle = (key, runs) => !runs.length ? `<span class="ck-tg"></span>`
-    : `<button class="ck-tg" data-sec="${key}" aria-expanded="${ckOpen.has(key)}" title="${ckOpen.has(key) ? "Hide" : "Show"} ${esc(runs.map((k) => runLabel(DATA.sectors[key], k)).join(" and "))}">${ckOpen.has(key) ? "v" : "&gt;"}</button>`;
+  const toggle = (key, subs, what) => !subs.length ? `<span class="ck-tg"></span>`
+    : `<button class="ck-tg" data-sec="${key}" aria-expanded="${ckOpen.has(key)}" title="${ckOpen.has(key) ? "Hide" : "Show"} ${esc(what)}">${ckOpen.has(key) ? "v" : "&gt;"}</button>`;
   const totals = { low: 0, high: 0, bytes: 0 };
   const rows = prog.map((s) => {
     const sec = DATA.sectors[s.key];
     const on = s.tracked && sectorActive(sec);
-    const sub = s.tracked ? ckRuns(sec) : [];
-    const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">${toggle(s.key, sub)}` +
+    const { subs, what, sizeNote } = s.tracked ? ckSubs(sec) : { subs: [], what: "" };
+    const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">${toggle(s.key, subs, what)}` +
       `<span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
     if (!s.tracked) return `<tr>${mark}<td colspan="${4 + cols.length}" class="ck-none">not tracked (yet)</td></tr>`;
     const runs = cols.map((k) => {
@@ -1821,23 +1821,23 @@ function renderCamel() {
     }).join("");
     const su = sectorSUs(sec);
     if (su) { totals.low += su.low; totals.high += su.high; }
-    // Size: all run types, or for a sector with sub-rows (energy) only those
-    // runs, so it matches them.
-    const subZ = sub.map((k) => sec.run_types[k].sizes).filter(Boolean);
-    const z = sub.length ? (subZ.length ? subZ.reduce((t, x) => [t[0] + x.total[0], t[1] + x.total[1]], [0, 0]) : null) : sectorSize(sec);
+    // Size: all run types, or for a sector with sub-rows (energy, agriculture)
+    // those rows added up, so it matches them.
+    const subZ = subs.map((x) => x.z).filter(Boolean);
+    const z = subs.length ? (subZ.length ? subZ.reduce((t, x) => [t[0] + x[0], t[1] + x[1]], [0, 0]) : null) : sectorSize(sec);
     if (z) totals.bytes += z[0] + z[1];
-    const size = z ? `<td class="ck-size" title="${esc(`projection ${fmtBytes(z[0])}, aggregation ${fmtBytes(z[1])}, ${sub.length ? sub.map((k) => runLabel(sec, k)).join(" and ") : "all run types"}`)}">${fmtBytes(z[0] + z[1])}</td>`
+    const size = z ? `<td class="ck-size" title="${esc(`projection ${fmtBytes(z[0])}, aggregation ${fmtBytes(z[1])}, ${subs.length ? sizeNote || what : "all run types"}`)}">${fmtBytes(z[0] + z[1])}</td>`
       : `<td class="ck-size"><span class="ck-n">no data</span></td>`;
-    // A sector with nested runs adds them up when collapsed; expanded, one
-    // indented sub-row per run below it, with its own numbers.
-    const fs = sub.length ? sub.map((k) => filesOf(sec, sec.run_types[k])) : [s.files];
+    // A sector with sub-rows adds them up when collapsed; expanded, one
+    // indented sub-row each below it, with its own numbers, gray while
+    // nothing has started.
+    const fs = subs.length ? subs.map((x) => x.f) : [s.files];
     const sum = (key) => fs.reduce((t, f) => t + f[key], 0);
     let html = `<tr>${mark}<td>${cell(sum("proj"), sum("projExp"))}</td><td>${cell(sum("agg"), sum("aggExp"))}</td>${size}${runs}` +
       `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
-    if (ckOpen.has(s.key)) sub.forEach((k, i) => {
-      const z = sec.run_types[k].sizes;
-      html += `<tr class="ck-sub"><td class="ck-name">${esc(runLabel(sec, k))}</td><td>${cell(fs[i].proj, fs[i].projExp)}</td>` +
-        `<td>${cell(fs[i].agg, fs[i].aggExp)}</td><td class="ck-size">${z ? fmtBytes(z.total[0] + z.total[1]) : ""}</td>` +
+    if (ckOpen.has(s.key)) subs.forEach((x) => {
+      html += `<tr class="ck-sub${x.started ? "" : " ck-idle"}"><td class="ck-name">${esc(x.label)}</td><td>${cell(x.f.proj, x.f.projExp)}</td>` +
+        `<td>${cell(x.f.agg, x.f.aggExp)}</td><td class="ck-size">${x.z ? fmtBytes(x.z[0] + x.z[1]) : ""}</td>` +
         `<td colspan="${cols.length + 1}"></td></tr>`;
     });
     return html;
@@ -1852,6 +1852,27 @@ function renderCamel() {
     </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${totInfo}${avail}
     <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
     <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median and delta method for energy).</div>`;
+}
+
+// The sub-rows of a sector in the summary table: energy's median and delta
+// method, or one per crop of a montecarlo run with several sub-models
+// (agriculture), each with its files, sizes and whether it has started.
+function ckSubs(sec) {
+  const runs = ckRuns(sec);
+  if (runs.length) {
+    return { what: runs.map((k) => runLabel(sec, k)).join(" and "), subs: runs.map((k) => {
+      const rt = sec.run_types[k];
+      return { label: runLabel(sec, k), f: filesOf(sec, rt), z: runSize(rt), started: rt.units.length > 0 };
+    }) };
+  }
+  const rt = sec.run_types.montecarlo;
+  if (!rt || rt.dims.models.length < 2) return { subs: [], what: "" };
+  const per = rt.counts.total / rt.dims.models.length;
+  return { what: "each crop", sizeNote: "montecarlo of all crops", subs: rt.dims.models.map((m) => {
+    const units = rt.units.filter((u) => u.model === m);
+    const n = paFiles(sec, rt, units, per, [m], null);
+    return { label: m, f: { proj: n.p, projExp: n.pExp, agg: n.a, aggExp: n.aExp }, z: runSize(rt, m), started: units.length > 0 };
+  }) };
 }
 
 // A run type's name as the page shows it ("delta method").

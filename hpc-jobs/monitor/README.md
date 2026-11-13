@@ -27,7 +27,11 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
     whole ("98.31%"). Energy adds up median and the delta method; a small
     ">" on its left (collapsed by default) opens one indented row for each,
     with its own percents, counts and size. Its Size is those two runs too,
-    so it matches its rows;
+    so it matches its rows. Agriculture has the same ">": it opens one
+    indented row per crop in the manifest, each with its montecarlo
+    percents, counts and size (gray while nothing has started); collapsed,
+    it shows the montecarlo of all crops, as the tree does, and its Size is
+    that montecarlo too. The open or closed state is not kept in the URL;
   - Median and Montecarlo: a line symbol per run type (the Single column is
     hidden for now; `CK_SHOW_SINGLE` in app.js brings it back), a check when
     its projection is complete, an x when it is not (started or not), a
@@ -163,7 +167,8 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   headers show the same, with the counts: "P 91% (6,970/7,680, 313.5 GB)";
   in narrow headers the counts and sizes are in the tooltip. The table
   next to the camel has a Size column: each sector's disk space,
-  projection plus aggregation over all its run types, and the total of
+  projection plus aggregation over all its run types (energy and
+  agriculture: the runs of their sub-rows), and the total of
   all sectors in the Total row (on phones, on the total line under the
   table). Only expected files count; with another aggregation scenario
   picked, A is that scenario's files. The collector adds the sizes up

@@ -666,6 +666,8 @@ body.no-run #cards, body.no-run .tab-note { display: none !important; }
 .ck-tg:hover { color: var(--tx2); }
 span.ck-tg { cursor: default; }
 .ck-table tr.ck-sub td.ck-name { padding-left: 24px; font-weight: 400; color: var(--tx2); }
+/* A sub-row with nothing started yet: gray. */
+.ck-table tr.ck-idle td, .ck-table tr.ck-idle .ck-pct, .ck-table tr.ck-idle td.ck-name { color: var(--tx3); }
 .ck-table .ck-pct { font-family: var(--mono); color: var(--tx); }
 .ck-table .ck-n { font-family: var(--mono); color: var(--tx3); font-size: 9px; }
 .ck-table td.ck-none { color: var(--tx3); }
