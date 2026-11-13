@@ -1717,7 +1717,7 @@ function camelValues() {
 // once the package is loaded (the grid loader waits for it).
 const camelFig = { mod: null, mod3d: null, manifest: null, store: null, fig2d: null, fig3d: null, token: 0, sig: "", legend: "",
   motion: 0, frame: 0, turnFrame: 0, turning: false, playNow: null, introDone: false,
-  run: null, shown: false, build: null, opening: false };
+  run: null, shown: false, build: null, opening: false, peek: null };
 let camelReadyDone;
 const camelReady = new Promise((resolve) => { camelReadyDone = resolve; });
 // In 3D the camel moves on its own, with every move the package has: a
@@ -1920,8 +1920,11 @@ function syncCamel() {
   // The figure takes whole percents (cells). 0 only when there are no files
   // and 100 only when all are there: 99.67% shows 99 cells, 0.2% one.
   const cells = (p) => (p <= 0 ? 0 : p >= 100 ? 100 : Math.min(99, Math.max(1, Math.round(p))));
-  const drawn = Object.fromEntries(Object.entries(values).map(([id, v]) =>
-    [id, { projection: cells(v.projection), aggregation: cells(v.aggregation), extraction: cells(v.extraction) }]));
+  // While a preview button is held, every part is drawn finished or empty.
+  const peek = { done: 100, none: 0 }[camelFig.peek];
+  const drawn = Object.fromEntries(Object.entries(values).map(([id, v]) => [id, peek !== undefined
+    ? { projection: peek, aggregation: peek, extraction: peek }
+    : { projection: cells(v.projection), aggregation: cells(v.aggregation), extraction: cells(v.extraction) }]));
   const sig = JSON.stringify(drawn);
   if (sig !== camelFig.sig) { camelFig.store.setState(drawn); camelFig.sig = sig; }
   if (view.camel3d) openCamel3D();
@@ -2197,7 +2200,52 @@ function goHome() {
   syncUrl("push");
 }
 
+// The two preview buttons above the camel work like a momentary switch:
+// while one is held (mouse, touch, or Space or Enter), the camel in view
+// shows every part finished (lime) or with nothing done (cyan), through
+// the same store as the real values. Letting go in any way (release,
+// leaving the button, a cancelled touch, the window or tab losing focus)
+// brings back the real values from the latest data at once. Nothing else
+// changes: not the URL, not the moves.
+function setupCamelPeek() {
+  let held = null;
+  const hold = (b) => {
+    if (held === b) return;
+    if (held) held.removeAttribute("data-held");
+    held = b;
+    b.setAttribute("data-held", "");
+    camelFig.peek = b.dataset.peek;
+    syncCamel();
+  };
+  const release = (b) => {
+    if (!held || (b && b !== held)) return;
+    held.removeAttribute("data-held");
+    held = null;
+    camelFig.peek = null;
+    syncCamel();
+  };
+  const keys = new Set([" ", "Enter"]);
+  for (const b of $("camel-peek").querySelectorAll("[data-peek]")) {
+    b.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();   // no text selection or touch menu
+      hold(b);
+    });
+    for (const type of ["pointerup", "pointerleave", "pointercancel", "blur"]) b.addEventListener(type, () => release(b));
+    b.addEventListener("keydown", (e) => {
+      if (!keys.has(e.key)) return;
+      e.preventDefault();
+      hold(b);
+    });
+    b.addEventListener("keyup", (e) => { if (keys.has(e.key)) release(b); });
+  }
+  $("camel-peek").addEventListener("contextmenu", (e) => e.preventDefault());
+  addEventListener("blur", () => release());
+  document.addEventListener("visibilitychange", () => { if (document.hidden) release(); });
+}
+
 function setup() {
+  setupCamelPeek();
   // A click on the camel goes home; a drag that turns the 3D figure does not.
   let downAt = null;
   $("camel").addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });

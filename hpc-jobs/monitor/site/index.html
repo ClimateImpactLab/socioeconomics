@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <title>CIL | Projections - New Socioeconomics</title>
 <link rel="icon" id="favicon" type="image/svg+xml" href="camel/favicon.svg">
-<link rel="stylesheet" href="style.css?v=202611141200">
+<link rel="stylesheet" href="style.css?v=202611141630">
 <!-- The camel figure and three.js, pinned to exact versions. three.js loads
      only when the 3D camel is picked. -->
 <script type="importmap">
@@ -25,6 +25,10 @@
 <header class="head">
   <div class="camel-box">
     <div class="camel-opts">
+      <div id="camel-peek" class="camel-peek" role="group" aria-label="Camel preview">
+        <button type="button" data-peek="done" aria-label="Hold to see the camel finished"></button>
+        <button type="button" data-peek="none" aria-label="Hold to see the camel with nothing done"></button>
+      </div>
       <div id="camel-view" class="camel-view" role="group" aria-label="Camel view">
         <button type="button" data-camel="2d" aria-pressed="true" title="2D view" aria-label="2D view"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
         <button type="button" data-camel="3d" aria-pressed="false" title="3D view: drag to turn, right-click for a move" aria-label="3D view"><svg viewBox="0 0 12 12" aria-hidden="true"><defs><radialGradient id="cv-sphere" cx="0.36" cy="0.32" r="0.78"><stop offset="0" stop-color="currentColor" stop-opacity="0.1"/><stop offset="1" stop-color="currentColor" stop-opacity="0.9"/></radialGradient></defs><circle cx="6" cy="6" r="4.6" fill="url(#cv-sphere)"/></svg></button>
@@ -109,6 +113,6 @@
 <div id="global-tip"></div>
 
 
-<script src="app.js?v=202611141200"></script>
+<script src="app.js?v=202611141630"></script>
 </body>
 </html>
