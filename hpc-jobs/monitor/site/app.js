@@ -1708,12 +1708,16 @@ function camelValues() {
   }
   return out;
 }
-// The figure: 2D always, 3D (with three.js) loaded only when picked, both
-// on the same progress store. A 3D load still on its way when 2D is picked
-// again is dropped (token). camelReady settles once the package is loaded
-// (the grid loader waits for it).
+// The figure: 2D always, and 3D (with three.js) on the same progress
+// store, so it has the same values. The 3D figure is built once, hidden:
+// ahead of time when the page is idle after the 2D camel is drawn, or
+// right away when the page opens in 3D or 3D is picked before that. The
+// 2D / 3D switch then only shows one and hides the other. A build still on
+// its way when the page is left is dropped (token). camelReady settles
+// once the package is loaded (the grid loader waits for it).
 const camelFig = { mod: null, mod3d: null, manifest: null, store: null, fig2d: null, fig3d: null, token: 0, sig: "", legend: "",
-  motion: 0, frame: 0, turnFrame: 0, turning: false, playNow: null, introDone: false };
+  motion: 0, frame: 0, turnFrame: 0, turning: false, playNow: null, introDone: false,
+  run: null, shown: false, build: null, opening: false };
 let camelReadyDone;
 const camelReady = new Promise((resolve) => { camelReadyDone = resolve; });
 // In 3D the camel moves on its own, with every move the package has: a
@@ -1765,7 +1769,9 @@ function camelToView(fig) {
 // A right-click plays a move at once (playNow), then the sequence goes on.
 function camelMotion(fig, intro) {
   let last = null;
-  const alive = () => camelFig.fig3d === fig;
+  const run = {};
+  camelFig.run = run;
+  const alive = () => camelFig.run === run && camelFig.fig3d === fig;
   const ms = ([a, b]) => (a + (b - a) * Math.random()) * 1000;
   const later = (step, time) => {
     camelFig.motion = setTimeout(() => {
@@ -1829,7 +1835,12 @@ function camelMotion(fig, intro) {
     cancelAnimationFrame(camelFig.frame);
     move();
   };
-  if (!intro) { later(move, ms(CAMEL_REST)); return; }
+  if (!intro) {
+    // A turn cut short when 3D was hidden goes on to the next view.
+    if (camelFig.turning) { fig.setAutoRotate(!reduceMotion.matches); turn(false); }
+    later(move, ms(CAMEL_REST));
+    return;
+  }
   fig.seek("SeatedIdle", 0);   // seated at once; seek pauses the figure
   fig.setPaused(document.hidden);
   last = "Look";
@@ -1840,6 +1851,14 @@ function camelMotion(fig, intro) {
       later(rest, CAMEL_INTRO.look * 1000);
     });
   }, CAMEL_INTRO.seated * 1000);
+}
+// Stops the sequence (the 3D view is hidden or gone).
+function stopCamelMotion() {
+  camelFig.run = null;
+  clearTimeout(camelFig.motion);
+  cancelAnimationFrame(camelFig.frame);
+  cancelAnimationFrame(camelFig.turnFrame);
+  camelFig.playNow = null;   // lets the figure go
 }
 async function loadCamel() {
   try {
@@ -1855,8 +1874,17 @@ async function loadCamel() {
     noHoverText(fig2d.element);
     Object.assign(camelFig, { mod, manifest, store, fig2d });
     renderCamel();
+    preloadCamel3D();
   } catch (e) { console.warn("The camel could not load.", e); /* the page works without it */ }
   camelReadyDone();
+}
+// Once the 2D camel is drawn and the page is idle, the 3D figure is built
+// hidden, so that picking 3D shows it at once. Safari has no idle callback
+// and waits about a second. If this fails, picking 3D loads it then.
+function preloadCamel3D() {
+  const go = () => { if (camelFig.store && !camelFig.fig3d) buildCamel3D(); };
+  if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 3000 });
+  else setTimeout(go, 1000);
 }
 // The camel's colors that are not progress. 2D: the unfilled parts take
 // the page's soft neutral and the outline the text color. 3D: the unfilled
@@ -1896,8 +1924,8 @@ function syncCamel() {
     [id, { projection: cells(v.projection), aggregation: cells(v.aggregation), extraction: cells(v.extraction) }]));
   const sig = JSON.stringify(drawn);
   if (sig !== camelFig.sig) { camelFig.store.setState(drawn); camelFig.sig = sig; }
-  if (view.camel3d && !camelFig.fig3d && !camelFig.loading) mountCamel3D();
-  else if (!view.camel3d && (camelFig.fig3d || camelFig.loading)) unmountCamel3D();
+  if (view.camel3d) openCamel3D();
+  else if (camelFig.shown) hideCamel3D();
   renderCamelLegend();
 }
 // The tab icon follows the view: the page's 2D camel, or the package's 3D
@@ -1937,52 +1965,72 @@ function renderCamelLegend() {
   $("camel-legend").innerHTML = items.map(([stage, label, title]) =>
     `<span class="cl-item" title="${title}"><svg class="cl-sw cl-${stage}" viewBox="-3 -1 30 30" aria-hidden="true">${cube(stage)}</svg>${label}</span>`).join("");
 }
-async function mountCamel3D() {
-  const token = ++camelFig.token, box = $("camel").querySelector(".camel-3d");
-  camelFig.loading = true;
-  $("camel-view").classList.add("loading");
-  try {
+// Builds the 3D figure once, in its hidden box, on the same store, and
+// resolves to it (null if it could not load). While hidden it is paused:
+// nothing moves and it draws only when its values or colors change.
+function buildCamel3D() {
+  if (camelFig.fig3d) return Promise.resolve(camelFig.fig3d);
+  if (camelFig.build) return camelFig.build;
+  const token = camelFig.token, box = $("camel").querySelector(".camel-3d");
+  camelFig.build = (async () => {
     camelFig.mod3d ??= await import("@c1587s/cil-designs/camel/3d");
-    if (token !== camelFig.token) return;
+    if (token !== camelFig.token) return null;
     // The wheel scrolls the page (dragging still turns the figure), and the
     // figure is fitted to its small box.
     const fig = await camelFig.mod3d.loadCamel3D(box, { store: camelFig.store, manifest: camelFig.manifest,
       colors: { blank: CAMEL_3D.blank[themeNow()] }, blankSurface: CAMEL_3D.surface,
       interaction: { zoom: false }, fit: { padding: 0 } });
-    fig.setPaused(document.hidden || reduceMotion.matches);
-    if (token !== camelFig.token) { fig.destroy(); return; }
+    fig.setPaused(true);
+    if (token !== camelFig.token) { fig.destroy(); return null; }
     box.classList.toggle("outline", CAMEL_3D_OUTLINE);
     camelFig.fig3d = fig;
-    // The intro plays once per page load; with reduced motion the camel
-    // stands still instead.
-    const intro = !camelFig.introDone && !reduceMotion.matches;
-    camelFig.introDone = true;
-    camelMotion(fig, intro);
-    box.classList.remove("pending");
-    $("camel").querySelector(".camel-2d").hidden = true;
-  } catch (e) {
-    if (token !== camelFig.token) return;
-    console.warn("The 3D camel could not load; showing 2D.", e);
+    return fig;
+  })().catch((e) => { console.warn("The 3D camel could not load.", e); return null; })
+    .finally(() => { camelFig.build = null; });
+  return camelFig.build;
+}
+// 3D picked: shows the figure, building it first if it is not ready (the
+// sphere icon pulses meanwhile). If it cannot load, the page stays in 2D.
+function openCamel3D() {
+  if (camelFig.shown || camelFig.opening) return;
+  if (camelFig.fig3d) { showCamel3D(camelFig.fig3d); return; }
+  camelFig.opening = true;
+  $("camel-view").classList.add("loading");
+  buildCamel3D().then((fig) => {
+    camelFig.opening = false;
+    $("camel-view").classList.remove("loading");
+    if (!view.camel3d) return;   // back to 2D meanwhile
+    if (fig) { showCamel3D(fig); return; }
     view.camel3d = false;
     syncUrl("replace");
-  } finally {
-    if (token === camelFig.token) { camelFig.loading = false; $("camel-view").classList.remove("loading"); syncCamel(); }
-  }
+    syncCamel();
+  });
 }
+function showCamel3D(fig) {
+  camelFig.shown = true;
+  // The intro plays the first time 3D is shown after the page loads; with
+  // reduced motion the camel stands still instead.
+  const intro = !camelFig.introDone && !reduceMotion.matches;
+  camelFig.introDone = true;
+  fig.setPaused(document.hidden || reduceMotion.matches);
+  camelMotion(fig, intro);
+  $("camel").querySelector(".camel-3d").classList.remove("pending");
+  $("camel").querySelector(".camel-2d").hidden = true;
+}
+// Back to 2D: the 3D figure stays built, hidden and paused.
+function hideCamel3D() {
+  camelFig.shown = false;
+  stopCamelMotion();
+  if (camelFig.fig3d) { camelFig.fig3d.setPaused(true); camelFig.fig3d.setAutoRotate(false); }
+  $("camel").querySelector(".camel-3d").classList.add("pending");
+  $("camel").querySelector(".camel-2d").hidden = false;
+}
+// Leaving the page: the 3D figure is freed, and a build on its way dropped.
 function unmountCamel3D() {
+  if (camelFig.shown) hideCamel3D();
   camelFig.token++;
-  camelFig.loading = false;
-  $("camel-view").classList.remove("loading");
-  clearTimeout(camelFig.motion);
-  cancelAnimationFrame(camelFig.frame);
-  cancelAnimationFrame(camelFig.turnFrame);
   camelFig.turning = false;
-  camelFig.playNow = null;   // lets the old figure go
   if (camelFig.fig3d) { camelFig.fig3d.destroy(); camelFig.fig3d = null; }
-  const box = $("camel").querySelector(".camel-3d");
-  if (box) box.classList.add("pending");
-  const box2d = $("camel").querySelector(".camel-2d");
-  if (box2d) box2d.hidden = false;
 }
 
 function renderCamel() {
@@ -2159,7 +2207,7 @@ function setup() {
   });
   // A right-click on the 3D camel plays a move at once, not the browser menu.
   $("camel").addEventListener("contextmenu", (e) => {
-    if (!camelFig.fig3d) return;
+    if (!camelFig.shown) return;
     e.preventDefault();
     if (camelFig.playNow) camelFig.playNow();
   });
@@ -2172,17 +2220,21 @@ function setup() {
   });
   // Leaving the page frees the 3D figure; coming back to it (back and
   // forward cache) builds it again.
-  addEventListener("pagehide", () => { if (camelFig.fig3d || camelFig.loading) unmountCamel3D(); });
+  addEventListener("pagehide", unmountCamel3D);
   // A hidden tab stops the 3D motion; it goes on when the tab is back.
   document.addEventListener("visibilitychange", () => {
-    if (camelFig.fig3d) camelFig.fig3d.setPaused(document.hidden || reduceMotion.matches);
+    if (camelFig.fig3d) camelFig.fig3d.setPaused(document.hidden || reduceMotion.matches || !camelFig.shown);
   });
   // Reduced motion turned on: the view stops turning too, and goes on
   // turning (to the next view) when it is turned off again.
   reduceMotion.addEventListener("change", () => {
-    if (camelFig.fig3d) camelFig.fig3d.setAutoRotate(camelFig.turning && !reduceMotion.matches);
+    if (camelFig.fig3d && camelFig.shown) camelFig.fig3d.setAutoRotate(camelFig.turning && !reduceMotion.matches);
   });
-  addEventListener("pageshow", (e) => { if (e.persisted) syncCamel(); });
+  addEventListener("pageshow", (e) => {
+    if (!e.persisted) return;
+    syncCamel();
+    if (!view.camel3d) preloadCamel3D();
+  });
   $("camel-key").addEventListener("click", (e) => {
     const all = e.target.closest(".ck-all");
     if (all) {

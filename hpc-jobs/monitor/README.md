@@ -329,8 +329,10 @@ The camel is the CAMEL figure of
 The import map in site/index.html pins the package and three.js to exact
 versions on jsDelivr; the figure's geometry, 3D model, textures and icons
 load from the package, and nothing is copied into the site. To update,
-change the version in the import map's two package lines. three.js loads
-only when the 3D camel is picked.
+change the version in the import map's two package lines. three.js and
+the 3D figure load once the 2D camel is drawn and the page is idle, and
+wait hidden, so picking 3D shows it at once; a page opened in 3D loads
+them first.
 
 ```html
 <script type="importmap">
