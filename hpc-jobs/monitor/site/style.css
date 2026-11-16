@@ -5,7 +5,9 @@
   color-scheme: light;
   --bg: #ffffff; --bg2: #f5f5f0; --bg3: #eeeee8;
   --camel-blank: #ecebe5;   /* the camel's unfilled parts */
-  --peek-done: #f2c200; --peek-none: #e03e3e;   /* the camel's preview buttons */
+  /* The camel's preview buttons: a cyan bluer than the grid's "Projection
+     complete" (--complete), a gray, and their thin gray edge. */
+  --peek-done: #17a2c8; --peek-none: #c4c4bc; --peek-edge: #8f8f87;
   --tip-bg: #ffffff;   /* the grid hover box */
   --tip-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
   --tx: #1a1a1a; --tx2: #666660; --tx3: #99998f;
@@ -45,7 +47,7 @@
     color-scheme: dark;
     --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
     --camel-blank: #2c2c27;
-    --peek-done: #ffd43b; --peek-none: #ff6b6b;
+    --peek-done: #4cc9f0; --peek-none: #5a5a54; --peek-edge: #8a8a84;
     --tip-bg: #20201c;
     --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
     --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
@@ -70,7 +72,7 @@
   color-scheme: dark;
   --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
   --camel-blank: #2c2c27;
-  --peek-done: #ffd43b; --peek-none: #ff6b6b;
+  --peek-done: #4cc9f0; --peek-none: #5a5a54; --peek-edge: #8a8a84;
   --tip-bg: #20201c;
   --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
@@ -117,24 +119,37 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 /* The camel and its 2D / 3D choice. Its unfilled parts and outline take
    the theme's colors through the package's own options (app.js). The 3D
    figure draws on a clear background. */
-.camel-box { width: 132px; flex: none; display: flex; flex-direction: column; gap: 3px; }
+.camel-box { width: 132px; flex: none; display: flex; flex-direction: column; gap: 3px;
+  position: relative; isolation: isolate; }
+/* A picked sector tints the whole camel area, buttons to legend, as its row
+   in the tree (2D and 3D: the 3D canvas is see-through). The tint reaches
+   a little past the box, so nothing moves when it comes and goes. */
+.camel-box::before { content: ""; position: absolute; inset: -5px; z-index: -1; border-radius: 8px;
+  background-color: transparent; transition: background-color 0.45s ease; pointer-events: none; }
+.camel-box.tinted::before { background-color: color-mix(in srgb, var(--tc) 22%, var(--bg)); }
+@media (prefers-reduced-motion: reduce) { .camel-box::before { transition: none; } }
 .camel { position: relative; width: 100%; aspect-ratio: 685 / 465; cursor: pointer; }   /* a click goes home */
 .camel > div { position: absolute; inset: 0; }
 .camel > div[hidden] { display: none; }
 .camel-2d svg { display: block; }
 .camel-3d.pending { visibility: hidden; }
+/* The built 3D figure while 2D is shown: unseen and off screen, at its
+   size, so the package stops drawing it and shows it again at once. */
+.camel-3d.away { visibility: hidden; transform: translateX(-10000px); pointer-events: none; }
 .camel-3d canvas { display: block; }
 .camel-3d.outline canvas { --edge: color-mix(in srgb, var(--tx) 35%, transparent);
   filter: drop-shadow(0.5px 0 0 var(--edge)) drop-shadow(-0.5px 0 0 var(--edge)) drop-shadow(0 0.5px 0 var(--edge)) drop-shadow(0 -0.5px 0 var(--edge)); }
 .camel-opts { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 /* Two press-and-hold buttons on the left, level with the 2D / 3D icons:
-   yellow shows the camel finished, red with nothing done, only while
-   held, and they light up only then. */
+   cyan shows the camel finished, gray with nothing done, only while held,
+   and they light up only then. The dot has a thin gray edge. */
 .camel-peek { display: inline-flex; gap: 2px; }
 .camel-peek button { width: 13px; height: 13px; padding: 2px; border: 0; border-radius: 50%;
-  background: var(--peek) content-box; opacity: 0.7; cursor: pointer;
+  background: none; opacity: 0.7; cursor: pointer;
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent; }
+.camel-peek button::before { content: ""; display: block; width: 100%; height: 100%; box-sizing: border-box;
+  border-radius: 50%; background: var(--peek); border: 1px solid var(--peek-edge); }
 .camel-peek button[data-peek="done"] { --peek: var(--peek-done); }
 .camel-peek button[data-peek="none"] { --peek: var(--peek-none); }
 .camel-peek button:hover { opacity: 0.85; }

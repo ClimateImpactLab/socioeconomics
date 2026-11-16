@@ -6,14 +6,14 @@
 <meta name="robots" content="noindex">
 <title>CIL | Projections - New Socioeconomics</title>
 <link rel="icon" id="favicon" type="image/svg+xml" href="camel/favicon.svg">
-<link rel="stylesheet" href="style.css?v=202611162200">
+<link rel="stylesheet" href="style.css?v=202611162230">
 <!-- The camel figure and three.js, pinned to exact versions. three.js loads
      only when the 3D camel is picked. -->
 <script type="importmap">
 {
   "imports": {
-    "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/index.js",
-    "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/3d.js",
+    "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.4.0/dist/camel/index.js",
+    "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.4.0/dist/camel/3d.js",
     "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
   }
@@ -31,7 +31,7 @@
       </div>
       <div id="camel-view" class="camel-view" role="group" aria-label="Camel view">
         <button type="button" data-camel="2d" aria-pressed="true" title="2D view" aria-label="2D view"><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.1"/></svg></button>
-        <button type="button" data-camel="3d" aria-pressed="false" title="3D view: drag to turn, right-click for a move" aria-label="3D view"><svg viewBox="0 0 12 12" aria-hidden="true"><defs><radialGradient id="cv-sphere" cx="0.36" cy="0.32" r="0.78"><stop offset="0" stop-color="currentColor" stop-opacity="0.1"/><stop offset="1" stop-color="currentColor" stop-opacity="0.9"/></radialGradient></defs><circle cx="6" cy="6" r="4.6" fill="url(#cv-sphere)"/></svg></button>
+        <button type="button" data-camel="3d" aria-pressed="false" title="3D view: drag to turn" aria-label="3D view"><svg viewBox="0 0 12 12" aria-hidden="true"><defs><radialGradient id="cv-sphere" cx="0.36" cy="0.32" r="0.78"><stop offset="0" stop-color="currentColor" stop-opacity="0.1"/><stop offset="1" stop-color="currentColor" stop-opacity="0.9"/></radialGradient></defs><circle cx="6" cy="6" r="4.6" fill="url(#cv-sphere)"/></svg></button>
       </div>
     </div>
     <div id="camel" class="camel" role="img" aria-label="Progress by sector"></div>
@@ -113,6 +113,6 @@
 <div id="global-tip"></div>
 
 
-<script src="app.js?v=202611162200"></script>
+<script src="app.js?v=202611162230"></script>
 </body>
 </html>

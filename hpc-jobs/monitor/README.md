@@ -337,8 +337,8 @@ them first.
 ```html
 <script type="importmap">
 { "imports": {
-  "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/index.js",
-  "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.3.0/dist/camel/3d.js",
+  "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.4.0/dist/camel/index.js",
+  "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.4.0/dist/camel/3d.js",
   "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/" } }
 </script>
@@ -350,7 +350,9 @@ const store = mod.createCamelStore();
 const fig2d = await mod.loadCamel2D(box, { store, colors: { blank: "#ecebe5", outline: "#1a1a1a" } });
 store.setLeaf("mortality", { projection: 99, aggregation: 0, extraction: 0 });
 const { loadCamel3D } = await import("@c1587s/cil-designs/camel/3d");   // when 3D is picked
-const fig3d = await loadCamel3D(box3d, { store, blankSurface: "skin", interaction: { zoom: false }, fit: { padding: 0 } });
+const fig3d = await loadCamel3D(box3d, { model: "realistic", realistic: { fur: true, palette: "cil" },
+  store, blankSurface: "skin", interaction: { zoom: false }, fit: { padding: 0 } });
+fig3d.setAutoRotate(true);   // a slow, steady turn
 // On unmount: fig3d.destroy();
 ```
 
@@ -385,26 +387,29 @@ delta method for each energy fuel.
   shape: in 2D concentric arcs take the place of the aggregation's cubes
   on extracted cells (`CAMEL_EXTRACTION`, `CAMEL_ARCS`); in 3D the package
   draws one lattice for both stages, so only its color changes. A theme switch recolors both figures in place.
-- Mouse: a click goes home; in 3D a drag turns the figure (not a click),
-  the wheel scrolls the page, and a right-click plays a move (in 2D the
-  browser's menu opens). The camel has no hover text.
-- 3D motion: the first time the camel is shown in 3D after the page
-  loads, it starts seated, stands up and turns its head toward the
-  viewer. Then it moves on its own: a short rest, then a random move,
-  never the same twice in a row. Walking, looking, lowering the head and
-  chewing come most often; running and sitting (a few seconds, then up
-  again) less. While it walks or runs the view turns slowly around it;
-  the turn may pass the front or the tail but always stops at a side or
-  three-quarter view, so a walk lasts until the next one (about 12 s, or
-  23 s when it passes the front or tail). Motion never changes progress.
-  It pauses in a hidden tab; with reduced motion the camel stands still.
+- Mouse: a click goes home, in 2D and 3D; in 3D a drag turns the figure
+  (not a click) and the wheel scrolls the page. The camel has no hover
+  text.
+- 3D: the package's realistic camel, with its coat (fur on every part)
+  and the CIL colors as in 2D (`CAMEL_3D.realistic`). It has no moves, so
+  it turns slowly and steadily around itself (the package's auto rotate,
+  about 90 s a full turn), and stands still with reduced motion. The
+  model and coat (about 2.3 MB) load in the hidden preload. While 2D is
+  shown the figure waits off screen at its size, so the package draws
+  nothing (it stops within about 0.3 s of leaving 3D) and shows it again
+  at once. The coat costs about 10 ms of GPU time per frame on an M1 Pro
+  (under 1 ms without it).
+- Sector tint: a sector picked in the tree tints the whole camel area
+  (preview buttons, 2D / 3D icons, figure and legend; 2D and 3D) as that
+  sector's row, fading in and out.
+- Preview buttons: two small dots at the top left, press and hold. Cyan
+  (`--peek-done`, bluer than the grid's "Projection complete") shows every
+  part finished, gray (`--peek-none`) with nothing done; letting go brings
+  the real values back. Both views show it.
 - Tab icon: the 2D camel, or the package's 3D icon while in 3D.
 
-Limits of the package (0.3.0): the turn while walking goes one way at a
-fixed speed (about 90 s a full turn), and its angle is read from the
-figure's camera, which the package returns but does not declare. Look is
-a fixed clip, not aimed at the camera; it turns first toward the side
-the camera starts on, which the first-time sequence relies on.
+Limits of the package (0.4.0): the realistic model is a static preview,
+with no moves; the turn goes one way at a fixed speed.
 
 ## Extraction
 

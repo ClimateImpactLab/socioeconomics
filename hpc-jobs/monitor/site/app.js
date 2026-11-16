@@ -1740,151 +1740,15 @@ function camelValues() {
 // 2D / 3D switch then only shows one and hides the other. A build still on
 // its way when the page is left is dropped (token). camelReady settles
 // once the package is loaded (the grid loader waits for it).
+// The 3D figure is the package's realistic camel, with its coat (fur) and
+// the CIL colors, as in 2D. It has no moves: it turns slowly and steadily around
+// itself (the package's auto rotate, about 90 s a full turn), only while it
+// is on screen and not with reduced motion. shown: 3D is on screen.
 const camelFig = { mod: null, mod3d: null, manifest: null, store: null, fig2d: null, fig3d: null, token: 0, sig: "", legend: "",
-  motion: 0, frame: 0, turnFrame: 0, turning: false, playNow: null, introDone: false,
-  run: null, shown: false, build: null, opening: false, peek: null };
+  shown: false, build: null, opening: false, peek: null };
 let camelReadyDone;
 const camelReady = new Promise((resolve) => { camelReadyDone = resolve; });
-// In 3D the camel moves on its own, with every move the package has: a
-// short idle, then a move picked at random (never the same twice in a
-// row), each held for a random time in seconds; the package blends from
-// one to the next. Walking, looking, lowering the head and chewing come
-// most often, running and sitting less. Sitting is short: it sits down,
-// rests a few seconds and stands up again.
-//
-// While it walks or runs, the view turns slowly around it (the package's
-// auto rotate: about 90 s a full turn at 60 frames a second, eased in and
-// out by its damping), so it seems to walk in a circle. The turn may pass
-// the front or the tail, but never stops there: the walk or run goes on
-// until the view reaches the next side or three-quarter view, and stops
-// on it. The turn only goes one way, so that is the next view ahead. A
-// right-click that cuts a walk short lets the turn finish the same way.
-// Dragging the figure by hand leaves it where it is put. Motion never
-// changes progress. With reduced motion, or in a hidden tab, the figure
-// is paused and does not turn.
-const CAMEL_MOVES = [   // [move, weight, shortest, longest]
-  ["Walk", 3, 3, 6], ["Look", 3, 3, 7], ["LowerHead", 2, 3, 5], ["Chew", 2, 3, 6],
-  ["Run", 0.8, 2, 4], ["Sit", 0.8, 2, 4]];   // Sit: SitDown, SeatedIdle this long, StandUp
-const CAMEL_TURNING = new Set(["Walk", "Run"]);
-const CAMEL_REST = [2, 6];
-// Where the turn may stop, in degrees from the front, both sides: three
-// quarter, side, three quarter from behind. The auto rotate lowers the
-// angle, and its damping carries it about 0.86 degrees on once switched
-// off, so it is switched off that much early.
-const CAMEL_VIEWS = [45, 90, 135, 225, 270, 315];
-// The first time in 3D after the page loads, it starts seated, stands up
-// and turns its head toward the viewer, then the random sequence starts.
-// Look turns first toward the side the camera starts on and faces it about
-// 1.5 to 3 s into the clip, so it is cut there. In seconds.
-const CAMEL_INTRO = { seated: 1.2, look: 3.2 };
-const CAMEL_TURN = { dir: -1, coast: 0.86 };
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
-// The view's angle from the camel's front, from the direction the camera
-// looks. The package returns the camera with the figure, though its
-// declarations do not list it, and has no other way to read the angle.
-function camelAngle(fig) {
-  const e = fig.camera.matrixWorld.elements;   // its third column points from the figure to the camera
-  return ((Math.atan2(e[10], -e[8]) * 180) / Math.PI + 360) % 360;
-}
-// How far the turn still has to go to the next view ahead.
-function camelToView(fig) {
-  const a = camelAngle(fig);
-  return Math.min(...CAMEL_VIEWS.map((v) => (((CAMEL_TURN.dir * (v - a)) % 360) + 360) % 360));
-}
-// A right-click plays a move at once (playNow), then the sequence goes on.
-function camelMotion(fig, intro) {
-  let last = null;
-  const run = {};
-  camelFig.run = run;
-  const alive = () => camelFig.run === run && camelFig.fig3d === fig;
-  const ms = ([a, b]) => (a + (b - a) * Math.random()) * 1000;
-  const later = (step, time) => {
-    camelFig.motion = setTimeout(() => {
-      if (!alive()) return;
-      if (fig.getPaused()) later(step, 1000);   // waits, then goes on
-      else step();
-    }, time);
-  };
-  // Checks each frame until test() holds, then step().
-  const until = (test, step) => {
-    const check = () => {
-      if (!alive()) return;
-      if (!fig.getPaused() && test()) step();
-      else camelFig.frame = requestAnimationFrame(check);
-    };
-    check();
-  };
-  const atView = () => camelToView(fig) <= CAMEL_TURN.coast;
-  // The turn: on, or off once the next view is reached.
-  const turn = (on) => {
-    cancelAnimationFrame(camelFig.turnFrame);
-    if (on) {
-      camelFig.turning = true;
-      fig.setAutoRotate(!reduceMotion.matches);
-      return;
-    }
-    const check = () => {
-      if (!alive() || !camelFig.turning) return;
-      if (atView()) { camelFig.turning = false; fig.setAutoRotate(false); }
-      else camelFig.turnFrame = requestAnimationFrame(check);
-    };
-    check();
-  };
-  const move = () => {
-    const options = CAMEL_MOVES.filter(([a]) => a !== last);
-    let r = Math.random() * options.reduce((t, o) => t + o[1], 0);
-    const [name, , lo, hi] = options.find((o) => (r -= o[1]) < 0) || options[0];
-    last = name;
-    if (name === "Sit") { sit(ms([lo, hi])); return; }
-    const turning = CAMEL_TURNING.has(name);
-    turn(turning);
-    fig.setAnimation(name);
-    later(turning ? () => until(atView, rest) : rest, ms([lo, hi]));
-  };
-  const sit = (time) => {
-    turn(false);
-    fig.setAnimation("SitDown");   // ends in SeatedIdle
-    until(() => fig.getPosture() === "seated", () => later(() => {
-      fig.setAnimation("StandUp");   // ends in Idle
-      until(() => fig.getPosture() === "standing", rest);
-    }, time));
-  };
-  const rest = () => {
-    turn(false);
-    fig.setAnimation("Idle");
-    later(move, ms(CAMEL_REST));
-  };
-  camelFig.playNow = () => {
-    if (!alive() || fig.getPaused()) return;
-    clearTimeout(camelFig.motion);
-    cancelAnimationFrame(camelFig.frame);
-    move();
-  };
-  if (!intro) {
-    // A turn cut short when 3D was hidden goes on to the next view.
-    if (camelFig.turning) { fig.setAutoRotate(!reduceMotion.matches); turn(false); }
-    later(move, ms(CAMEL_REST));
-    return;
-  }
-  fig.seek("SeatedIdle", 0);   // seated at once; seek pauses the figure
-  fig.setPaused(document.hidden);
-  last = "Look";
-  later(() => {
-    fig.setAnimation("StandUp");   // ends in Idle
-    until(() => fig.getPosture() === "standing", () => {
-      fig.setAnimation("Look");
-      later(rest, CAMEL_INTRO.look * 1000);
-    });
-  }, CAMEL_INTRO.seated * 1000);
-}
-// Stops the sequence (the 3D view is hidden or gone).
-function stopCamelMotion() {
-  camelFig.run = null;
-  clearTimeout(camelFig.motion);
-  cancelAnimationFrame(camelFig.frame);
-  cancelAnimationFrame(camelFig.turnFrame);
-  camelFig.playNow = null;   // lets the figure go
-}
 async function loadCamel() {
   try {
     const mod = await import("@c1587s/cil-designs/camel");
@@ -1916,7 +1780,9 @@ function preloadCamel3D() {
 // the page's soft neutral and the outline the text color. 3D: the unfilled
 // surface and its color for each theme; the figure is lit, so it shows
 // close to that color, not equal to it.
-const CAMEL_3D = { surface: "skin", blank: { light: "#f0ece1", dark: "#45494a" } };
+const CAMEL_3D = { surface: "skin", blank: { light: "#f0ece1", dark: "#45494a" },
+  // The realistic camel's coat, on every part, in the CIL colors as in 2D.
+  realistic: { fur: true, palette: "cil" } };
 // The extraction pattern: concentric arcs, a little see-through, black in
 // light mode and the outline's light ink in dark mode, so no hue clashes
 // with a sector's color. In 2D it takes the place of the aggregation's
@@ -1999,6 +1865,11 @@ function noHoverText(svg) {
 function syncCamel() {
   const values = camelValues();
   for (const b of document.querySelectorAll("#camel-view [data-camel]")) b.setAttribute("aria-pressed", String((b.dataset.camel === "3d") === view.camel3d));
+  // A picked sector tints the camel area as its row in the tree; the color
+  // stays set so the tint fades out when nothing is picked.
+  const area = $("camel").closest(".camel-box");
+  if (view.sector) area.style.setProperty("--tc", `var(--sec-${view.sector})`);
+  area.classList.toggle("tinted", !!view.sector);
   camelFavicon();
   if (!camelFig.store) return;
   // The figure takes whole percents (cells). 0 only when there are no files
@@ -2069,15 +1940,26 @@ function buildCamel3D() {
   camelFig.build = (async () => {
     camelFig.mod3d ??= await import("@c1587s/cil-designs/camel/3d");
     if (token !== camelFig.token) return null;
+    // Built in place but unseen, so the canvas takes the box's size.
+    box.classList.remove("away");
+    box.classList.add("pending");
     // The wheel scrolls the page (dragging still turns the figure), and the
     // figure is fitted to its small box.
-    const fig = await camelFig.mod3d.loadCamel3D(box, { store: camelFig.store, manifest: camelFig.manifest,
+    const fig = await camelFig.mod3d.loadCamel3D(box, { model: "realistic", realistic: { ...CAMEL_3D.realistic },
+      store: camelFig.store, manifest: camelFig.manifest,
       colors: { blank: CAMEL_3D.blank[themeNow()] }, blankSurface: CAMEL_3D.surface,
       interaction: { zoom: false }, fit: { padding: 0 } });
     fig.setPaused(true);
     if (token !== camelFig.token) { fig.destroy(); return null; }
     fig.setTexture({ extraction: camelExtractionColor() });
     box.classList.toggle("outline", CAMEL_3D_OUTLINE);
+    // One frame drawn while it waits unseen, so its shaders and coat are
+    // ready; then moved off screen (same size) until shown. The package
+    // draws nothing while its canvas is out of view, not even the easing
+    // after a turn.
+    fig.render();
+    box.classList.remove("pending");
+    box.classList.toggle("away", !camelFig.shown);
     camelFig.fig3d = fig;
     return fig;
   })().catch((e) => { console.warn("The 3D camel could not load.", e); return null; })
@@ -2103,28 +1985,23 @@ function openCamel3D() {
 }
 function showCamel3D(fig) {
   camelFig.shown = true;
-  // The intro plays the first time 3D is shown after the page loads; with
-  // reduced motion the camel stands still instead.
-  const intro = !camelFig.introDone && !reduceMotion.matches;
-  camelFig.introDone = true;
   fig.setPaused(document.hidden || reduceMotion.matches);
-  camelMotion(fig, intro);
-  $("camel").querySelector(".camel-3d").classList.remove("pending");
+  fig.setAutoRotate(!reduceMotion.matches);
+  $("camel").querySelector(".camel-3d").classList.remove("away");
   $("camel").querySelector(".camel-2d").hidden = true;
 }
-// Back to 2D: the 3D figure stays built, hidden and paused.
+// Back to 2D: the 3D figure stays built, off screen, paused and still, and
+// draws nothing.
 function hideCamel3D() {
   camelFig.shown = false;
-  stopCamelMotion();
   if (camelFig.fig3d) { camelFig.fig3d.setPaused(true); camelFig.fig3d.setAutoRotate(false); }
-  $("camel").querySelector(".camel-3d").classList.add("pending");
+  $("camel").querySelector(".camel-3d").classList.add("away");
   $("camel").querySelector(".camel-2d").hidden = false;
 }
 // Leaving the page: the 3D figure is freed, and a build on its way dropped.
 function unmountCamel3D() {
   if (camelFig.shown) hideCamel3D();
   camelFig.token++;
-  camelFig.turning = false;
   if (camelFig.fig3d) { camelFig.fig3d.destroy(); camelFig.fig3d = null; }
 }
 
@@ -2298,7 +2175,7 @@ function goHome() {
 
 // The two preview buttons above the camel work like a momentary switch:
 // while one is held (mouse, touch, or Space or Enter), the camel in view
-// shows every part finished (yellow) or with nothing done (red), through
+// shows every part finished (cyan) or with nothing done (gray), through
 // the same store as the real values. Letting go in any way (release,
 // leaving the button, a cancelled touch, the window or tab losing focus)
 // brings back the real values from the latest data at once. Nothing else
@@ -2342,18 +2219,13 @@ function setupCamelPeek() {
 
 function setup() {
   setupCamelPeek();
-  // A click on the camel goes home; a drag that turns the 3D figure does not.
+  // A click on the camel goes home, in 2D and 3D; a drag that turns the 3D
+  // figure does not.
   let downAt = null;
   $("camel").addEventListener("pointerdown", (e) => { downAt = [e.clientX, e.clientY]; });
   $("camel").addEventListener("click", (e) => {
     if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return;
     goHome();
-  });
-  // A right-click on the 3D camel plays a move at once, not the browser menu.
-  $("camel").addEventListener("contextmenu", (e) => {
-    if (!camelFig.shown) return;
-    e.preventDefault();
-    if (camelFig.playNow) camelFig.playNow();
   });
   $("camel-view").addEventListener("click", (e) => {
     const b = e.target.closest("[data-camel]");
@@ -2365,14 +2237,14 @@ function setup() {
   // Leaving the page frees the 3D figure; coming back to it (back and
   // forward cache) builds it again.
   addEventListener("pagehide", unmountCamel3D);
-  // A hidden tab stops the 3D motion; it goes on when the tab is back.
+  // A hidden tab pauses the 3D figure; it goes on when the tab is back.
   document.addEventListener("visibilitychange", () => {
     if (camelFig.fig3d) camelFig.fig3d.setPaused(document.hidden || reduceMotion.matches || !camelFig.shown);
   });
-  // Reduced motion turned on: the view stops turning too, and goes on
-  // turning (to the next view) when it is turned off again.
+  // Reduced motion turned on: the figure stops turning, and turns again
+  // when it is turned off.
   reduceMotion.addEventListener("change", () => {
-    if (camelFig.fig3d && camelFig.shown) camelFig.fig3d.setAutoRotate(camelFig.turning && !reduceMotion.matches);
+    if (camelFig.fig3d && camelFig.shown) camelFig.fig3d.setAutoRotate(!reduceMotion.matches);
   });
   addEventListener("pageshow", (e) => {
     if (!e.persisted) return;
