@@ -20,8 +20,6 @@
   --miss: #e0ddd8;
   --agg: #8890a0;
   --agg-cost: #e8913a; --agg-lvl: #7c5cbf; --agg-agg: #4a8bc2;
-  /* Extraction, a red purple apart from the levels' blue violet. */
-  --extr: #a3389f; --extr-bg: rgba(163, 56, 159, 0.08); --extr-tx: #8c2e88;
   --complete: #00ced1;
   --writing: #ff6347;
   --progress: #888888;
@@ -59,7 +57,6 @@
     --miss: #3a3a38;
     --agg: #9098a8;
     --agg-lvl: #9a7ed8; --agg-agg: #5a9bd8;
-    --extr: #d77ad2; --extr-bg: rgba(215, 122, 210, 0.10); --extr-tx: #e29bdd;
     --complete: #20e0d8;
     --writing: #ff7860;
     --progress: #999999;
@@ -85,7 +82,6 @@
   --miss: #3a3a38;
   --agg: #9098a8;
   --agg-lvl: #9a7ed8; --agg-agg: #5a9bd8;
-  --extr: #d77ad2; --extr-bg: rgba(215, 122, 210, 0.10); --extr-tx: #e29bdd;
   --complete: #20e0d8;
   --writing: #ff7860;
   --progress: #999999;
@@ -418,7 +414,7 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .grid-table td.model-cell { font-size: 10px; font-weight: 500; white-space: nowrap; padding-right: 6px; line-height: 1.1; }
 .grid-table td.sc-cell { text-align: center; }
 .grid-table .sep-col { width: 4px; padding: 0; border-bottom: 0.5px solid var(--bd); }
-.sc-hdr { font-size: 10px; font-weight: 500; vertical-align: top; }
+.sc-hdr { font-size: 10px; font-weight: 500; }
 .sc-hdr-rcp45 { border-bottom: 2px solid var(--blue) !important; background-image: linear-gradient(rgba(106, 158, 200, 0.08), rgba(106, 158, 200, 0.08)); color: var(--rcp45-tx); }
 .sc-hdr-rcp85 { border-bottom: 2px solid var(--redline) !important; background-image: linear-gradient(rgba(200, 112, 112, 0.08), rgba(200, 112, 112, 0.08)); color: var(--rcp85-tx); }
 .sc-hdr .sc-count { opacity: 0.6; font-weight: 400; font-size: 8px; }
@@ -436,7 +432,6 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .row-count { font-size: 6px; line-height: 1; white-space: nowrap; min-width: 14px; text-align: left; }
 .row-count.proj { color: var(--base); }
 .row-count.agg { color: var(--tx3); }
-.row-count.ext { color: var(--extr); }
 .fsq { width: 4px; height: 4px; border-radius: 0.5px; background: var(--miss); }
 .fsq.base { background: var(--base); }
 .fsq.cost { background: var(--agg-cost); }
@@ -614,10 +609,6 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .res-sec .su-blocks { display: flex; margin-top: 10px; }
 /* Files in a cell's folder that are not expected: grey, not counted. */
 .dot.oth { background: var(--tx3); }
-.dot.ext { background: var(--extr); }
-.fd-row.ext { background: var(--extr-bg); color: var(--extr-tx); }
-.fd-head .ext-count { color: var(--extr); font-size: 11px; }
-.fd-ext-note { font-size: 10px; color: var(--tx3); margin: 1px 0 3px; font-family: var(--font); }
 .fd-row.oth { background: transparent; color: var(--tx2); }
 .fd-sub-other { color: var(--tx3); }
 .card .card-label { display: flex; align-items: center; gap: 2px; }
@@ -650,10 +641,7 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tfig b, .sc-count b { font-weight: 700; color: var(--tx2); }
 .pa-size { font-weight: 400; }
 .pa-sep { opacity: 0.45; font-weight: 300; }
-/* "E 2 files" in a scenario's column header: its extraction files, in the
-   size and weight of the P and A counts above it. */
-.sc-hdr .ex-count { display: block; opacity: 0.6; font-size: 8px; font-weight: 400; color: var(--extr); white-space: nowrap; }
-.sc-hdr .ex-count b { font-weight: 700; color: var(--extr); }
+
 /* With the disk space added the figure is longer: the name keeps its full
    width, and the figure moves under it, right-aligned, when both do not
    fit on one line (as in the narrow tree on a desktop). */

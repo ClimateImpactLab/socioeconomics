@@ -367,8 +367,8 @@ delta method for each energy fuel.
 | `coastal` | not tracked, stays empty |
 
 - Stages: projection and aggregation are the percent of files there.
-  Extraction is the sector's (100% or 0%, see Extraction below), drawn
-  up to the aggregation, as the figure requires. Each part has 100 cells:
+  Extraction is full when the sector has extraction files (see
+  Extraction below), drawn up to the aggregation, as the figure requires. Each part has 100 cells:
   0 only when there are no files and 100 only when all are there, so
   99.8% shows 99 cells. An aggregation above its projection is drawn at
   the projection, with a note in the browser console.
@@ -408,26 +408,25 @@ the camera starts on, which the first-time sequence relies on.
 
 ## Extraction
 
-Extraction is done by hand and differs by sector, so the rule is simple.
-Each sector may list `extraction_paths` in the manifest (searched with
-their subfolders). Its extraction is complete (100%) when they hold a file
-that is not empty, else 0%, also for a sector with none listed. Energy
-lists `/project/cil/gcp/outputs_newsocioeconomics/energy/extracted`.
+Extraction is done by hand and differs by sector, and has no expected
+count, so the page shows the number of files found. Each sector may list
+`extraction_paths` in the manifest (searched with their subfolders); every
+file there that is not empty counts. Energy lists
+`/project/cil/gcp/outputs_newsocioeconomics/energy/extracted`.
 
 - The collector reads the SSP, RCP, IAM (low or high, or IIASA and OECD),
   run type (median or montecarlo) and sub-model from each file's path,
   such as `median/main_model-electricity-SSP3-rcp85-high-...-map.csv`. A
-  part the path does not name fits any scenario.
-- Summary table: an Extraction column with the percent and the number of
-  files. Cards: an Extraction card for the sector.
-- Grid: extraction files cover all GCMs of a scenario, so every cell of
-  a column with extraction files gets a third row of purple squares, one
-  per file of its scenario and sub-model ("1/1"), and the column header
-  says "E 1 file" under P and A. The legend has Extraction in the same
-  purple.
-- File panel: a click on a cell adds the count to the title line ("1
-  extraction") and an Extraction section after Aggregation, with each
-  file's size and date and a note that it covers all GCMs of the scenario.
+  part the path does not name fits any.
+- Summary table: an Extraction column with the sector's number of files
+  ("2 files", or "no files").
+- Extraction card: the number of files for the run and sub-model shown
+  (energy median: 1 for each fuel, 2 for both); its hover text lists each
+  file with its size and date.
+- The grid and the file panel do not show extraction: its files are per
+  sector and made by hand, not per unit.
+- Camel: the extraction layer of a sector with files is full, drawn with
+  the concentric arcs.
 
 ## Expected files per unit
 

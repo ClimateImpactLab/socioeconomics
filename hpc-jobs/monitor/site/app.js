@@ -11,7 +11,7 @@
 const GROUPS = ["projection", "costs", "levels", "aggregated"];
 const AGG_GROUPS = ["costs", "levels", "aggregated"];
 const SQ_CLASS = { projection: "base", costs: "cost", levels: "lvl", aggregated: "agr" };
-const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr", other: "oth", extraction: "ext" };
+const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr", other: "oth" };
 // Partitions are told apart by texture and users by color, so a segment of
 // the SU bar shows both who and where. The textures live in the stylesheet
 // (.ptex-*) and are the same in badges, bars and keys.
@@ -230,19 +230,12 @@ function sectorFiles(sec) {
   return rt ? filesOf(sec, rt) : { proj: 0, projExp: 0, agg: 0, aggExp: 0 };
 }
 
-// Extraction is done by hand and differs by sector, so the rule is simple:
-// 100% when the sector's extraction folders hold a file that is not empty,
-// else 0% (also for a sector with no extraction folders).
+// Extraction is done by hand and differs by sector, and has no expected
+// count: the page shows the number of files found. The camel's extraction
+// layer is full when the sector's extraction folders hold a file that is
+// not empty, and empty otherwise.
 function extrPct(sec) { return sec && sec.extraction && sec.extraction.complete ? 100 : 0; }
 function extrCount(sec) { return sec && sec.extraction ? sec.extraction.files.length : 0; }
-// The extraction files of one scenario column: the collector reads the SSP,
-// RCP, IAM, run type and sub-model from each file's path, and a part the
-// path does not name fits any. They cover all GCMs of the scenario.
-function extrFiles(sec, rtName, models, c) {
-  const fits = (v, want) => v == null || v === want;
-  return !sec || !sec.extraction ? [] : sec.extraction.files.filter((f) => fits(f.run, rtName) &&
-    fits(f.ssp, c.ssp) && fits(f.rcp, c.rcp) && fits(f.iam, c.iam) && (f.model == null || models.includes(f.model)));
-}
 const plural = (n, word) => `${fmtN(n)} ${word}${n === 1 ? "" : "s"}`;
 
 // A sector is active when projection files were written in its folders in
@@ -883,6 +876,12 @@ function etaCard(rt, total) {
 
 function renderCards() {
   const sec = sector(), rt = runType();
+  // Extraction files of this view: the run, and the fuel or crop when one is
+  // picked (energy median: 1 for electricity, 2 for both fuels). No expected
+  // count, so the card shows how many, and its hover text lists them.
+  const exModels = view.model ? [view.model] : rt.dims.models;
+  const ex = !sec.extraction ? [] : sec.extraction.files.filter((f) => (f.run == null || f.run === view.runType) &&
+    (f.model == null || exModels.includes(f.model)));
   const f = filesOf(sec, rt);
   const total = rt.counts.total;
   const pp = pctOf(f.proj, f.projExp), ap = pctOf(f.agg, f.aggExp);
@@ -893,8 +892,9 @@ function renderCards() {
     card(`Not started${mainMark()}`, `<span style="color:var(--st-none)">${fmtN(total - f.started)}</span>`, "no files yet") +
     card("Projection", fmtPctTable(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card(`Aggregation${mainMark()}`, fmtPctTable(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
-    card("Extraction", fmtPctTable(extrPct(sec)), extrCount(sec) ? plural(extrCount(sec), "file") : "no files",
-      pbar(extrPct(sec), "var(--extr)"), "Extraction of the whole sector: 100% when its extraction folders hold a file, else 0%") +
+    card("Extraction", ex.length ? plural(ex.length, "file") : "no files", "", "", ex.length
+      ? ex.map((f) => `${f.name}  ${fmtSize(f.size)}  ${fmtWhen(f.mtime * 1000, true)}`).join("\n")
+      : "No extraction files for this run") +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(f.running)}</span>`, f.failed ? `${fmtN(f.failed)} stopped` : "units being written") +
     etaCard(rt, total) +
     suCard(rt.su_estimate);
@@ -1063,9 +1063,7 @@ function renderLegend() {
      <div class="leg-item" title="All projection and aggregation files present">${box("border:1.5px solid color-mix(in srgb, var(--st-done) 55%, transparent);background:var(--st-done-bg)")} Aggregation complete</div>
      <span class="leg-sep">|</span>
      <span style="font-weight:500">Aggregation:</span>
-     ${aggTypes(sector(), runType()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}
-     <span class="leg-sep">|</span>
-     <div class="leg-item" title="Extraction files of the scenario, for all its GCMs (E in the column header)"><div class="leg-sq" style="background:var(--extr)"></div> Extraction</div>`;
+     ${aggTypes(sector(), runType()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}`;
 }
 
 // A cell's file squares as one small picture instead of one element per file,
@@ -1085,8 +1083,7 @@ function sqImage(groups, q) {
   if (!sqColors) {
     const css = getComputedStyle(document.documentElement);
     const v = (name) => css.getPropertyValue(name).trim();
-    sqColors = { miss: v("--miss"), projection: v("--base"), costs: v("--agg-cost"), levels: v("--agg-lvl"), aggregated: v("--agg-agg"),
-      extraction: v("--extr") };
+    sqColors = { miss: v("--miss"), projection: v("--base"), costs: v("--agg-cost"), levels: v("--agg-lvl"), aggregated: v("--agg-agg") };
   }
   const key = `${groups.join(",")}:${q}`;
   let st = sqCache.get(key);
@@ -1111,9 +1108,7 @@ function recolorSquares() {
   for (const e of document.querySelectorAll("#grid .sq-img")) e.style.backgroundImage = sqImage(e.dataset.g.split(","), e.dataset.q).url;
 }
 
-// ex: the extraction files of the cell's scenario and sub-model; they cover
-// all its GCMs, so every cell of the column shows them, in a third row.
-function cellHtml(key, unit, spec, hlCounts, batchCounts, ex = 0) {
+function cellHtml(key, unit, spec, hlCounts, batchCounts) {
   const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
   const states = HIGHLIGHTS.map(([k]) => k).filter((k) => cellMatches(k, unit, cnt));
@@ -1125,10 +1120,6 @@ function cellHtml(key, unit, spec, hlCounts, batchCounts, ex = 0) {
   if (cnt.aggTotal) {
     html += `<div class="batch-sep"></div><div class="batch-row">${squares(cnt.pres, AGG_GROUPS)}` +
       (cnt.agg ? `<span class="row-count agg">${cnt.agg}/${cnt.aggTotal}</span>` : "") + `</div>`;
-  }
-  if (ex) {
-    html += `<div class="batch-sep"></div><div class="batch-row">${squares({ extraction: new Array(ex).fill(true) }, ["extraction"])}` +
-      `<span class="row-count ext">${ex}/${ex}</span></div>`;
   }
   return html + `</div>`;
 }
@@ -1164,15 +1155,11 @@ function renderGrid() {
     const k = esc(ck(c));
     h1 += `<th class="sep-col" data-c="${k}"></th>`; h2 += `<th class="sep-col" data-c="${k}"></th>`;
     const n = stats.get(ck(c));
-    // Extraction files cover all GCMs of a scenario: "E 2 files", in purple,
-    // on its own line under the P and A counts.
-    const ex = extrFiles(sec, view.runType, fixedModel ? [fixedModel] : rt.dims.models, c).length;
-    const exHtml = ex ? `<span class="ex-count" title="Extraction: ${plural(ex, "file")}, for all GCMs">E <b>${fmtN(ex)}</b> file${ex === 1 ? "" : "s"}</span>` : "";
     h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}" data-c="${k}"><span class="hb-row">` +
       `<span class="sb on hb ssp-${esc(c.ssp)}">${esc(c.ssp)}</span><span class="sb on hb sb-${esc(c.rcp)}">${esc(c.rcp)}</span>` +
       `<span class="sb on hb sb-iam sb-iam-${esc(c.iam)}">${esc(c.iam)}</span></span>` +
       // Columns of one or two cells are too narrow for the counts: they go in the tooltip.
-      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3, true)}</span>${exHtml}</th>`;
+      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3, true)}</span></th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}"${bAttr(bi)}>${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
@@ -1199,8 +1186,7 @@ function renderGrid() {
           perBatch = gridCols.hlb.get(`${k}#${bi}`);
           if (!perBatch) gridCols.hlb.set(`${k}#${bi}`, (perBatch = {}));
         }
-        const ex = extrFiles(sec, view.runType, [model], c).length;
-        body += `<td class="${cls}" data-c="${esc(k)}"${bAttr(bi)}>${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k), perBatch, ex)}</td>`;
+        body += `<td class="${cls}" data-c="${esc(k)}"${bAttr(bi)}>${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k), perBatch)}</td>`;
       });
     });
     body += `</tr>`;
@@ -1387,15 +1373,12 @@ async function showDetail(key) {
   const rows = (g) => byGroup[g].map((f) => fileRow(g, f.name, f.rec)).join("");
   const found = (g) => byGroup[g].filter((f) => f.rec).length;
 
-  // The scenario's extraction files, for this sub-model: one set for all GCMs.
-  const ex = extrFiles(sec, view.runType, [info.model], info);
   const state = STATE_NAMES[cellState(info.unit, cnt)];
   const reason = info.unit && info.unit.fail_reason ? `, ${esc(info.unit.fail_reason)}` : "";
   // The arrow folds the panel; the red button closes it.
   let html = `<div class="fd-head">
       <span class="fd-title">${esc(cellTitle(info))}: ${cnt.proj}/${cnt.projTotal} projection
-      | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>${ex.length ? `
-      | <span class="ext-count">${ex.length} extraction</span>` : ""}
+      | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>
       <span class="state">${esc(state)}${reason}</span>${scen ? ` <span class="state">aggregation: ${esc(scen.replace("{rcp}", info.rcp))}, not counted</span>` : ""}</span>
       <button class="fd-fold" id="fd-fold" aria-expanded="${!fdFolded}" aria-label="Fold" title="Fold or open"><span class="panel-arrow">&gt;</span></button>
       <button class="fd-close" id="fd-close" aria-label="Close" title="Close (Esc)">` +
@@ -1414,10 +1397,7 @@ async function showDetail(key) {
     const n = aggParts.reduce((s, g) => s + found(g), 0), t = aggParts.reduce((s, g) => s + spec[g].length, 0);
     html += section("fd-agg", "Aggregation", `${n}/${t}`, sub, true);
   }
-  if (ex.length) {
-    html += section("fd-extr", "Extraction", `${ex.length}/${ex.length}`, `<div class="fd-ext-note">Each file covers all GCMs of the scenario.</div>` +
-      ex.map((f) => fileRow("extraction", f.name, [f.size, f.mtime])).join(""), true);
-  }
+
   if (spec.costs.length) {
     html += section("fd-costs", "Costs", `${found("costs")}/${spec.costs.length}`, rows("costs"), false);
   }
@@ -1712,8 +1692,9 @@ function ckRuns(sec) {
 // same row as in the tree (montecarlo for Mortality, Labor and each crop;
 // median and delta method for each energy fuel). The crop and fuel IDs
 // follow the package's own example mapping. wheat_combined has no leaf.
-// Coastal is not tracked and stays at 0. Extraction is the sector's (100% or
-// 0%, see extrPct), drawn up to the aggregation, as the figure requires.
+// Coastal is not tracked and stays at 0. Extraction is full when the sector
+// has extraction files (see extrPct), drawn up to the aggregation, as the
+// figure requires.
 const CAMEL_LEAVES = [
   { id: "coastal", sector: "coastal", label: "Coastal" },
   { id: "crop-1", sector: "agriculture", model: "cassava", label: "Cassava" },
@@ -2201,7 +2182,7 @@ function renderCamel() {
     const fs = subs.length ? subs.map((x) => x.f) : [s.files];
     const sum = (key) => fs.reduce((t, f) => t + f[key], 0);
     const ex = extrCount(sec);
-    const exCell = `<td><span class="ck-pct">${fmtPctTable(extrPct(sec))}</span>${ex ? ` <span class="ck-n">(${plural(ex, "file")})</span>` : ""}</td>`;
+    const exCell = `<td>${ex ? `<span class="ck-pct">${plural(ex, "file")}</span>` : `<span class="ck-n">no files</span>`}</td>`;
     let html = `<tr>${mark}<td>${cell(sum("proj"), sum("projExp"))}</td><td>${cell(sum("agg"), sum("aggExp"))}</td>${exCell}${size}${runs}` +
       `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
     if (ckOpen.has(s.key)) subs.forEach((x) => {
@@ -2229,7 +2210,7 @@ function renderCamel() {
     <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
     <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median and delta method for energy).
     Summary percents count files; the filter, the grid and the unit counts in the cards below are units (folders with all their files).
-    Extraction is 100% when a sector's extraction folders hold a file, else 0%.</div>`;
+    Extraction shows the number of files found, since there is no expected count.</div>`;
 }
 
 // The sub-rows of a sector in the summary table: energy's median and delta
