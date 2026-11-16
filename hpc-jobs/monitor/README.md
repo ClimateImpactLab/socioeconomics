@@ -337,8 +337,8 @@ them first.
 ```html
 <script type="importmap">
 { "imports": {
-  "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.4.0/dist/camel/index.js",
-  "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.4.0/dist/camel/3d.js",
+  "@c1587s/cil-designs/camel": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.5.0/dist/camel/index.js",
+  "@c1587s/cil-designs/camel/3d": "https://cdn.jsdelivr.net/npm/@c1587s/cil-designs@0.5.0/dist/camel/3d.js",
   "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/" } }
 </script>
@@ -347,11 +347,12 @@ them first.
 ```js
 const mod = await import("@c1587s/cil-designs/camel");
 const store = mod.createCamelStore();
-const fig2d = await mod.loadCamel2D(box, { store, colors: { blank: "#ecebe5", outline: "#1a1a1a" } });
+const patterns = { aggregation: "cubes", extraction: { pattern: "nested-squares", scale: 1.6, opacity: 0.75 }, theme: "light" };
+const fig2d = await mod.loadCamel2D(box, { store, patterns, colors: { blank: "#ecebe5", outline: "#1a1a1a" } });
 store.setLeaf("mortality", { projection: 99, aggregation: 0, extraction: 0 });
 const { loadCamel3D } = await import("@c1587s/cil-designs/camel/3d");   // when 3D is picked
 const fig3d = await loadCamel3D(box3d, { model: "realistic", realistic: { fur: true, palette: "cil" },
-  store, blankSurface: "skin", interaction: { zoom: false }, fit: { padding: 0 } });
+  store, patterns, blankSurface: "skin", interaction: { zoom: false }, fit: { padding: 0 } });
 fig3d.setAutoRotate(true);   // a slow, steady turn
 // On unmount: fig3d.destroy();
 ```
@@ -382,11 +383,15 @@ delta method for each energy fuel.
 - Colors: the 2D unfilled parts take the page's soft neutral
   (`--camel-blank`) and the outline the text color. The 3D unfilled
   surface and its color per mode are `CAMEL_3D` in app.js (lit, so they
-  show close to the color given). Extraction is drawn in the outline's
-  ink at 75% (black in light mode), told apart from the aggregation by its
-  shape: in 2D concentric arcs take the place of the aggregation's cubes
-  on extracted cells (`CAMEL_EXTRACTION`, `CAMEL_ARCS`); in 3D the package
-  draws one lattice for both stages, so only its color changes. A theme switch recolors both figures in place.
+  show close to the color given). A theme switch recolors both figures
+  in place.
+- Patterns: the package's library patterns (`CAMEL_PATTERNS` in app.js),
+  the same definitions in 2D and 3D: cubes for aggregation, and nested
+  squares (scale 1.6, 75%) for extraction, which replace the cubes on
+  extracted parts. The ink follows the page's theme, dark on light and
+  light on dark; the page passes its theme to the package, since the
+  package's `auto` follows only the system setting. The legend's icons
+  are the package's swatches of the same patterns.
 - Mouse: a click goes home, in 2D and 3D; in 3D a drag turns the figure
   (not a click) and the wheel scrolls the page. The camel has no hover
   text.
@@ -397,8 +402,8 @@ delta method for each energy fuel.
   model and coat (about 2.3 MB) load in the hidden preload. While 2D is
   shown the figure waits off screen at its size, so the package draws
   nothing (it stops within about 0.3 s of leaving 3D) and shows it again
-  at once. The coat costs about 10 ms of GPU time per frame on an M1 Pro
-  (under 1 ms without it).
+  at once. The coat costs about 10 to 13 ms of GPU time per frame on an
+  M1 Pro, patterns included (under 1 ms without it).
 - Sector tint: a sector picked in the tree tints the whole camel area
   (preview buttons, 2D / 3D icons, figure and legend; 2D and 3D) as that
   sector's row, fading in and out.
@@ -408,7 +413,7 @@ delta method for each energy fuel.
   the real values back. Both views show it.
 - Tab icon: the 2D camel, or the package's 3D icon while in 3D.
 
-Limits of the package (0.4.0): the realistic model is a static preview,
+Limits of the package (0.5.0): the realistic model is a static preview,
 with no moves; the turn goes one way at a fixed speed.
 
 ## Extraction
@@ -431,7 +436,7 @@ file there that is not empty counts. Energy lists
 - The grid and the file panel do not show extraction: its files are per
   sector and made by hand, not per unit.
 - Camel: the extraction layer of a sector with files is full, drawn with
-  the concentric arcs.
+  the nested squares in place of the cubes.
 
 ## Expected files per unit
 

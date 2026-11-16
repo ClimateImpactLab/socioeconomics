@@ -1759,9 +1759,8 @@ async function loadCamel() {
     box3d.className = "camel-3d pending";
     $("camel").replaceChildren(box2d, box3d);
     const labels = Object.fromEntries(CAMEL_LEAVES.map((l) => [l.id, l.label]));
-    const fig2d = await mod.loadCamel2D(box2d, { store, manifest, labels, colors: camelColors() });
+    const fig2d = await mod.loadCamel2D(box2d, { store, manifest, labels, colors: camelColors(), patterns: camelPatterns() });
     noHoverText(fig2d.element);
-    camelExtraction(fig2d);
     Object.assign(camelFig, { mod, manifest, store, fig2d });
     renderCamel();
     preloadCamel3D();
@@ -1783,61 +1782,14 @@ function preloadCamel3D() {
 const CAMEL_3D = { surface: "skin", blank: { light: "#f0ece1", dark: "#45494a" },
   // The realistic camel's coat, on every part, in the CIL colors as in 2D.
   realistic: { fur: true, palette: "cil" } };
-// The extraction pattern: concentric arcs, a little see-through, black in
-// light mode and the outline's light ink in dark mode, so no hue clashes
-// with a sector's color. In 2D it takes the place of the aggregation's
-// cubes where a part is extracted: the cubes are masked out there and the
-// arcs are drawn in the figure's own extraction pattern. The 3D figure
-// draws one lattice for both stages and can only change its color, so
-// there the lattice stays and takes the same color.
-// The tile is 20 by 10 in its own units (lines 1.1 wide), drawn 2.3 times
-// that size on the figure.
-const CAMEL_EXTRACTION = { w: 20, h: 10, scale: 2.3, width: 1.1, opacity: 0.75, color: { light: "#000000", dark: null } };
-const CAMEL_ARCS = "M0,10 A10,10 0 0 1 20,10 M3.5,10 A6.5,6.5 0 0 1 16.5,10 M7,10 A3,3 0 0 1 13,10";
-// Black in light mode; in dark mode the outline's ink (null), as black
-// would not show there.
-const camelExtractionColor = () => CAMEL_EXTRACTION.color[themeNow()] || camelColors().outline;
-function camelExtraction(fig2d) {
-  const color = camelExtractionColor();
-  if (camelFig.fig3d) camelFig.fig3d.setTexture({ extraction: color });
-  if (!fig2d) return;
-  const pat = fig2d.element.querySelector('pattern[id$="-extraction"]');
-  const line = pat && pat.querySelector("path");
-  if (!line) return;
-  const e = CAMEL_EXTRACTION;
-  pat.setAttribute("width", e.w * e.scale);
-  pat.setAttribute("height", e.h * e.scale);
-  line.setAttribute("d", CAMEL_ARCS);
-  line.setAttribute("transform", `scale(${e.scale})`);
-  line.setAttribute("stroke", color);
-  line.setAttribute("stroke-width", e.width);
-  line.setAttribute("stroke-opacity", e.opacity);
-  line.setAttribute("stroke-linecap", "butt");
-  camelExtractionMask(fig2d);
-}
-// Masks the aggregation's cubes out of the extracted cells: the mask is
-// the whole figure less the extraction layer's own outline, kept in step
-// with it after every change of values.
-function camelExtractionMask(fig2d) {
-  const svg = fig2d.element, agg = svg.querySelector('g[data-layer="aggregation"]');
-  const pat = svg.querySelector('pattern[id$="-extraction"]');
-  if (!agg || !pat) return;
-  const id = `${pat.id}-cut`;
-  let cut = svg.querySelector(`#${CSS.escape(id)} path`);
-  if (!cut) {
-    const NS = "http://www.w3.org/2000/svg", el = (name, attrs) => {
-      const node = document.createElementNS(NS, name);
-      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-      return node;
-    };
-    const mask = el("mask", { id, maskUnits: "userSpaceOnUse", x: -1e4, y: -1e4, width: 2e4, height: 2e4 });
-    cut = el("path", { fill: "#000", stroke: "#000", "stroke-width": 0.8 });
-    mask.append(el("rect", { x: -1e4, y: -1e4, width: 2e4, height: 2e4, fill: "#fff" }), cut);
-    svg.querySelector("defs").append(mask);
-    agg.setAttribute("mask", `url(#${id})`);
-  }
-  cut.setAttribute("d", [...svg.querySelectorAll('g[data-layer="extraction"] path')].map((p) => p.getAttribute("d") || "").join(""));
-}
+// The stage marks come from the library (0.5.0), the same definitions for
+// 2D and 3D: cubes for aggregation, and nested squares for extraction, which
+// replace the cubes on extracted parts. The ink follows the page's theme
+// (dark on light, light on dark). The page passes its own theme, since the
+// library's "auto" follows only the system setting, not the theme button.
+// Nested squares are dense, so they are drawn larger.
+const CAMEL_PATTERNS = { aggregation: "cubes", extraction: { pattern: "nested-squares", scale: 1.6, opacity: 0.75 } };
+const camelPatterns = () => ({ ...CAMEL_PATTERNS, theme: themeNow() });
 function camelColors() {
   const s = getComputedStyle(document.documentElement);
   return { blank: s.getPropertyValue("--camel-blank").trim(), outline: s.getPropertyValue("--tx").trim() };
@@ -1848,8 +1800,7 @@ function recolorCamel() {
   if (camelFig.fig2d) camelFig.fig2d.setColors(c);
   if (ldCamel) { ldCamel.fig.setColors(c); ldCamel.ink.setAttribute("fill", c.outline); }
   if (camelFig.fig3d) camelFig.fig3d.setColors({ blank: CAMEL_3D.blank[themeNow()] });
-  camelExtraction(camelFig.fig2d);
-  camelFig.legend = null;
+  for (const fig of [camelFig.fig2d, camelFig.fig3d]) if (fig) fig.setPatterns({ theme: themeNow() });
   renderCamelLegend();
 }
 // The package's SVG has a <title>, which browsers show on hover; the camel
@@ -1881,11 +1832,7 @@ function syncCamel() {
     ? { projection: peek, aggregation: peek, extraction: peek }
     : { projection: cells(v.projection), aggregation: cells(v.aggregation), extraction: cells(v.extraction) }]));
   const sig = JSON.stringify(drawn);
-  if (sig !== camelFig.sig) {
-    camelFig.store.setState(drawn);
-    camelFig.sig = sig;
-    if (camelFig.fig2d) camelExtractionMask(camelFig.fig2d);
-  }
+  if (sig !== camelFig.sig) { camelFig.store.setState(drawn); camelFig.sig = sig; }
   if (view.camel3d) openCamel3D();
   else if (camelFig.shown) hideCamel3D();
   renderCamelLegend();
@@ -1902,33 +1849,28 @@ function camelFavicon() {
   link.setAttribute("href", href);
   old.replaceWith(link);
 }
-// The legend: Aggregation and Extraction, each one cube of the figure's own
-// pattern (read from the 2D figure, so it always matches), dark for
-// aggregation and green for extraction, light and see-through, with no
-// square behind. The same in 2D and 3D, which draw the stages alike.
+// The legend: Aggregation and Extraction, each a swatch of its library
+// pattern in the theme's ink, light and see-through. The same in 2D and 3D,
+// which draw the stages alike.
 // A very thin outline around the 3D silhouette; off for now.
 const CAMEL_3D_OUTLINE = false;
 function renderCamelLegend() {
-  const svg = camelFig.fig2d && camelFig.fig2d.element;
-  const mode = svg ? "lattice" : "";
+  const mod = camelFig.mod;
+  const mode = mod ? themeNow() : "";
   if (mode === camelFig.legend) return;
   camelFig.legend = mode;
-  if (!svg) { $("camel-legend").replaceChildren(); return; }
-  const cube = (stage) => {
-    const p = svg.querySelector(`pattern[id$="-${stage}"]`), path = p.querySelector("path");
-    // The arcs at their own tile size, so the icon shows whole tiles.
-    const ext = stage === "extraction", e = CAMEL_EXTRACTION;
-    return `<defs><pattern id="cl-${stage}" width="${ext ? e.w : p.getAttribute("width")}" height="${ext ? e.h : p.getAttribute("height")}" patternUnits="userSpaceOnUse">` +
-      `<path d="${path.getAttribute("d")}" fill="none" stroke="${path.getAttribute("stroke")}" ` +
-      `stroke-width="${ext ? e.width : path.getAttribute("stroke-width") * 2}" stroke-opacity="${path.getAttribute("stroke-opacity") || 1}" stroke-linejoin="round"/></pattern></defs>` +
-      `<rect x="-3" y="-1" width="30" height="30" fill="url(#cl-${stage})"/>`;
+  if (!mod) { $("camel-legend").replaceChildren(); return; }
+  // The cubes drawn smaller, so the icon shows a whole cube.
+  const swatch = (layer, scale) => {
+    const l = typeof layer === "string" ? { pattern: layer } : layer;
+    return mod.patternSwatch(l.pattern, { color: mod.PATTERN_INK[mode], opacity: l.opacity ?? mod.PATTERN_OPACITY, width: 20, height: 20, scale });
   };
   const items = [
-    ["aggregation", "Aggregation", "Aggregation: a dark pattern over the part"],
-    ["extraction", "Extraction", "Extraction: concentric arcs in place of the cubes"],
+    ["aggregation", "Aggregation", "Aggregation: cubes over the part", 0.6],
+    ["extraction", "Extraction", "Extraction: nested squares in place of the cubes", 1],
   ];
-  $("camel-legend").innerHTML = items.map(([stage, label, title]) =>
-    `<span class="cl-item" title="${title}"><svg class="cl-sw cl-${stage}" viewBox="-3 -1 30 30" aria-hidden="true">${cube(stage)}</svg>${label}</span>`).join("");
+  $("camel-legend").innerHTML = items.map(([stage, label, title, scale]) =>
+    `<span class="cl-item" title="${title}"><span class="cl-sw cl-${stage}" aria-hidden="true">${swatch(CAMEL_PATTERNS[stage], scale)}</span>${label}</span>`).join("");
 }
 // Builds the 3D figure once, in its hidden box, on the same store, and
 // resolves to it (null if it could not load). While hidden it is paused:
@@ -1947,11 +1889,10 @@ function buildCamel3D() {
     // figure is fitted to its small box.
     const fig = await camelFig.mod3d.loadCamel3D(box, { model: "realistic", realistic: { ...CAMEL_3D.realistic },
       store: camelFig.store, manifest: camelFig.manifest,
-      colors: { blank: CAMEL_3D.blank[themeNow()] }, blankSurface: CAMEL_3D.surface,
+      colors: { blank: CAMEL_3D.blank[themeNow()] }, blankSurface: CAMEL_3D.surface, patterns: camelPatterns(),
       interaction: { zoom: false }, fit: { padding: 0 } });
     fig.setPaused(true);
     if (token !== camelFig.token) { fig.destroy(); return null; }
-    fig.setTexture({ extraction: camelExtractionColor() });
     box.classList.toggle("outline", CAMEL_3D_OUTLINE);
     // One frame drawn while it waits unseen, so its shaders and coat are
     // ready; then moved off screen (same size) until shown. The package
