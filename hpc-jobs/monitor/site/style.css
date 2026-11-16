@@ -5,7 +5,7 @@
   color-scheme: light;
   --bg: #ffffff; --bg2: #f5f5f0; --bg3: #eeeee8;
   --camel-blank: #ecebe5;   /* the camel's unfilled parts */
-  --peek-done: #7cb518; --peek-none: #17a9c4;   /* the camel's preview buttons */
+  --peek-done: #f2c200; --peek-none: #e03e3e;   /* the camel's preview buttons */
   --tip-bg: #ffffff;   /* the grid hover box */
   --tip-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
   --tx: #1a1a1a; --tx2: #666660; --tx3: #99998f;
@@ -20,6 +20,8 @@
   --miss: #e0ddd8;
   --agg: #8890a0;
   --agg-cost: #e8913a; --agg-lvl: #7c5cbf; --agg-agg: #4a8bc2;
+  /* Extraction, a red purple apart from the levels' blue violet. */
+  --extr: #a3389f; --extr-bg: rgba(163, 56, 159, 0.08); --extr-tx: #8c2e88;
   --complete: #00ced1;
   --writing: #ff6347;
   --progress: #888888;
@@ -45,7 +47,7 @@
     color-scheme: dark;
     --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
     --camel-blank: #2c2c27;
-    --peek-done: #a3e048; --peek-none: #4fd3e6;
+    --peek-done: #ffd43b; --peek-none: #ff6b6b;
     --tip-bg: #20201c;
     --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
     --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
@@ -57,6 +59,7 @@
     --miss: #3a3a38;
     --agg: #9098a8;
     --agg-lvl: #9a7ed8; --agg-agg: #5a9bd8;
+    --extr: #d77ad2; --extr-bg: rgba(215, 122, 210, 0.10); --extr-tx: #e29bdd;
     --complete: #20e0d8;
     --writing: #ff7860;
     --progress: #999999;
@@ -70,7 +73,7 @@
   color-scheme: dark;
   --bg: #1a1a1a; --bg2: #252520; --bg3: #2f2f28;
   --camel-blank: #2c2c27;
-  --peek-done: #a3e048; --peek-none: #4fd3e6;
+  --peek-done: #ffd43b; --peek-none: #ff6b6b;
   --tip-bg: #20201c;
   --tip-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   --tx: #e8e8e0; --tx2: #aaa8a0; --tx3: #777770;
@@ -82,6 +85,7 @@
   --miss: #3a3a38;
   --agg: #9098a8;
   --agg-lvl: #9a7ed8; --agg-agg: #5a9bd8;
+  --extr: #d77ad2; --extr-bg: rgba(215, 122, 210, 0.10); --extr-tx: #e29bdd;
   --complete: #20e0d8;
   --writing: #ff7860;
   --progress: #999999;
@@ -128,16 +132,16 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
   filter: drop-shadow(0.5px 0 0 var(--edge)) drop-shadow(-0.5px 0 0 var(--edge)) drop-shadow(0 0.5px 0 var(--edge)) drop-shadow(0 -0.5px 0 var(--edge)); }
 .camel-opts { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 /* Two press-and-hold buttons on the left, level with the 2D / 3D icons:
-   lime shows the camel finished, cyan with nothing done, only while
-   held, and they light up only then. Neither hue is a sector's. */
+   yellow shows the camel finished, red with nothing done, only while
+   held, and they light up only then. */
 .camel-peek { display: inline-flex; gap: 2px; }
 .camel-peek button { width: 13px; height: 13px; padding: 2px; border: 0; border-radius: 50%;
-  background: var(--peek) content-box; opacity: 0.5; cursor: pointer;
+  background: var(--peek) content-box; opacity: 0.7; cursor: pointer;
   touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent; }
 .camel-peek button[data-peek="done"] { --peek: var(--peek-done); }
 .camel-peek button[data-peek="none"] { --peek: var(--peek-none); }
-.camel-peek button:hover { opacity: 0.75; }
+.camel-peek button:hover { opacity: 0.85; }
 .camel-peek button[data-held] { opacity: 1; box-shadow: inset 0 0 0 1px var(--bg), 0 0 0 1.5px var(--peek); }
 .camel-peek button:focus { outline: none; }
 .camel-peek button:focus-visible { outline: 1px solid var(--tx3); outline-offset: 1px; }
@@ -158,14 +162,12 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
 .camel-legend:empty { display: none; }
 .cl-item { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
 .cl-sw { width: 10px; height: 10px; flex: none; display: block; opacity: 0.6; }
-/* In dark mode the package's dark pattern would vanish on the page; the
-   aggregation cube takes the muted text color there, and the green one is
-   brightened. */
+/* In dark mode the package's dark pattern would vanish on the page, so the
+   aggregation cube takes the muted text color there. The green one has its
+   own color per theme (CAMEL_EXTRACTION in app.js). */
 :root[data-theme="dark"] .cl-aggregation path { stroke: var(--tx2); }
-:root[data-theme="dark"] .cl-extraction { filter: brightness(2.2); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .cl-aggregation path { stroke: var(--tx2); }
-  :root:not([data-theme="light"]) .cl-extraction { filter: brightness(2.2); }
 }
 .camel-key { margin-top: 5px; font-size: 10px; color: var(--tx2); }
 
@@ -173,10 +175,10 @@ h1 { font-size: 16px; font-weight: 500; margin-bottom: 1px; }
   font-size: 11px; margin-bottom: 8px; }
 
 /* Cards */
-.cards { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; }
+.cards { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; margin-bottom: 8px; }
 .card { background: var(--bg2); border-radius: 6px; padding: 4px 8px; min-width: 0; }
 /* The time to finish and SUs cards get a little more room for their values. */
-.cards { grid-template-columns: repeat(7, minmax(0, 1fr)) minmax(0, 1.3fr) minmax(0, 1.3fr); }
+.cards { grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(0, 1.3fr) minmax(0, 1.3fr); }
 /* Warnings, in the page's warning orange (as for time left under 2 hours). */
 .eta-warn { color: var(--st-pend); white-space: nowrap; }
 /* Their values a little smaller than the other cards', so the longest
@@ -416,7 +418,7 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .grid-table td.model-cell { font-size: 10px; font-weight: 500; white-space: nowrap; padding-right: 6px; line-height: 1.1; }
 .grid-table td.sc-cell { text-align: center; }
 .grid-table .sep-col { width: 4px; padding: 0; border-bottom: 0.5px solid var(--bd); }
-.sc-hdr { font-size: 10px; font-weight: 500; }
+.sc-hdr { font-size: 10px; font-weight: 500; vertical-align: top; }
 .sc-hdr-rcp45 { border-bottom: 2px solid var(--blue) !important; background-image: linear-gradient(rgba(106, 158, 200, 0.08), rgba(106, 158, 200, 0.08)); color: var(--rcp45-tx); }
 .sc-hdr-rcp85 { border-bottom: 2px solid var(--redline) !important; background-image: linear-gradient(rgba(200, 112, 112, 0.08), rgba(200, 112, 112, 0.08)); color: var(--rcp85-tx); }
 .sc-hdr .sc-count { opacity: 0.6; font-weight: 400; font-size: 8px; }
@@ -434,6 +436,7 @@ body.no-sector #file-detail, body.no-sector .grid-wrap { display: none !importan
 .row-count { font-size: 6px; line-height: 1; white-space: nowrap; min-width: 14px; text-align: left; }
 .row-count.proj { color: var(--base); }
 .row-count.agg { color: var(--tx3); }
+.row-count.ext { color: var(--extr); }
 .fsq { width: 4px; height: 4px; border-radius: 0.5px; background: var(--miss); }
 .fsq.base { background: var(--base); }
 .fsq.cost { background: var(--agg-cost); }
@@ -611,6 +614,10 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .res-sec .su-blocks { display: flex; margin-top: 10px; }
 /* Files in a cell's folder that are not expected: grey, not counted. */
 .dot.oth { background: var(--tx3); }
+.dot.ext { background: var(--extr); }
+.fd-row.ext { background: var(--extr-bg); color: var(--extr-tx); }
+.fd-head .ext-count { color: var(--extr); font-size: 11px; }
+.fd-ext-note { font-size: 10px; color: var(--tx3); margin: 1px 0 3px; font-family: var(--font); }
 .fd-row.oth { background: transparent; color: var(--tx2); }
 .fd-sub-other { color: var(--tx3); }
 .card .card-label { display: flex; align-items: center; gap: 2px; }
@@ -643,6 +650,10 @@ body.no-sector .rotate-note, body.no-model .rotate-note { display: none !importa
 .tfig b, .sc-count b { font-weight: 700; color: var(--tx2); }
 .pa-size { font-weight: 400; }
 .pa-sep { opacity: 0.45; font-weight: 300; }
+/* "E 2 files" in a scenario's column header: its extraction files, in the
+   size and weight of the P and A counts above it. */
+.sc-hdr .ex-count { display: block; opacity: 0.6; font-size: 8px; font-weight: 400; color: var(--extr); white-space: nowrap; }
+.sc-hdr .ex-count b { font-weight: 700; color: var(--extr); }
 /* With the disk space added the figure is longer: the name keeps its full
    width, and the figure moves under it, right-aligned, when both do not
    fit on one line (as in the narrow tree on a desktop). */

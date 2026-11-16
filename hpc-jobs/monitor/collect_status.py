@@ -6,7 +6,8 @@ exist and are not empty, the stage markers in status-global.txt, and the
 claim files workers leave while they run. Slurm and rcchelp are used only
 for the resources and jobs sections: storage, service units, and the jobs
 running or queued on the account. Sectors and run types with no outputs
-yet come out as not started.
+yet come out as not started. Extraction is complete for a sector when its
+extraction paths (optional, in the manifest) hold a file that is not empty.
 
 Writes, under --out-dir (default site/data):
     status.json     everything the page needs at load time
@@ -225,6 +226,58 @@ def extra_files(leaf_files, expected, patterns, rcp):
             continue
         out.append([name, hit[0], hit[1]])
     return out
+
+
+# Extraction is done by hand and differs by sector, so the rule is simple:
+# a sector's extraction is complete when its extraction paths (manifest,
+# optional) hold at least one file that is not empty. Each file is placed in
+# a scenario by the SSP, RCP, IAM, run type and sub-model found in its path;
+# a part not found applies to all.
+EXTRACTION_IAMS = {"low": "low", "high": "high", "iiasa": "low", "oecd": "high"}
+EXTRACTION_RUNS = ("median", "montecarlo")
+
+
+def extraction_scenario(rel, models):
+    """The scenario parts named in a file path, None where absent:
+    median/main_model-electricity-SSP3-rcp85-high-... gives SSP3, rcp85,
+    high, median and electricity."""
+    words = [w for w in re.split(r"[/.-]+", rel) if w]
+    lower = [w.lower() for w in words]
+    ssp = re.search(r"(?i)(?<![a-z])ssp([1-5])(?!\d)", rel)
+    rcp = re.search(r"(?i)(?<![a-z])rcp(\d{2})(?!\d)", rel)
+    return {
+        "ssp": f"SSP{ssp.group(1)}" if ssp else None,
+        "rcp": f"rcp{rcp.group(1)}" if rcp else None,
+        "iam": next((EXTRACTION_IAMS[w] for w in lower if w in EXTRACTION_IAMS), None),
+        "run": next((w for w in lower if w in EXTRACTION_RUNS), None),
+        "model": next((w for w in words if w in models and w != "main"), None),
+    }
+
+
+def scan_extraction(sector, cil_root):
+    """The sector's extraction files, or None when it has no extraction
+    paths. Hidden files and empty files are left out."""
+    paths = sector.get("extraction_paths") or []
+    if not paths:
+        return None
+    files = []
+    for path in paths:
+        local = path.replace("/project/cil", cil_root, 1)
+        for folder, dirs, names in os.walk(local):
+            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            for name in sorted(names):
+                if name.startswith("."):
+                    continue
+                try:
+                    st = os.stat(os.path.join(folder, name))
+                except OSError:
+                    continue
+                if st.st_size <= 0:
+                    continue
+                rel = os.path.relpath(os.path.join(folder, name), local)
+                files.append({"path": path, "name": rel, "size": st.st_size, "mtime": int(st.st_mtime),
+                              **extraction_scenario(rel, sector.get("models", []))})
+    return {"paths": paths, "complete": bool(files), "files": files}
 
 
 def leaf_path(root, *parts):
@@ -1432,6 +1485,11 @@ def main():
             "files_spec": spec,
             "run_types": run_types_out,
         }
+        extraction = scan_extraction(sector, args.cil_root)
+        if extraction is not None:
+            sectors_out[sector_name]["extraction"] = extraction
+            log(f"{sector_name}/extraction: {len(extraction['files'])} file(s), "
+                f"{'complete' if extraction['complete'] else 'not started'}")
 
     use_slurm = not args.no_slurm and shutil.which("sacct") and shutil.which("squeue")
     rows, jobs, storage, bad, billed = None, None, None, None, None

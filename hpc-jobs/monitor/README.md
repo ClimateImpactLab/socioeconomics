@@ -89,7 +89,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   `iam` (only when not all are on; `none` when a row is all off),
   `filter` (only when not All), `compact=0` (when off; without it the
   setting remembered in the browser applies), `camel=3d` (the 3D camel)
-  and `source=mock`. Example:
+  and `source=mock` or `source=local`. Example:
   `?sector=energy&sub=other_energy&run=median&ssp=SSP2,SSP3`. Picking a
   sector, crop or fuel, or run type adds a history entry (back and forward
   go through them); filter changes replace the current one. A value that
@@ -99,7 +99,7 @@ mortality monitor (/project/cil/home_dirs/scadavidsanchez/repos/mortality-monito
   link from the browser. The page loads the data once; a reload brings the
   latest scan in the same view. Clicking the camel goes back to the home
   view, as the page opens with no parameters: nothing picked in the tree,
-  default filters, every summary row closed; it keeps source=mock, the 2D
+  default filters, every summary row closed; it keeps the source, the 2D
   or 3D camel and the theme, and adds a history entry, so back returns to
   the previous view.
 - An info bar with the path of the clicked cell, and a detail panel that
@@ -367,7 +367,8 @@ delta method for each energy fuel.
 | `coastal` | not tracked, stays empty |
 
 - Stages: projection and aggregation are the percent of files there.
-  Extraction is not tracked yet and stays at 0. Each part has 100 cells:
+  Extraction is the sector's (100% or 0%, see Extraction below), drawn
+  up to the aggregation, as the figure requires. Each part has 100 cells:
   0 only when there are no files and 100 only when all are there, so
   99.8% shows 99 cells. An aggregation above its projection is drawn at
   the projection, with a note in the browser console.
@@ -379,8 +380,11 @@ delta method for each energy fuel.
 - Colors: the 2D unfilled parts take the page's soft neutral
   (`--camel-blank`) and the outline the text color. The 3D unfilled
   surface and its color per mode are `CAMEL_3D` in app.js (lit, so they
-  show close to the color given). A theme switch recolors both figures
-  in place.
+  show close to the color given). Extraction is drawn in the outline's
+  ink at 75% (black in light mode), told apart from the aggregation by its
+  shape: in 2D concentric arcs take the place of the aggregation's cubes
+  on extracted cells (`CAMEL_EXTRACTION`, `CAMEL_ARCS`); in 3D the package
+  draws one lattice for both stages, so only its color changes. A theme switch recolors both figures in place.
 - Mouse: a click goes home; in 3D a drag turns the figure (not a click),
   the wheel scrolls the page, and a right-click plays a move (in 2D the
   browser's menu opens). The camel has no hover text.
@@ -401,6 +405,29 @@ fixed speed (about 90 s a full turn), and its angle is read from the
 figure's camera, which the package returns but does not declare. Look is
 a fixed clip, not aimed at the camera; it turns first toward the side
 the camera starts on, which the first-time sequence relies on.
+
+## Extraction
+
+Extraction is done by hand and differs by sector, so the rule is simple.
+Each sector may list `extraction_paths` in the manifest (searched with
+their subfolders). Its extraction is complete (100%) when they hold a file
+that is not empty, else 0%, also for a sector with none listed. Energy
+lists `/project/cil/gcp/outputs_newsocioeconomics/energy/extracted`.
+
+- The collector reads the SSP, RCP, IAM (low or high, or IIASA and OECD),
+  run type (median or montecarlo) and sub-model from each file's path,
+  such as `median/main_model-electricity-SSP3-rcp85-high-...-map.csv`. A
+  part the path does not name fits any scenario.
+- Summary table: an Extraction column with the percent and the number of
+  files. Cards: an Extraction card for the sector.
+- Grid: extraction files cover all GCMs of a scenario, so every cell of
+  a column with extraction files gets a third row of purple squares, one
+  per file of its scenario and sub-model ("1/1"), and the column header
+  says "E 1 file" under P and A. The legend has Extraction in the same
+  purple.
+- File panel: a click on a cell adds the count to the title line ("1
+  extraction") and an Extraction section after Aggregation, with each
+  file's size and date and a note that it covers all GCMs of the scenario.
 
 ## Expected files per unit
 
@@ -474,7 +501,11 @@ python3 collect_status.py --cil-root /Volumes/cil
 ```
 
 The mock: `python3 make_mock_status.py`, then open the page with
-`?source=mock`.
+`?source=mock`. The mock has no extraction files.
+
+The page reads the published data from the monitor-data branch, and the
+copy in site/data only when that fails. To check a scan before it is
+published, open the page with `?source=local`, which reads site/data.
 
 Preview locally:
 
@@ -703,7 +734,15 @@ The contract between the collector and the page; the mock follows it.
              "alt_bits": {"MERGEETL60_{rcp}": "11110000"}}   // aggregation files under other scenarios, when found
           ]
         }
-      }
+      },
+      "extraction": {            // only for a sector with extraction_paths
+        "paths": ["/project/cil/gcp/outputs_newsocioeconomics/energy/extracted"],
+        "complete": true,        // a file that is not empty was found
+        "files": [{"path": "/project/cil/gcp/outputs_newsocioeconomics/energy/extracted",
+                   "name": "median/main_model-electricity-SSP3-rcp85-high-fulladapt-impact_pc-2099-map.csv",
+                   "size": 1914347, "mtime": 1794436464,   // bytes, Unix seconds
+                   "ssp": "SSP3", "rcp": "rcp85", "iam": "high", "run": "median", "model": "electricity"}]}
+                                 // each part null when the path does not name it
     }
   }
 }

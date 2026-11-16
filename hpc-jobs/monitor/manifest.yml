@@ -179,6 +179,12 @@ run_types:
 # (crops for agriculture, fuels for energy; "main" means no sub-model).
 # stages are the pipeline steps a unit needs before it counts as done.
 # derived_models are created by the post stage, not run on their own.
+# extraction_paths (optional) are the folders of a sector's extracted
+# outputs. Extraction is done by hand and differs by sector, so the rule is
+# simple: complete (100%) when these folders hold a file that is not empty,
+# else 0%. The SSP, RCP, IAM (low or high), run type (median or montecarlo)
+# and sub-model in each file's path place it in a scenario; a part that is
+# not named applies to all.
 # Paths are on the cluster filesystem (/project/cil = /Volumes/cil).
 # The grid is built from these folders only.
 sectors:
@@ -272,6 +278,10 @@ sectors:
     # Aggregation files under other scenarios in the same folders (such as
     # MERGEETL60_rcp45) are found on their own and can be picked on the page.
     aggregation_scenario: price014
+    # Folders of the extracted outputs (searched with their subfolders).
+    # Extraction is complete when they hold a file that is not empty.
+    extraction_paths:
+      - /project/cil/gcp/outputs_newsocioeconomics/energy/extracted
     job_names:
       quick_test: [energy-quick-test, cil2wpp-energy-smoke, "*energy*quick*", "*energy*smoke*", "*energy*test*"]
       single: [energy-single, cil2wpp-energy-gen, "*energy*single*", "*single*energy*", "*energy*gen*"]

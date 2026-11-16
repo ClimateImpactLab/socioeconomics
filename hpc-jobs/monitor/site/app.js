@@ -11,7 +11,7 @@
 const GROUPS = ["projection", "costs", "levels", "aggregated"];
 const AGG_GROUPS = ["costs", "levels", "aggregated"];
 const SQ_CLASS = { projection: "base", costs: "cost", levels: "lvl", aggregated: "agr" };
-const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr", other: "oth" };
+const DOT_CLASS = { projection: "proj", costs: "cost", levels: "lvl", aggregated: "agr", other: "oth", extraction: "ext" };
 // Partitions are told apart by texture and users by color, so a segment of
 // the SU bar shows both who and where. The textures live in the stylesheet
 // (.ptex-*) and are the same in badges, bars and keys.
@@ -42,8 +42,11 @@ const SU_STYLES = 5;
 const params = new URLSearchParams(location.search);
 // The collector pushes its data to the monitor-data branch every hour, so
 // the page reads it from there; the copy deployed with the site is the fallback.
+// source=local reads the copy next to the page (site/data), to check a scan
+// before it is published.
 const REMOTE_BASE = "https://raw.githubusercontent.com/ClimateImpactLab/socioeconomics/monitor-data/data/";
-let BASE = params.get("source") === "mock" ? "mock/" : REMOTE_BASE;
+const SOURCE = { mock: "mock/", local: "data/" }[params.get("source")] ? params.get("source") : null;
+let BASE = SOURCE === "mock" ? "mock/" : SOURCE === "local" ? "data/" : REMOTE_BASE;
 
 let DATA = null;
 const view = { sector: null, runType: null, model: null, modelOff: false, branch: null, runSub: null, ssps: [], picks: null,
@@ -226,6 +229,21 @@ function sectorFiles(sec) {
   const rt = sec.run_types[defaultRunType(sec)];
   return rt ? filesOf(sec, rt) : { proj: 0, projExp: 0, agg: 0, aggExp: 0 };
 }
+
+// Extraction is done by hand and differs by sector, so the rule is simple:
+// 100% when the sector's extraction folders hold a file that is not empty,
+// else 0% (also for a sector with no extraction folders).
+function extrPct(sec) { return sec && sec.extraction && sec.extraction.complete ? 100 : 0; }
+function extrCount(sec) { return sec && sec.extraction ? sec.extraction.files.length : 0; }
+// The extraction files of one scenario column: the collector reads the SSP,
+// RCP, IAM, run type and sub-model from each file's path, and a part the
+// path does not name fits any. They cover all GCMs of the scenario.
+function extrFiles(sec, rtName, models, c) {
+  const fits = (v, want) => v == null || v === want;
+  return !sec || !sec.extraction ? [] : sec.extraction.files.filter((f) => fits(f.run, rtName) &&
+    fits(f.ssp, c.ssp) && fits(f.rcp, c.rcp) && fits(f.iam, c.iam) && (f.model == null || models.includes(f.model)));
+}
+const plural = (n, word) => `${fmtN(n)} ${word}${n === 1 ? "" : "s"}`;
 
 // A sector is active when projection files were written in its folders in
 // the last 24 hours before the scan, or a unit is being written right now.
@@ -591,7 +609,7 @@ function runDims(rt) {
 }
 function viewQuery() {
   const q = new URLSearchParams();
-  if (params.get("source") === "mock") q.set("source", "mock");
+  if (SOURCE) q.set("source", SOURCE);
   if (view.sector && DATA.sectors[view.sector]) {
     q.set("sector", view.sector);
     const sub = view.runType ? view.runSub : view.branch;
@@ -875,6 +893,8 @@ function renderCards() {
     card(`Not started${mainMark()}`, `<span style="color:var(--st-none)">${fmtN(total - f.started)}</span>`, "no files yet") +
     card("Projection", fmtPctTable(pp), `${fmtN(f.proj)}/${fmtN(f.projExp)} files`, pbar(pp, "var(--base)")) +
     card(`Aggregation${mainMark()}`, fmtPctTable(ap), `${fmtN(f.agg)}/${fmtN(f.aggExp)} files`, pbar(ap, "var(--agg)")) +
+    card("Extraction", fmtPctTable(extrPct(sec)), extrCount(sec) ? plural(extrCount(sec), "file") : "no files",
+      pbar(extrPct(sec), "var(--extr)"), "Extraction of the whole sector: 100% when its extraction folders hold a file, else 0%") +
     card("Writing", `<span style="color:var(--st-run)">${fmtN(f.running)}</span>`, f.failed ? `${fmtN(f.failed)} stopped` : "units being written") +
     etaCard(rt, total) +
     suCard(rt.su_estimate);
@@ -1043,7 +1063,9 @@ function renderLegend() {
      <div class="leg-item" title="All projection and aggregation files present">${box("border:1.5px solid color-mix(in srgb, var(--st-done) 55%, transparent);background:var(--st-done-bg)")} Aggregation complete</div>
      <span class="leg-sep">|</span>
      <span style="font-weight:500">Aggregation:</span>
-     ${aggTypes(sector(), runType()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}`;
+     ${aggTypes(sector(), runType()).map((g) => `<span style="color:var(--agg-${AGG_STYLE[g].v})">${AGG_STYLE[g].label}</span>`).join(" ")}
+     <span class="leg-sep">|</span>
+     <div class="leg-item" title="Extraction files of the scenario, for all its GCMs (E in the column header)"><div class="leg-sq" style="background:var(--extr)"></div> Extraction</div>`;
 }
 
 // A cell's file squares as one small picture instead of one element per file,
@@ -1063,7 +1085,8 @@ function sqImage(groups, q) {
   if (!sqColors) {
     const css = getComputedStyle(document.documentElement);
     const v = (name) => css.getPropertyValue(name).trim();
-    sqColors = { miss: v("--miss"), projection: v("--base"), costs: v("--agg-cost"), levels: v("--agg-lvl"), aggregated: v("--agg-agg") };
+    sqColors = { miss: v("--miss"), projection: v("--base"), costs: v("--agg-cost"), levels: v("--agg-lvl"), aggregated: v("--agg-agg"),
+      extraction: v("--extr") };
   }
   const key = `${groups.join(",")}:${q}`;
   let st = sqCache.get(key);
@@ -1088,7 +1111,9 @@ function recolorSquares() {
   for (const e of document.querySelectorAll("#grid .sq-img")) e.style.backgroundImage = sqImage(e.dataset.g.split(","), e.dataset.q).url;
 }
 
-function cellHtml(key, unit, spec, hlCounts, batchCounts) {
+// ex: the extraction files of the cell's scenario and sub-model; they cover
+// all its GCMs, so every cell of the column shows them, in a third row.
+function cellHtml(key, unit, spec, hlCounts, batchCounts, ex = 0) {
   const cnt = unitCounts(unit, spec, curScen());
   const cls = cellState(unit, cnt);
   const states = HIGHLIGHTS.map(([k]) => k).filter((k) => cellMatches(k, unit, cnt));
@@ -1100,6 +1125,10 @@ function cellHtml(key, unit, spec, hlCounts, batchCounts) {
   if (cnt.aggTotal) {
     html += `<div class="batch-sep"></div><div class="batch-row">${squares(cnt.pres, AGG_GROUPS)}` +
       (cnt.agg ? `<span class="row-count agg">${cnt.agg}/${cnt.aggTotal}</span>` : "") + `</div>`;
+  }
+  if (ex) {
+    html += `<div class="batch-sep"></div><div class="batch-row">${squares({ extraction: new Array(ex).fill(true) }, ["extraction"])}` +
+      `<span class="row-count ext">${ex}/${ex}</span></div>`;
   }
   return html + `</div>`;
 }
@@ -1135,11 +1164,15 @@ function renderGrid() {
     const k = esc(ck(c));
     h1 += `<th class="sep-col" data-c="${k}"></th>`; h2 += `<th class="sep-col" data-c="${k}"></th>`;
     const n = stats.get(ck(c));
+    // Extraction files cover all GCMs of a scenario: "E 2 files", in purple,
+    // on its own line under the P and A counts.
+    const ex = extrFiles(sec, view.runType, fixedModel ? [fixedModel] : rt.dims.models, c).length;
+    const exHtml = ex ? `<span class="ex-count" title="Extraction: ${plural(ex, "file")}, for all GCMs">E <b>${fmtN(ex)}</b> file${ex === 1 ? "" : "s"}</span>` : "";
     h1 += `<th colspan="${batches.length}" class="sc-hdr sc-hdr-${c.rcp}" data-c="${k}"><span class="hb-row">` +
       `<span class="sb on hb ssp-${esc(c.ssp)}">${esc(c.ssp)}</span><span class="sb on hb sb-${esc(c.rcp)}">${esc(c.rcp)}</span>` +
       `<span class="sb on hb sb-iam sb-iam-${esc(c.iam)}">${esc(c.iam)}</span></span>` +
       // Columns of one or two cells are too narrow for the counts: they go in the tooltip.
-      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3, true)}</span></th>`;
+      `<span class="sc-count" title="${paText(n)}">${paText(n, batches.length < 3, true)}</span>${exHtml}</th>`;
     batches.forEach((b, bi) => {
       h2 += `<th class="sub${edge(c.rcp, bi, batches.length)}" data-c="${k}"${bAttr(bi)}>${b != null ? "b" + b : (kind === "gcms" ? "" : rt.dims.gcms[c.rcp][0])}</th>`;
     });
@@ -1166,7 +1199,8 @@ function renderGrid() {
           perBatch = gridCols.hlb.get(`${k}#${bi}`);
           if (!perBatch) gridCols.hlb.set(`${k}#${bi}`, (perBatch = {}));
         }
-        body += `<td class="${cls}" data-c="${esc(k)}"${bAttr(bi)}>${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k), perBatch)}</td>`;
+        const ex = extrFiles(sec, view.runType, [model], c).length;
+        body += `<td class="${cls}" data-c="${esc(k)}"${bAttr(bi)}>${cellHtml(key, unit, specOf(sec, model, rt), gridCols.hl.get(k), perBatch, ex)}</td>`;
       });
     });
     body += `</tr>`;
@@ -1353,12 +1387,15 @@ async function showDetail(key) {
   const rows = (g) => byGroup[g].map((f) => fileRow(g, f.name, f.rec)).join("");
   const found = (g) => byGroup[g].filter((f) => f.rec).length;
 
+  // The scenario's extraction files, for this sub-model: one set for all GCMs.
+  const ex = extrFiles(sec, view.runType, [info.model], info);
   const state = STATE_NAMES[cellState(info.unit, cnt)];
   const reason = info.unit && info.unit.fail_reason ? `, ${esc(info.unit.fail_reason)}` : "";
   // The arrow folds the panel; the red button closes it.
   let html = `<div class="fd-head">
       <span class="fd-title">${esc(cellTitle(info))}: ${cnt.proj}/${cnt.projTotal} projection
-      | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>
+      | <span class="agg-count">${cnt.agg}/${cnt.aggTotal} aggregation</span>${ex.length ? `
+      | <span class="ext-count">${ex.length} extraction</span>` : ""}
       <span class="state">${esc(state)}${reason}</span>${scen ? ` <span class="state">aggregation: ${esc(scen.replace("{rcp}", info.rcp))}, not counted</span>` : ""}</span>
       <button class="fd-fold" id="fd-fold" aria-expanded="${!fdFolded}" aria-label="Fold" title="Fold or open"><span class="panel-arrow">&gt;</span></button>
       <button class="fd-close" id="fd-close" aria-label="Close" title="Close (Esc)">` +
@@ -1376,6 +1413,10 @@ async function showDetail(key) {
       `${g === "levels" ? "Levels" : "Aggregated"} (${found(g)}/${spec[g].length})</div>${rows(g)}`).join("");
     const n = aggParts.reduce((s, g) => s + found(g), 0), t = aggParts.reduce((s, g) => s + spec[g].length, 0);
     html += section("fd-agg", "Aggregation", `${n}/${t}`, sub, true);
+  }
+  if (ex.length) {
+    html += section("fd-extr", "Extraction", `${ex.length}/${ex.length}`, `<div class="fd-ext-note">Each file covers all GCMs of the scenario.</div>` +
+      ex.map((f) => fileRow("extraction", f.name, [f.size, f.mtime])).join(""), true);
   }
   if (spec.costs.length) {
     html += section("fd-costs", "Costs", `${found("costs")}/${spec.costs.length}`, rows("costs"), false);
@@ -1671,7 +1712,8 @@ function ckRuns(sec) {
 // same row as in the tree (montecarlo for Mortality, Labor and each crop;
 // median and delta method for each energy fuel). The crop and fuel IDs
 // follow the package's own example mapping. wheat_combined has no leaf.
-// Coastal is not tracked and extraction is not tracked yet: both stay at 0.
+// Coastal is not tracked and stays at 0. Extraction is the sector's (100% or
+// 0%, see extrPct), drawn up to the aggregation, as the figure requires.
 const CAMEL_LEAVES = [
   { id: "coastal", sector: "coastal", label: "Coastal" },
   { id: "crop-1", sector: "agriculture", model: "cassava", label: "Cassava" },
@@ -1706,7 +1748,7 @@ function camelValues() {
       }
       aggregation = projection;
     }
-    out[leaf.id] = { projection, aggregation, extraction: 0 };
+    out[leaf.id] = { projection, aggregation, extraction: Math.min(extrPct(sec), aggregation) };
   }
   return out;
 }
@@ -1874,6 +1916,7 @@ async function loadCamel() {
     const labels = Object.fromEntries(CAMEL_LEAVES.map((l) => [l.id, l.label]));
     const fig2d = await mod.loadCamel2D(box2d, { store, manifest, labels, colors: camelColors() });
     noHoverText(fig2d.element);
+    camelExtraction(fig2d);
     Object.assign(camelFig, { mod, manifest, store, fig2d });
     renderCamel();
     preloadCamel3D();
@@ -1893,6 +1936,61 @@ function preloadCamel3D() {
 // surface and its color for each theme; the figure is lit, so it shows
 // close to that color, not equal to it.
 const CAMEL_3D = { surface: "skin", blank: { light: "#f0ece1", dark: "#45494a" } };
+// The extraction pattern: concentric arcs, a little see-through, black in
+// light mode and the outline's light ink in dark mode, so no hue clashes
+// with a sector's color. In 2D it takes the place of the aggregation's
+// cubes where a part is extracted: the cubes are masked out there and the
+// arcs are drawn in the figure's own extraction pattern. The 3D figure
+// draws one lattice for both stages and can only change its color, so
+// there the lattice stays and takes the same color.
+// The tile is 20 by 10 in its own units (lines 1.1 wide), drawn 2.3 times
+// that size on the figure.
+const CAMEL_EXTRACTION = { w: 20, h: 10, scale: 2.3, width: 1.1, opacity: 0.75, color: { light: "#000000", dark: null } };
+const CAMEL_ARCS = "M0,10 A10,10 0 0 1 20,10 M3.5,10 A6.5,6.5 0 0 1 16.5,10 M7,10 A3,3 0 0 1 13,10";
+// Black in light mode; in dark mode the outline's ink (null), as black
+// would not show there.
+const camelExtractionColor = () => CAMEL_EXTRACTION.color[themeNow()] || camelColors().outline;
+function camelExtraction(fig2d) {
+  const color = camelExtractionColor();
+  if (camelFig.fig3d) camelFig.fig3d.setTexture({ extraction: color });
+  if (!fig2d) return;
+  const pat = fig2d.element.querySelector('pattern[id$="-extraction"]');
+  const line = pat && pat.querySelector("path");
+  if (!line) return;
+  const e = CAMEL_EXTRACTION;
+  pat.setAttribute("width", e.w * e.scale);
+  pat.setAttribute("height", e.h * e.scale);
+  line.setAttribute("d", CAMEL_ARCS);
+  line.setAttribute("transform", `scale(${e.scale})`);
+  line.setAttribute("stroke", color);
+  line.setAttribute("stroke-width", e.width);
+  line.setAttribute("stroke-opacity", e.opacity);
+  line.setAttribute("stroke-linecap", "butt");
+  camelExtractionMask(fig2d);
+}
+// Masks the aggregation's cubes out of the extracted cells: the mask is
+// the whole figure less the extraction layer's own outline, kept in step
+// with it after every change of values.
+function camelExtractionMask(fig2d) {
+  const svg = fig2d.element, agg = svg.querySelector('g[data-layer="aggregation"]');
+  const pat = svg.querySelector('pattern[id$="-extraction"]');
+  if (!agg || !pat) return;
+  const id = `${pat.id}-cut`;
+  let cut = svg.querySelector(`#${CSS.escape(id)} path`);
+  if (!cut) {
+    const NS = "http://www.w3.org/2000/svg", el = (name, attrs) => {
+      const node = document.createElementNS(NS, name);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      return node;
+    };
+    const mask = el("mask", { id, maskUnits: "userSpaceOnUse", x: -1e4, y: -1e4, width: 2e4, height: 2e4 });
+    cut = el("path", { fill: "#000", stroke: "#000", "stroke-width": 0.8 });
+    mask.append(el("rect", { x: -1e4, y: -1e4, width: 2e4, height: 2e4, fill: "#fff" }), cut);
+    svg.querySelector("defs").append(mask);
+    agg.setAttribute("mask", `url(#${id})`);
+  }
+  cut.setAttribute("d", [...svg.querySelectorAll('g[data-layer="extraction"] path')].map((p) => p.getAttribute("d") || "").join(""));
+}
 function camelColors() {
   const s = getComputedStyle(document.documentElement);
   return { blank: s.getPropertyValue("--camel-blank").trim(), outline: s.getPropertyValue("--tx").trim() };
@@ -1903,6 +2001,9 @@ function recolorCamel() {
   if (camelFig.fig2d) camelFig.fig2d.setColors(c);
   if (ldCamel) { ldCamel.fig.setColors(c); ldCamel.ink.setAttribute("fill", c.outline); }
   if (camelFig.fig3d) camelFig.fig3d.setColors({ blank: CAMEL_3D.blank[themeNow()] });
+  camelExtraction(camelFig.fig2d);
+  camelFig.legend = null;
+  renderCamelLegend();
 }
 // The package's SVG has a <title>, which browsers show on hover; the camel
 // has no hover text, so it goes, and the figure keeps its description.
@@ -1928,7 +2029,11 @@ function syncCamel() {
     ? { projection: peek, aggregation: peek, extraction: peek }
     : { projection: cells(v.projection), aggregation: cells(v.aggregation), extraction: cells(v.extraction) }]));
   const sig = JSON.stringify(drawn);
-  if (sig !== camelFig.sig) { camelFig.store.setState(drawn); camelFig.sig = sig; }
+  if (sig !== camelFig.sig) {
+    camelFig.store.setState(drawn);
+    camelFig.sig = sig;
+    if (camelFig.fig2d) camelExtractionMask(camelFig.fig2d);
+  }
   if (view.camel3d) openCamel3D();
   else if (camelFig.shown) hideCamel3D();
   renderCamelLegend();
@@ -1959,13 +2064,16 @@ function renderCamelLegend() {
   if (!svg) { $("camel-legend").replaceChildren(); return; }
   const cube = (stage) => {
     const p = svg.querySelector(`pattern[id$="-${stage}"]`), path = p.querySelector("path");
-    return `<defs><pattern id="cl-${stage}" width="${p.getAttribute("width")}" height="${p.getAttribute("height")}" patternUnits="userSpaceOnUse">` +
-      `<path d="${path.getAttribute("d")}" fill="none" stroke="${path.getAttribute("stroke")}" stroke-width="${path.getAttribute("stroke-width") * 2}" stroke-linejoin="round"/></pattern></defs>` +
+    // The arcs at their own tile size, so the icon shows whole tiles.
+    const ext = stage === "extraction", e = CAMEL_EXTRACTION;
+    return `<defs><pattern id="cl-${stage}" width="${ext ? e.w : p.getAttribute("width")}" height="${ext ? e.h : p.getAttribute("height")}" patternUnits="userSpaceOnUse">` +
+      `<path d="${path.getAttribute("d")}" fill="none" stroke="${path.getAttribute("stroke")}" ` +
+      `stroke-width="${ext ? e.width : path.getAttribute("stroke-width") * 2}" stroke-opacity="${path.getAttribute("stroke-opacity") || 1}" stroke-linejoin="round"/></pattern></defs>` +
       `<rect x="-3" y="-1" width="30" height="30" fill="url(#cl-${stage})"/>`;
   };
   const items = [
     ["aggregation", "Aggregation", "Aggregation: a dark pattern over the part"],
-    ["extraction", "Extraction", "Extraction: the pattern turns green (not tracked yet)"],
+    ["extraction", "Extraction", "Extraction: concentric arcs in place of the cubes"],
   ];
   $("camel-legend").innerHTML = items.map(([stage, label, title]) =>
     `<span class="cl-item" title="${title}"><svg class="cl-sw cl-${stage}" viewBox="-3 -1 30 30" aria-hidden="true">${cube(stage)}</svg>${label}</span>`).join("");
@@ -1987,6 +2095,7 @@ function buildCamel3D() {
       interaction: { zoom: false }, fit: { padding: 0 } });
     fig.setPaused(true);
     if (token !== camelFig.token) { fig.destroy(); return null; }
+    fig.setTexture({ extraction: camelExtractionColor() });
     box.classList.toggle("outline", CAMEL_3D_OUTLINE);
     camelFig.fig3d = fig;
     return fig;
@@ -2065,7 +2174,7 @@ function renderCamel() {
     const { subs, what, sizeNote } = s.tracked ? ckSubs(sec) : { subs: [], what: "" };
     const mark = `<td class="ck-name" title="${esc(s.part)}${on ? ", active: files written in the last day" : ""}">${toggle(s.key, subs, what)}` +
       `<span class="ck-mark${on ? " on" : ""}" style="--mk:var(--sec-${s.key})"></span>${esc(s.label)}</td>`;
-    if (!s.tracked) return `<tr>${mark}<td colspan="${4 + cols.length}" class="ck-none">not tracked (yet)</td></tr>`;
+    if (!s.tracked) return `<tr>${mark}<td colspan="${5 + cols.length}" class="ck-none">not tracked (yet)</td></tr>`;
     const runs = cols.map((k) => {
       const rt = sec.run_types[k];
       if (!rt) return `<td class="ck-sym" title="${esc(k)}: does not apply">${ICON.na}</td>`;
@@ -2091,11 +2200,13 @@ function renderCamel() {
     // nothing has started.
     const fs = subs.length ? subs.map((x) => x.f) : [s.files];
     const sum = (key) => fs.reduce((t, f) => t + f[key], 0);
-    let html = `<tr>${mark}<td>${cell(sum("proj"), sum("projExp"))}</td><td>${cell(sum("agg"), sum("aggExp"))}</td>${size}${runs}` +
+    const ex = extrCount(sec);
+    const exCell = `<td><span class="ck-pct">${fmtPctTable(extrPct(sec))}</span>${ex ? ` <span class="ck-n">(${plural(ex, "file")})</span>` : ""}</td>`;
+    let html = `<tr>${mark}<td>${cell(sum("proj"), sum("projExp"))}</td><td>${cell(sum("agg"), sum("aggExp"))}</td>${exCell}${size}${runs}` +
       `<td class="ck-su">${su ? suShort(su.low, su.high) : `<span class="ck-n">no data</span>`}</td></tr>`;
     if (ckOpen.has(s.key)) subs.forEach((x) => {
       html += `<tr class="ck-sub${x.started ? "" : " ck-idle"}"><td class="ck-name">${esc(x.label)}</td><td>${cell(x.f.proj, x.f.projExp)}</td>` +
-        `<td>${cell(x.f.agg, x.f.aggExp)}</td><td class="ck-size">${x.z ? fmtBytes(x.z[0] + x.z[1]) : ""}</td>` +
+        `<td>${cell(x.f.agg, x.f.aggExp)}</td><td></td><td class="ck-size">${x.z ? fmtBytes(x.z[0] + x.z[1]) : ""}</td>` +
         `<td colspan="${cols.length + 1}"></td></tr>`;
     });
     return html;
@@ -2111,13 +2222,14 @@ function renderCamel() {
     `title="${next === "expand" ? "Expand all" : "Collapse all"}" aria-label="${next === "expand" ? "Expand all" : "Collapse all"}">` +
     `<svg viewBox="0 0 10 10" aria-hidden="true"><path d="${next === "expand" ? "M2.5 2l2.5 2.5L7.5 2M2.5 5.5L5 8l2.5-2.5" : "M2.5 4.5L5 2l2.5 2.5M2.5 8L5 5.5 7.5 8"}"/></svg></button>`;
   $("camel-key").innerHTML = `<div class="ck-wrap"><table class="ck-table"><thead><tr><th>${allBtn}</th><th>Projection</th>
-      <th>Aggregation${mainMark()}</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th>${cols.map((k) => `<th class="ck-sym">${k.charAt(0).toUpperCase() + k.slice(1)}</th>`).join("")}
+      <th>Aggregation${mainMark()}</th><th>Extraction</th><th class="ck-size" title="Disk space of the expected files, projection and aggregation, all run types">Size</th>${cols.map((k) => `<th class="ck-sym">${k.charAt(0).toUpperCase() + k.slice(1)}</th>`).join("")}
       <th class="ck-su">SUs to finish</th></tr></thead><tbody>${rows}</tbody>
-    <tfoot><tr><td>Total</td><td colspan="2"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="${cols.length}"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
+    <tfoot><tr><td>Total</td><td colspan="3"></td><td class="ck-size">${fmtBytes(totals.bytes)}</td><td colspan="${cols.length}"></td><td class="ck-su">${suShort(totals.low, totals.high)}${totInfo}${avail ? `<div class="ck-avail">${avail.trim()}</div>` : ""}</td></tr></tfoot>
     </table></div><div class="ck-total-phone">Total SUs to finish: <b>${suShort(totals.low, totals.high)}</b>${totInfo}${avail}
     <br>Total size: <b>${fmtBytes(totals.bytes)}</b></div>
     <div class="ck-foot">Percents refer to each sector's main run (montecarlo; median and delta method for energy).
-    Summary percents count files; the filter, the grid and the unit counts in the cards below are units (folders with all their files).</div>`;
+    Summary percents count files; the filter, the grid and the unit counts in the cards below are units (folders with all their files).
+    Extraction is 100% when a sector's extraction folders hold a file, else 0%.</div>`;
 }
 
 // The sub-rows of a sector in the summary table: energy's median and delta
@@ -2194,7 +2306,7 @@ function suShort(low, high) {
 function goHome() {
   closeDetail();
   const q = new URLSearchParams();
-  if (params.get("source") === "mock") q.set("source", "mock");
+  if (SOURCE) q.set("source", SOURCE);
   if (view.camel3d) q.set("camel", "3d");
   applyQuery(q);
   ckOpen.clear();
@@ -2205,7 +2317,7 @@ function goHome() {
 
 // The two preview buttons above the camel work like a momentary switch:
 // while one is held (mouse, touch, or Space or Enter), the camel in view
-// shows every part finished (lime) or with nothing done (cyan), through
+// shows every part finished (yellow) or with nothing done (red), through
 // the same store as the real values. Letting go in any way (release,
 // leaving the button, a cancelled touch, the window or tab losing focus)
 // brings back the real values from the latest data at once. Nothing else
